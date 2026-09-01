@@ -1,0 +1,140 @@
+"""
+Motor de envelope multi-caso — o diferencial do software.
+
+Dado um [`CaseSet`](@ref) com N correntes (e entradas dadas como faixa), entrega **um
+único vaso** que atende a todos, e diz qual caso governa cada restrição.
+
+## Por que envelopar em `Leff(d)` e não nos dados de entrada
+
+O caminho ingênuo seria pegar o máximo de cada vazão, o mínimo de cada viscosidade
+etc., e dimensionar uma vez. Isso só é válido se todas as restrições forem monótonas em
+cada entrada isoladamente — e não são: o bloco de decantação depende da razão `Aw/A`
+(Eq. 18), que é uma razão entre vazões, e de β, que é não-linear. O pior caso pode
+estar num canto misto.
+
+Envelopar a curva `Leff(d)` é correto por construção: para cada diâmetro da grade,
+calcula-se o `Leff` exigido por **cada** caso e toma-se o máximo. O vaso resultante
+satisfaz todos os casos em todos os diâmetros, sem hipótese de monotonicidade.
+
+    Leff_env(d) = max_c  max( Leff_gás(d, c), Leff_líq(d, c) )
+    d_adm       = min_c  d_max(c)
+    Lss(d), SR(d) pela relação do bloco que governa no caso governante
+
+E produz de graça o gráfico que comunica o método: uma curva fina por caso e a
+envelope em negrito por cima de todas.
+"""
+
+"""
+    size_envelope(::Separator, m::StewartArnold, cases::CaseSet;
+                  max_corners = 256) -> EnvelopeResult
+
+Dimensiona um vaso único que atende a todos os casos ativos de `cases`.
+
+Cada caso é um dicionário com as chaves de corrente ([`STREAM_KEYS`](@ref)) e os
+parâmetros do método; qualquer uma pode ser um [`Interval`](@ref), que é expandido em
+casos de canto antes do cálculo.
+
+A grade de diâmetros é a união conservadora das grades pedidas pelos casos: menor
+`d_min`, maior `d_max`, menor passo.
+"""
+function size_envelope(eq::Separator, m::StewartArnold, cases::CaseSet;
+                       max_corners::Int = 256)
+    specs = parameters(m)
+    k     = constants(_sa_config())
+    f_lss = float(k[:lss_liquid_factor])
+
+    expanded = try
+        expand(cases; max_corners)
+    catch err
+        err isa ArgumentError && return infeasible_envelope(sprint(showerror, err))
+        rethrow()
+    end
+    isempty(expanded) && return infeasible_envelope(
+        "Nenhum caso ativo. Adicione ao menos uma corrente.")
+
+    names    = String[]
+    conss    = SeparatorConstraints[]
+    per_case = SizingResult[]
+    params   = Dict{Symbol,Float64}[]
+
+    for (name, vals) in expanded
+        stream = try
+            stream_from_case(vals)
+        catch err
+            err isa ArgumentError &&
+                return infeasible_envelope("Caso '$name': $(sprint(showerror, err))")
+            rethrow()
+        end
+        p = with_defaults(specs, vals)
+        ok, cons, _ = separator_constraints(m, stream, p, k)
+        ok || return infeasible_envelope("Caso '$name': $cons"; case_names = names)
+
+        push!(names, name)
+        push!(conss, cons)
+        push!(params, p)
+        push!(per_case, size_equipment(eq, m, stream, vals))
+    end
+
+    # Grade comum: união conservadora das grades pedidas.
+    d_lo   = minimum(p[:d_min]  for p in params)
+    d_hi   = maximum(p[:d_max]  for p in params)
+    d_step = minimum(p[:d_step] for p in params)
+    grid   = collect(d_lo:d_step:d_hi)
+    isempty(grid) && return infeasible_envelope(
+        "Grade de diâmetros vazia (d_min = $d_lo, d_max = $d_hi, passo = $d_step).";
+        case_names = names, per_case)
+
+    sr_min    = minimum(p[:sr_min]    for p in params)
+    sr_max    = maximum(p[:sr_max]    for p in params)
+    sr_target = sum(p[:sr_target] for p in params) / length(params)
+
+    # Teto de decantação: o mais restritivo entre os casos.
+    i_dmax     = argmin(c.d_max_mm for c in conss)
+    d_max_env  = conss[i_dmax].d_max_mm
+    d_max_case = names[i_dmax]
+
+    rows = EnvelopeRow[]
+    for d in grid
+        per_case_leff = [max(c.d_leff_gas / d, c.d2_leff / d^2) for c in conss]
+        leff, idx = findmax(per_case_leff)
+        gov = conss[idx].d_leff_gas / d > conss[idx].d2_leff / d^2 ? :gas : :liquid
+        lss, sr = envelope_geometry(d, leff, gov, f_lss)
+        push!(rows, EnvelopeRow(d, leff, lss, sr, gov, names[idx], per_case_leff,
+                                sr_min <= sr <= sr_max))
+    end
+
+    admissible = filter(r -> r.d_mm <= d_max_env && r.sr_ok, rows)
+
+    if isempty(admissible)
+        as_sweep = [SweepRow(r.d_mm, NaN, NaN, r.leff_m, r.lss_m, r.sr, r.governing,
+                             r.sr_ok) for r in rows]
+        msg = selection_diagnosis(as_sweep, d_max_env, conss[i_dmax].mechanism,
+                                  sr_min, sr_max)
+        return infeasible_envelope(
+            "Não há vaso que atenda simultaneamente aos $(length(names)) casos. " * msg;
+            case_names = names, rows, per_case, d_max_mm = d_max_env,
+            d_max_case)
+    end
+
+    best  = argmin(r -> abs(r.sr - sr_target), admissible)
+    slack = [best.leff_m - l for l in best.per_case_leff]
+
+    return EnvelopeResult(true, "", best.d_mm, best.leff_m, best.lss_m, best.sr,
+                          vessel_volume(best.d_mm, best.lss_m), best.governing,
+                          best.driver_case, d_max_env, d_max_case, names, rows,
+                          slack, per_case)
+end
+
+"""
+    governing_summary(r::EnvelopeResult) -> String
+
+Resumo em uma linha de quem governa o quê — o que a coluna de resultados da GUI e o
+relatório exibem.
+"""
+function governing_summary(r::EnvelopeResult)
+    r.feasible || return r.message
+    what = r.governing === :gas ? "capacidade de gás" : "capacidade de líquido"
+    return "Governa: $what, pelo caso '$(r.driver_case)'. " *
+           "Teto de decantação: $(round(Int, r.d_max_mm)) mm, " *
+           "imposto pelo caso '$(r.d_max_case)'."
+end

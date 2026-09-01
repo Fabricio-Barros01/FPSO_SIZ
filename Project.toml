@@ -1,0 +1,23 @@
+name = "FPSOSiz"
+uuid = "4f13f718-4653-46cc-8e94-84be0defd37a"
+authors = ["Fabricio Barros <fabriciotrabalho01@gmail.com>"]
+version = "0.1.0"
+
+# NOTA DE ARQUITETURA: o core NÃO depende de nenhuma biblioteca de GUI.
+# GLMakie e afins vivem em app/Project.toml. O core precisa rodar headless
+# (testes, CI, modo lote). Um teste em test/architecture.jl garante isso.
+
+[deps]
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+[compat]
+Printf = "1"
+TOML = "1"
+julia = "1.10"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
