@@ -25,8 +25,7 @@ envelope em negrito por cima de todas.
 """
 
 """
-    size_envelope(::Separator, m::StewartArnold, cases::CaseSet;
-                  max_corners = 256) -> EnvelopeResult
+    size_envelope(eq, m, cases::CaseSet; max_corners = 256) -> EnvelopeResult
 
 Dimensiona um vaso único que atende a todos os casos ativos de `cases`.
 
@@ -36,12 +35,33 @@ casos de canto antes do cálculo.
 
 A grade de diâmetros é a união conservadora das grades pedidas pelos casos: menor
 `d_min`, maior `d_max`, menor passo.
+
+## Genérico sobre o equipamento, de propósito
+
+A assinatura aceita qualquer `AbstractEquipment`/`AbstractSizingMethod`, e o corpo não
+cita nenhum dos dois: tudo o que ele pede ao método são as três coisas do contrato de
+`src/sizing/constraints.jl` — [`sizing_constraints`](@ref), [`method_config`](@ref) e
+[`lss_from`](@ref).
+
+Isto não era assim. Até o Sprint 5 a função era declarada sobre `::Separator,
+::StewartArnold` e o corpo lia o TOML do separador, montava um vetor de
+`SeparatorConstraints` e chamava `separator_constraints`. O efeito prático é que um
+segundo equipamento registrado ganharia formulário e dimensionamento de caso único e
+**perderia o multi-caso** — o diferencial do software — sem que nada denunciasse a
+perda: nenhum erro, nenhum teste vermelho, só um método que a tela não conseguiria
+oferecer. `test/envelope.jl` prova a genericidade com um método declarado fora de
+`src/`, que não tem física nenhuma.
 """
-function size_envelope(eq::Separator, m::StewartArnold, cases::CaseSet;
+function size_envelope(eq::AbstractEquipment, m::AbstractSizingMethod, cases::CaseSet;
                        max_corners::Int = 256)
+    # Par incoerente é erro de programação, não de dado — mas com dois equipamentos no
+    # registro ele passa a ser possível, e silenciosamente produziria números do método
+    # errado para o equipamento mostrado na tela.
+    method_id(applies_to(m)) === method_id(eq) || return infeasible_envelope(
+        "O método '$(label(m))' não se aplica a '$(label(eq))'.")
+
     specs = parameters(m)
-    k     = constants(_sa_config())
-    f_lss = float(k[:lss_liquid_factor])
+    k     = constants(method_config(m))
 
     expanded = try
         expand(cases; max_corners)
@@ -53,7 +73,7 @@ function size_envelope(eq::Separator, m::StewartArnold, cases::CaseSet;
         "Nenhum caso ativo. Adicione ao menos uma corrente.")
 
     names    = String[]
-    conss    = SeparatorConstraints[]
+    conss    = VesselConstraints[]
     per_case = SizingResult[]
     params   = Dict{Symbol,Float64}[]
 
@@ -66,7 +86,7 @@ function size_envelope(eq::Separator, m::StewartArnold, cases::CaseSet;
             rethrow()
         end
         p = with_defaults(specs, vals)
-        ok, cons, _ = separator_constraints(m, stream, p, k)
+        ok, cons, _ = sizing_constraints(m, stream, p, k)
         ok || return infeasible_envelope("Caso '$name': $cons"; case_names = names)
 
         push!(names, name)
@@ -98,7 +118,8 @@ function size_envelope(eq::Separator, m::StewartArnold, cases::CaseSet;
         per_case_leff = [max(c.d_leff_gas / d, c.d2_leff / d^2) for c in conss]
         leff, idx = findmax(per_case_leff)
         gov = conss[idx].d_leff_gas / d > conss[idx].d2_leff / d^2 ? :gas : :liquid
-        lss, sr = envelope_geometry(d, leff, gov, f_lss)
+        lss = lss_from(m, d, leff, gov, k)
+        sr  = lss / (d / 1000.0)
         push!(rows, EnvelopeRow(d, leff, lss, sr, gov, names[idx], per_case_leff,
                                 sr_min <= sr <= sr_max))
     end

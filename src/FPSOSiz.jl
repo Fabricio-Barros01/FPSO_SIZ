@@ -45,6 +45,9 @@ include("types/cases.jl")
 # depois dos tipos: o carregador de casos constrói `Case`
 include("config.jl")
 
+# O contrato método ↔ motor de envelope, antes de qualquer método que o implemente.
+include("sizing/constraints.jl")
+
 include("sizing/separator/beta.jl")
 include("sizing/separator/drag.jl")
 include("sizing/separator/stewart_arnold.jl")
@@ -67,8 +70,9 @@ export SizingResult, SweepRow, CalcTrace, TraceEntry, block_entries, vessel_volu
 export EnvelopeResult, EnvelopeRow
 
 # --- separador
-export Separator, StewartArnold, SeparatorConstraints
-export separator_constraints, beta_coefficient, water_area_fraction
+export Separator, StewartArnold, VesselConstraints
+export sizing_constraints, method_config, lss_from, size_vessel
+export beta_coefficient, water_area_fraction
 export converge_drag, terminal_velocity, reynolds, drag_coefficient, souders_brown
 export size_envelope, governing_summary, mechanism_label
 

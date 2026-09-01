@@ -12,7 +12,7 @@ lido inteiro sem abrir mais nada.
 
 **SPRINT ATUAL: 5 — Segundo equipamento no registro**
 
-**1223 testes passando** (513 no core, 710 na interface).
+**1305 testes passando** (595 no core, 710 na interface).
 
 O software dimensiona um separador trifásico horizontal pelo modelo semiempírico de
 Stewart & Arnold (2008), com um motor de envelope multi-caso que entrega **um** vaso
@@ -267,7 +267,7 @@ A estimativa antiga ("um `struct`, quatro métodos, um TOML, um `include` e um
 `register!`") vale para `size_equipment` de caso único. **Não vale para o motor de
 envelope**, que é onde está o trabalho de verdade. Três obstáculos, todos verificados:
 
-**1. `size_envelope` não é genérico — é declarado sobre os tipos concretos.**
+**1. `size_envelope` não era genérico — era declarado sobre os tipos concretos.** ✅ *feito*
 
 ```julia
 # src/engine/envelope.jl:40
@@ -296,8 +296,32 @@ que não dependem de `d`*, e essa abstração serve aos dois vasos. O que muda d
 quatro, e o resto do corpo — grade comum, envelope de `Leff(d)`, teto mais restritivo,
 escolha por `|SR − alvo|` — fica **idêntico**, porque nunca dependeu do separador.
 
-*Guarda:* um teste que rode `size_envelope` para os dois equipamentos pelo registro
-(`for eq in equipments(), m in methods_for(eq)`), sem citar nenhum dos dois pelo nome.
+**Como ficou.** `src/sizing/constraints.jl` (novo) guarda o contrato: `VesselConstraints`,
+`sizing_constraints`, `method_config`, `lss_from`, mais os helpers de geometria que
+nunca foram do separador (`diameter_grid`, `sweep_row`, `selection_diagnosis`) e
+`size_vessel`, o caso único que a família compartilha — `size_equipment` do separador
+virou uma linha delegando a ele, e o do bifásico será outra. `stewart_arnold.jl` caiu de
+262 para 172 linhas e ficou só com a física e as três divergências documentadas.
+`grep 'Separator\|StewartArnold' src/engine/envelope.jl` volta só as menções na nota
+histórica da docstring.
+
+Duas coisas que a generalização trouxe de brinde:
+
+- **`VesselConstraints` admite "não se aplica"** — `d_max_mm = Inf` (sem teto de
+  decantação), `mechanism = :none`, `beta`/`aw_over_a` = `NaN`. `NaN` e não `0.0` de
+  propósito: zero é um β possível, e usá-lo como "ausente" faria um desenho errado
+  passar por desenho válido.
+- **Par equipamento/método incoerente é recusado** com mensagem. Com um só equipamento
+  o engano era impossível; com dois ele produziria números do método errado sob o
+  rótulo do outro.
+
+*Guarda, já escrita:* `test/envelope.jl` declara um `VasoFake` **fora de `src/`**, sem
+física nenhuma — restrições proporcionais às vazões, `method_config` devolvendo um
+`Dict` que nunca tocou o disco — e roda o motor inteiro nele: multi-caso, a propriedade
+`Leff_env(d) = max_c Leff_c(d)` em toda a grade, o caminho sem teto, e o `lss_from` com
+o fator do TOML **do método** (1,25), que não fecharia se o motor tivesse lido o do
+separador. 82 testes novos; os 1223 anteriores continuam verdes, com o separador
+reproduzindo d = 6300 mm pelo caminho genérico.
 
 **2. Toda corrente é obrigatoriamente trifásica.**
 
@@ -341,10 +365,9 @@ posição. Ou se pergunta antes, ou se converte o que casa e se avisa do resto.
 
 ### Passos
 
-1. Generalizar o motor de envelope (obstáculo 1), **sem** o equipamento novo: os 1223
-   testes atuais têm de continuar verdes com o separador passando pelo caminho genérico.
-   É o passo que se pode errar sem perceber, então vai sozinho.
-2. `stream_keys(m)` e o formulário filtrado (obstáculo 2).
+1. ✅ Generalizar o motor de envelope (obstáculo 1), **sem** o equipamento novo. Foi
+   sozinho de propósito: é o passo que se pode errar sem perceber.
+2. ← **próximo.** `stream_keys(m)` e o formulário filtrado (obstáculo 2).
 3. `src/sizing/vessel/knockout.jl` + `config/equipment/knockout/*.toml`, com `register!`
    em `__init__` (`src/FPSOSiz.jl:95`). O TOML tem de passar em `test/architecture.jl`:
    todo parâmetro com rótulo, unidade, proveniência e `min ≤ default ≤ max`.
@@ -363,7 +386,7 @@ com `length(stream_keys(m)) + length(parameters(m))`. Somados a isso:
 - `grep -c 'StewartArnold()\|Separator()' app/src/` volta **zero**;
 - o motor de envelope roda para os dois equipamentos, iterado pelo registro;
 - o memorial do bifásico sai com os blocos A e C e **sem** um subtítulo B vazio;
-- os 1223 testes de hoje continuam passando — a generalização não é reescrita.
+- os testes anteriores continuam passando — a generalização não é reescrita.
 
 ---
 

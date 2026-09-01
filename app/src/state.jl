@@ -323,7 +323,7 @@ function beta_atual(st::AppState)
     cs = FPSOSiz.CaseSet([to_case(c, st.globais) for c in st.casos])
     for (nome, vals) in FPSOSiz.expand(cs; max_corners = 512)
         nome == r.driver_case || continue
-        ok, cons, _ = FPSOSiz.separator_constraints(
+        ok, cons, _ = FPSOSiz.sizing_constraints(
             FPSOSiz.StewartArnold(), FPSOSiz.stream_from_case(vals),
             FPSOSiz.with_defaults(FPSOSiz.parameters(FPSOSiz.StewartArnold()), vals), k)
         ok && return cons.beta

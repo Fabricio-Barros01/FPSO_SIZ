@@ -16,7 +16,7 @@ O `Leff` exigido é o maior entre A e C; a relação `Lss(Leff)` é a do bloco q
 esbeltez mais próxima de `sr_target`, dentro da banda recomendada 3 ≤ SR ≤ 5.
 
 Os três blocos produzem apenas **três números** — `d·Leff`, `d²·Leff` e `d_max` — que
-não dependem de `d`. Por isso [`separator_constraints`](@ref) é o ponto de entrada
+não dependem de `d`. Por isso [`sizing_constraints`](@ref) é o ponto de entrada
 real: tanto o dimensionamento de caso único quanto o motor de envelope o consomem, e a
 física não é duplicada.
 
@@ -52,41 +52,32 @@ applies_to(::StewartArnold) = Separator()
 
 const _SA_CONFIG = ("equipment", "separator", "stewart_arnold.toml")
 
-_sa_config() = load_config(_SA_CONFIG...)
+"O TOML deste método — a implementação de [`method_config`](@ref) para o separador."
+method_config(::StewartArnold) = load_config(_SA_CONFIG...)
 
-label(::StewartArnold) = config_label(_sa_config(), "Stewart & Arnold (2008)")
-parameters(::StewartArnold) = parameter_specs(_sa_config())
+label(::StewartArnold) = config_label(method_config(StewartArnold()), "Stewart & Arnold (2008)")
+parameters(::StewartArnold) = parameter_specs(method_config(StewartArnold()))
 
 # ---------------------------------------------------------------------------
 # Restrições — os três números que resumem a física
 # ---------------------------------------------------------------------------
 
 """
-As restrições de Stewart & Arnold que não dependem do diâmetro.
-
-`d_leff_gas` [mm·m] é o produto exigido pela Eq. 14; `d2_leff` [mm²·m] o exigido pela
-Eq. 22; `d_max_mm` o teto de decantação (Eq. 19/21) e `mechanism` qual das duas
-decantações o impôs.
-"""
-struct SeparatorConstraints
-    d_leff_gas::Float64
-    d2_leff::Float64
-    d_max_mm::Float64
-    mechanism::Symbol
-    beta::Float64
-    aw_over_a::Float64
-end
-
-"""
-    separator_constraints(m::StewartArnold, s::StreamState, p, k)
+    sizing_constraints(m::StewartArnold, s::StreamState, p, k)
         -> (ok::Bool, result, trace::CalcTrace)
 
 Avalia os blocos A, B e C. Em caso de sucesso `result` é um
-[`SeparatorConstraints`](@ref); em caso de falha, a mensagem diagnóstica.
-`p` são os parâmetros já mesclados com os defaults e `k` as constantes do TOML.
+[`VesselConstraints`](@ref) — `d·Leff` da Eq. 14, `d²·Leff` da Eq. 22 e o teto de
+decantação das Eq. 19/21, com o mecanismo que o impôs; em caso de falha, a mensagem
+diagnóstica. `p` são os parâmetros já mesclados com os defaults e `k` as constantes
+do TOML.
+
+Esta é a implementação do separador trifásico do contrato de
+`src/sizing/constraints.jl` — é por ela que o motor de envelope chega à física daqui
+sem conhecer nenhum dos dois.
 """
-function separator_constraints(m::StewartArnold, s::StreamState,
-                               p::AbstractDict, k::AbstractDict)
+function sizing_constraints(m::StewartArnold, s::StreamState,
+                            p::AbstractDict, k::AbstractDict)
     fu = field_units(s)
     tr = CalcTrace()
 
@@ -151,38 +142,13 @@ function separator_constraints(m::StewartArnold, s::StreamState,
     d2_leff = c_eq22 * (tr_o * fu.q_o + tr_w * fu.q_w)
     trace!(tr, :liquid, "Eq. 22", "d²·Leff", "C·((tr)oQo + (tr)wQw)", d2_leff, "mm²·m")
 
-    return (true, SeparatorConstraints(d_leff_gas, d2_leff, d_max, mechanism, beta, awa), tr)
+    return (true, VesselConstraints(d_leff_gas, d2_leff, d_max, mechanism, beta, awa), tr)
 end
 
-# ---------------------------------------------------------------------------
-# Geometria a partir das restrições
-# ---------------------------------------------------------------------------
-
-"Grade de diâmetros da varredura, em mm."
-diameter_grid(p::AbstractDict) = collect(p[:d_min]:p[:d_step]:p[:d_max])
-
-"""
-    sweep_row(d_mm, cons, f_lss, sr_min, sr_max) -> SweepRow
-
-Geometria para um diâmetro: `Leff` governante, `Lss` pela relação do bloco que governa
-(Eq. 15 para gás, Eq. 23 para líquido) e a esbeltez da Eq. 24.
-"""
-function sweep_row(d_mm::Real, cons::SeparatorConstraints, f_lss::Real,
-                   sr_min::Real, sr_max::Real)
-    leff_gas = cons.d_leff_gas / d_mm
-    leff_liq = cons.d2_leff / d_mm^2
-    gov      = leff_gas > leff_liq ? :gas : :liquid
-    leff     = max(leff_gas, leff_liq)
-    lss      = gov === :gas ? leff + d_mm / 1000.0 : f_lss * leff
-    sr       = lss / (d_mm / 1000.0)
-    return SweepRow(d_mm, leff_gas, leff_liq, leff, lss, sr, gov, sr_min <= sr <= sr_max)
-end
-
-"Geometria envelope para um diâmetro, dado o `Leff` já enveloppado e quem governa."
-function envelope_geometry(d_mm::Real, leff::Real, gov::Symbol, f_lss::Real)
-    lss = gov === :gas ? leff + d_mm / 1000.0 : f_lss * leff
-    return (lss, lss / (d_mm / 1000.0))
-end
+# A geometria a partir das restrições (`diameter_grid`, `sweep_row`, `lss_from`) não
+# está mais aqui: ela nunca foi do separador, e vive em `src/sizing/constraints.jl`
+# junto ao contrato que o motor de envelope consome. O que sobra neste arquivo é o que
+# é de fato de Stewart & Arnold — os três blocos e as divergências documentadas acima.
 
 # ---------------------------------------------------------------------------
 # Dimensionamento de caso único
@@ -194,66 +160,13 @@ end
 `params` é um `Dict{Symbol,Float64}` com as chaves declaradas em
 `config/equipment/separator/stewart_arnold.toml`. Valores ausentes assumem o default
 do descritor. Inviabilidade é devolvida como `feasible = false`, nunca lançada.
+
+O corpo está em [`size_vessel`](@ref), compartilhado com os demais vasos da família:
+dadas as restrições, a varredura e a escolha do diâmetro não têm nada de trifásico.
+Fica como método de `size_equipment` — e não como o próprio `size_vessel` despachado no
+tipo abstrato — porque `size_equipment` é o ponto de extensão declarado em
+`src/interfaces.jl`: um equipamento que não seja um vaso (uma bomba, um trocador) tem
+de poder escrever o seu do zero.
 """
-function size_equipment(eq::Separator, m::StewartArnold, s::StreamState,
-                        params::AbstractDict)
-    p = with_defaults(parameters(m), params)
-    k = constants(_sa_config())
-
-    ok, cons, tr = separator_constraints(m, s, p, k)
-    ok || return infeasible(method_id(m), cons; trace = tr)
-
-    f_lss = float(k[:lss_liquid_factor])
-    grid  = diameter_grid(p)
-
-    isempty(grid) && return infeasible(method_id(m),
-        "Grade de diâmetros vazia: verifique d_min ($(p[:d_min])), " *
-        "d_max ($(p[:d_max])) e passo ($(p[:d_step])).";
-        trace = tr, d_max_mm = cons.d_max_mm, d_max_mechanism = cons.mechanism)
-
-    sweep = [sweep_row(d, cons, f_lss, p[:sr_min], p[:sr_max]) for d in grid]
-    admissible = filter(r -> r.d_mm <= cons.d_max_mm && r.sr_ok, sweep)
-
-    if isempty(admissible)
-        return infeasible(method_id(m),
-            selection_diagnosis(sweep, cons.d_max_mm, cons.mechanism,
-                                p[:sr_min], p[:sr_max]);
-            sweep, trace = tr, d_max_mm = cons.d_max_mm,
-            d_max_mechanism = cons.mechanism)
-    end
-
-    best = argmin(r -> abs(r.sr - p[:sr_target]), admissible)
-    trace!(tr, :selection, "Eq. 24", "SR", "Lss/(d/1000)", best.sr, "–")
-    trace!(tr, :selection, "—", "d escolhido",
-           "menor |SR − $(p[:sr_target])| com $(p[:sr_min]) ≤ SR ≤ $(p[:sr_max])",
-           best.d_mm, "mm")
-
-    return SizingResult(true, "", best.d_mm, best.leff_m, best.lss_m, best.sr,
-                        vessel_volume(best.d_mm, best.lss_m), best.governing,
-                        cons.d_max_mm, cons.mechanism, method_id(m), sweep, tr)
-end
-
-"""
-    selection_diagnosis(rows, d_max, mechanism, sr_min, sr_max) -> String
-
-Explica **por que** o conjunto admissível ficou vazio: se foi o teto de decantação ou
-a banda de esbeltez. É o que a GUI mostra no lugar do resultado.
-"""
-function selection_diagnosis(rows, d_max_mm, mechanism, sr_min, sr_max)
-    under = filter(r -> r.d_mm <= d_max_mm, rows)
-    if isempty(under)
-        return "Nenhum diâmetro da grade respeita o teto de decantação " *
-               "d_max = $(round(d_max_mm, digits = 0)) mm " *
-               "($(mechanism_label(mechanism))). Reduza d_min, ou reveja as " *
-               "viscosidades e os tempos de retenção."
-    end
-    lo, hi = extrema(r.sr for r in under)
-    return "Nenhum diâmetro admissível tem esbeltez na banda $(sr_min)–$(sr_max): " *
-           "abaixo do teto de decantação ($(round(d_max_mm, digits = 0)) mm) o SR " *
-           "varia de $(round(lo, digits = 2)) a $(round(hi, digits = 2)). " *
-           "Amplie a grade de diâmetros ou a banda de SR."
-end
-
-"Rótulo PT-BR do mecanismo de decantação que impôs o teto de diâmetro."
-mechanism_label(m::Symbol) = m === :water_in_oil ? "água em óleo" :
-                             m === :oil_in_water ? "óleo em água" : String(m)
+size_equipment(eq::Separator, m::StewartArnold, s::StreamState, params::AbstractDict) =
+    size_vessel(eq, m, s, params)

@@ -174,3 +174,136 @@ end
     @test occursin("A", s)
     @test occursin("decantação", s)
 end
+
+# ---------------------------------------------------------------------------
+# A genericidade do motor, provada por um vaso que não existe
+# ---------------------------------------------------------------------------
+#
+# Até o Sprint 5 `size_envelope` era declarada sobre `::Separator, ::StewartArnold` e o
+# corpo lia o TOML do separador. Um segundo equipamento ganharia formulário e caso
+# único e PERDERIA o multi-caso, sem erro e sem teste vermelho — só um método que a
+# tela não conseguiria oferecer.
+#
+# Este vaso fake é a guarda contra a regressão. Ele não tem física: as restrições são
+# proporcionais às vazões, com um fator por parâmetro. É de propósito — o que se está
+# testando é o MOTOR, e um teste que precisasse da física de um segundo vaso real só
+# poderia existir depois de escrevê-la.
+
+struct VasoFake <: AbstractEquipment end
+FPSOSiz.method_id(::VasoFake) = :vaso_fake
+FPSOSiz.label(::VasoFake) = "Vaso Fake (sem física)"
+
+struct MetodoVasoFake <: AbstractSizingMethod end
+FPSOSiz.method_id(::MetodoVasoFake) = :metodo_vaso_fake
+FPSOSiz.label(::MetodoVasoFake) = "Método de mentira"
+FPSOSiz.applies_to(::MetodoVasoFake) = VasoFake()
+
+# Os seis descritores que o motor exige por nome (grade e banda de SR), mais os dois
+# fatores próprios. Ver o cabeçalho de src/sizing/constraints.jl.
+FPSOSiz.parameters(::MetodoVasoFake) = [
+    ParameterSpec(:d_min,      "Diâmetro mínimo",  "mm", 1000.0, 500.0, 9000.0, false, "fake"),
+    ParameterSpec(:d_max,      "Diâmetro máximo",  "mm", 6000.0, 500.0, 9000.0, false, "fake"),
+    ParameterSpec(:d_step,     "Passo",            "mm",  100.0,  10.0, 1000.0, false, "fake"),
+    ParameterSpec(:sr_min,     "SR mínimo",        "–",     3.0,   1.0,   10.0, false, "fake"),
+    ParameterSpec(:sr_max,     "SR máximo",        "–",     5.0,   1.0,   10.0, false, "fake"),
+    ParameterSpec(:sr_target,  "SR alvo",          "–",     4.0,   1.0,   10.0, false, "fake"),
+    ParameterSpec(:fator_gas,  "Fator de gás",     "–",   1.0e4,   1.0,   1e9,  true,  "fake"),
+    ParameterSpec(:fator_liq,  "Fator de líquido", "–",   2.4e8,   1.0,   1e12, true,  "fake"),
+]
+
+# Nenhum arquivo em disco: `method_config` só precisa devolver algo de que `constants`
+# saiba tirar o bloco. É o que prova que o motor lê o TOML DO MÉTODO que recebeu, e não
+# o do separador.
+FPSOSiz.method_config(::MetodoVasoFake) =
+    Dict{String,Any}("constants" => Dict{String,Any}("lss_liquid_factor" => 1.25))
+
+function FPSOSiz.sizing_constraints(m::MetodoVasoFake, s::StreamState,
+                                    p::AbstractDict, k::AbstractDict)
+    tr = FPSOSiz.CalcTrace()
+    q_liq = s.oil.volumetric_flow + s.water.volumetric_flow
+    d_leff_gas = p[:fator_gas] * s.gas.volumetric_flow
+    d2_leff    = p[:fator_liq] * q_liq
+    FPSOSiz.trace!(tr, :gas,    "—", "d·Leff",  "fator·Qg", d_leff_gas, "mm·m")
+    FPSOSiz.trace!(tr, :liquid, "—", "d²·Leff", "fator·Ql", d2_leff, "mm²·m")
+    # Construtor de dois argumentos: sem teto de decantação (Inf) e sem geometria de
+    # três camadas (NaN) — o caminho que o vaso bifásico do Sprint 5 vai percorrer.
+    return (true, VesselConstraints(d_leff_gas, d2_leff), tr)
+end
+
+FPSOSiz.size_equipment(eq::VasoFake, m::MetodoVasoFake, s::StreamState,
+                       params::AbstractDict) = FPSOSiz.size_vessel(eq, m, s, params)
+
+@testset "o motor de envelope é genérico sobre o equipamento" begin
+    register!(VasoFake())
+    register!(MetodoVasoFake())
+
+    base = defaults(FPSOSiz.stream_parameters())
+    dobro = merge(base, Dict(:q_oil   => 2 * base[:q_oil],
+                             :q_water => 2 * base[:q_water]))
+
+    @testset "dimensiona um equipamento que o motor nunca viu" begin
+        env = size_envelope(VasoFake(), MetodoVasoFake(), CaseSet([Case("único", base)]))
+        @test env.feasible
+        @test isfinite(env.diameter_mm)
+        # o resultado por caso carrega o id do método FAKE — o motor não substituiu
+        # o método recebido pelo do separador em nenhum ponto do caminho
+        @test env.per_case[1].method_id === :metodo_vaso_fake
+        @test 3.0 <= env.sr <= 5.0
+        # sem teto de decantação: é o caminho `d_max_mm = Inf` do VesselConstraints
+        @test env.d_max_mm == Inf
+        @test length(env.per_case) == 1
+        @test env.per_case[1].feasible
+        # `lss_from` default, com o fator vindo do `method_config` DO MÉTODO (1,25) —
+        # se o motor tivesse lido o TOML do separador, este número não fecharia
+        @test env.lss_m ≈ 1.25 * env.leff_m
+    end
+
+    @testset "multi-caso: a envelope cobre todos, e o maior governa" begin
+        cs = CaseSet([Case("normal", base), Case("dobro", dobro)])
+        env = size_envelope(VasoFake(), MetodoVasoFake(), cs)
+        @test env.feasible
+        @test length(env.case_names) == 2
+        @test env.driver_case == "dobro"          # o dobro de líquido exige mais Leff
+        @test env.governing === :liquid
+
+        # A propriedade que define o motor: em TODO diâmetro da grade, o Leff envelope
+        # é o máximo dos Leff de cada caso. É isto que torna o vaso resultante válido
+        # para os dois sem hipótese de monotonicidade.
+        for row in env.rows
+            @test row.leff_m ≈ maximum(row.per_case_leff)
+        end
+        @test all(env.slack_m .>= -1e-9)          # nenhum caso fica de fora
+    end
+
+    @testset "um caso mais exigente não encolhe o vaso" begin
+        so  = size_envelope(VasoFake(), MetodoVasoFake(), CaseSet([Case("n", base)]))
+        com = size_envelope(VasoFake(), MetodoVasoFake(),
+                            CaseSet([Case("n", base), Case("d", dobro)]))
+        @test com.feasible && so.feasible
+        @test com.leff_m >= so.leff_m
+        @test com.volume_m3 >= so.volume_m3
+    end
+
+    @testset "par equipamento/método incoerente é recusado" begin
+        # Com dois equipamentos no registro este engano passa a ser possível, e sem a
+        # guarda ele produziria números do método errado sob o rótulo do outro.
+        env = size_envelope(Separator(), MetodoVasoFake(), CaseSet([Case("x", base)]))
+        @test !env.feasible
+        @test occursin("não se aplica", env.message)
+    end
+
+    @testset "o separador atravessa o mesmo caminho genérico" begin
+        # A generalização não pode ter aberto um desvio só para o separador: o
+        # equipamento real e o fake saem os dois do registro, pelas mesmas funções.
+        for eq in equipments(), met in methods_for(eq)
+            met isa MetodoVasoFake || met isa StewartArnold || continue
+            @test FPSOSiz.method_config(met) isa AbstractDict
+            k = FPSOSiz.constants(FPSOSiz.method_config(met))
+            @test haskey(k, :lss_liquid_factor)
+            # `lss_from` responde para os dois, e o ramo do gás não usa o fator
+            @test FPSOSiz.lss_from(met, 3000.0, 10.0, :gas, k) ≈ 13.0
+            @test FPSOSiz.lss_from(met, 3000.0, 10.0, :liquid, k) ≈
+                  10.0 * float(k[:lss_liquid_factor])
+        end
+    end
+end
