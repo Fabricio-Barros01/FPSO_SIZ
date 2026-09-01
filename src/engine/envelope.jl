@@ -104,9 +104,29 @@ function size_envelope(eq::AbstractEquipment, m::AbstractSizingMethod, cases::Ca
         "Grade de diâmetros vazia (d_min = $d_lo, d_max = $d_hi, passo = $d_step).";
         case_names = names, per_case)
 
-    sr_min    = minimum(p[:sr_min]    for p in params)
-    sr_max    = maximum(p[:sr_max]    for p in params)
-    sr_target = sum(p[:sr_target] for p in params) / length(params)
+    # Banda de esbeltez: INTERSEÇÃO, ao contrário da grade logo acima.
+    #
+    # A assimetria é deliberada e vale a pena explicar, porque as duas linhas parecem
+    # fazer a mesma coisa e fazem o oposto. A grade é onde se PROCURA: uni-la (menor
+    # d_min, maior d_max) só amplia a busca, e ampliar busca não perde solução. A banda
+    # é o que se ACEITA: uni-la afrouxaria a exigência. Com um caso pedindo SR ∈ [3, 5] e
+    # outro [3,5 , 4,5], a união aceitaria um vaso com SR = 3,2 — que viola o segundo
+    # caso, e o vaso é um só. A interseção é a única leitura em que "atende a todos os
+    # casos" continua verdadeira.
+    sr_min = maximum(p[:sr_min] for p in params)
+    sr_max = minimum(p[:sr_max] for p in params)
+    sr_min <= sr_max || return infeasible_envelope(
+        "As bandas de esbeltez pedidas pelos casos não se cruzam: o mais exigente pede " *
+        "SR ≥ $(sr_min) e outro pede SR ≤ $(sr_max). Como o vaso é um só, não há " *
+        "esbeltez que atenda a todos.";
+        case_names = names, per_case, d_max_mm = minimum(c.d_max_mm for c in conss))
+
+    # `sr_target` é PREFERÊNCIA, não restrição: é o alvo do desempate entre diâmetros
+    # já admissíveis. Por isso a média, e não um extremo — nenhum caso tem direito de
+    # veto sobre o gosto dos outros. Depois de fixado, é preso à banda, senão um alvo
+    # fora dela empurraria a escolha sempre para a mesma ponta.
+    sr_target = clamp(sum(p[:sr_target] for p in params) / length(params),
+                      sr_min, sr_max)
 
     # Teto de decantação: o mais restritivo entre os casos.
     i_dmax     = argmin(c.d_max_mm for c in conss)

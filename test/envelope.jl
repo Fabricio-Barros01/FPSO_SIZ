@@ -307,3 +307,42 @@ FPSOSiz.size_equipment(eq::VasoFake, m::MetodoVasoFake, s::StreamState,
         end
     end
 end
+
+@testset "a banda de esbeltez é interseção, não união" begin
+    # A grade de diâmetros é união (procurar mais largo não perde solução); a banda de
+    # aceitação é interseção (aceitar mais largo afrouxa a exigência). As duas linhas
+    # são vizinhas em envelope.jl e fazem o oposto — daí o teste.
+    base = defaults(FPSOSiz.stream_parameters())
+    largo   = merge(base, Dict(:sr_min => 3.0, :sr_max => 5.0))
+    estreito = merge(base, Dict(:sr_min => 3.5, :sr_max => 4.0))
+
+    @testset "o caso mais exigente manda" begin
+        env = size_envelope(VasoFake(), MetodoVasoFake(),
+                            CaseSet([Case("largo", largo), Case("estreito", estreito)]))
+        @test env.feasible
+        # Sob a união, [3,0 , 5,0] seria aceito e um vaso com SR = 3,2 passaria —
+        # violando o caso "estreito", que pediu SR ≥ 3,5. O vaso é um só.
+        @test 3.5 <= env.sr <= 4.0
+        @test all(r -> !r.sr_ok || 3.5 <= r.sr <= 4.0, env.rows)
+    end
+
+    @testset "bandas que não se cruzam viram diagnóstico, não vaso" begin
+        baixo = merge(base, Dict(:sr_min => 2.0, :sr_max => 3.0))
+        alto  = merge(base, Dict(:sr_min => 4.5, :sr_max => 6.0))
+        env = size_envelope(VasoFake(), MetodoVasoFake(),
+                            CaseSet([Case("baixo", baixo), Case("alto", alto)]))
+        @test !env.feasible
+        @test occursin("não se cruzam", env.message)
+        # inviabilidade é estado retornado, com os nomes preservados para a tela
+        @test env.case_names == ["baixo", "alto"]
+    end
+
+    @testset "o alvo de SR é preso à banda" begin
+        # `sr_target` é preferência, não restrição: é a média entre casos. Mas uma média
+        # que caia fora da banda comum empurraria o desempate sempre para a mesma ponta.
+        fora = merge(base, Dict(:sr_min => 3.0, :sr_max => 3.5, :sr_target => 5.0))
+        env = size_envelope(VasoFake(), MetodoVasoFake(), CaseSet([Case("fora", fora)]))
+        @test env.feasible
+        @test 3.0 <= env.sr <= 3.5
+    end
+end

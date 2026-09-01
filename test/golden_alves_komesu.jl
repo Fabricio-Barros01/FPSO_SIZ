@@ -114,4 +114,34 @@ const TABELA_3 = [
         end
         @test all(e -> isfinite(e.value), res.trace.entries)
     end
+
+    @testset "a variante geométrica da Eq. 21 é registrada, e não decide" begin
+        # β é a altura fracionária do ÓLEO; a da água é `0,5 − β`. O artigo divide as
+        # duas espessuras por β. Seguimos o artigo — é o que reproduz o resultado
+        # publicado, e é o propósito declarado do software — mas a variante geométrica
+        # é emitida no rastro, porque a diferença NÃO é de arredondamento e o leitor do
+        # memorial não teria como recalculá-la.
+        entradas = Dict(e.eq => e for e in res.trace.entries)
+        @test haskey(entradas, "Eq. 21")     # a publicada, que decide
+        @test haskey(entradas, "Eq. 21*")    # a geométrica, que só informa
+
+        beta = only(filter(e -> e.var == "β", res.trace.entries)).value
+        publicada  = entradas["Eq. 21"].value
+        geometrica = entradas["Eq. 21*"].value
+
+        # A razão entre as duas é exatamente β/(0,5−β) — ~6,3 no caso publicado.
+        @test publicada / geometrica ≈ (0.5 - beta) / beta rtol = 1e-9
+        @test publicada > 6 * geometrica
+
+        # E o que decide continua sendo a forma publicada: o teto é o da Eq. 19 e o
+        # mecanismo é água em óleo, como o artigo conclui. Se algum dia a variante
+        # passar a governar, este teste cai — que é o ponto.
+        @test res.d_max_mm ≈ entradas["Eq. 19"].value
+        @test res.d_max_mechanism === :water_in_oil
+
+        # O tamanho do que se está deixando passar: sob a leitura geométrica o teto
+        # seria 3810 mm e TODA a Tabela 3 (5200–5950 mm) seria recusada.
+        @test geometrica < 4000.0
+        @test all(r -> r.d_mm > geometrica, res.sweep)
+    end
 end

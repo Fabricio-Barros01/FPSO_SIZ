@@ -100,7 +100,7 @@ mutable struct AppState
     arquivo::String                          # nome do TOML de onde os casos vieram
     rotulo::String                           # `label` declarado nesse arquivo
     globais::Dict{Symbol,Float64}
-    resultado::Any                           # EnvelopeResult | nothing
+    resultado::Union{FPSOSiz.EnvelopeResult,Nothing}
     d_sel::Float64
     status::String
     status_ok::Bool

@@ -36,10 +36,35 @@ física não é duplicada.
    nenhum dos dois o gás governa, então a conclusão do artigo se mantém; expomos `µ_g`
    como entrada explícita para que a escolha fique visível.
 
-3. **Eq. 21.** O artigo divide `(h_w)max` por `β`, o mesmo β da Eq. 19. Geometricamente
-   a altura fracionária da fase água é `0,5 − β`, não `β`. Seguimos o texto publicado
-   (β nos dois), porque é o que reproduz o resultado do artigo; a alternativa fica
-   registrada aqui e no rastro de cálculo.
+3. **Eq. 21 — a divergência que mais custa.** O artigo divide `(h_w)max` por `β`, o
+   mesmo β da Eq. 19. Mas β **é** a altura fracionária da fase *óleo* (`β = h_o/d`); a
+   da fase água, num vaso meio cheio, é `0,5 − β`. Dividir a espessura máxima de água
+   pela fração de óleo não é uma escolha de modelagem: é usar a cota errada.
+
+   Não é diferença de arredondamento. Para o caso publicado (Tabela 1), com
+   `β = 0,0685`, `(h_o)max = 1130,3 mm` e `(h_w)max = 1644,0 mm`:
+
+   | | `d_max` |
+   |---|---|
+   | Eq. 19, água em óleo — `(h_o)max/β` | 16508 mm |
+   | Eq. 21 **publicada** — `(h_w)max/β` | 24011 mm |
+   | Eq. 21 **geométrica** — `(h_w)max/(0,5−β)` | **3810 mm** |
+
+   A forma publicada infla o teto de óleo-em-água em `β/(0,5−β) ≈ 6,3×`, o que **inverte
+   qual mecanismo governa**: pela publicada o teto é 16508 mm e governa a água em óleo
+   (que é a conclusão do artigo); pela geométrica o teto cai para 3810 mm e governa o
+   óleo em água. Nesse teto, **toda a faixa da Tabela 3 (5200–5950 mm) seria recusada** —
+   no `d` que o software escolhe a camada de água mede `(0,5−β)·d = 2395 mm` contra os
+   1644 mm que a gotícula de óleo consegue subir no tempo de retenção, 46 % acima.
+
+   Ou seja: o método publicado é não-conservador exatamente no mecanismo que ele
+   descarta por argumento de tamanho de gotícula (500 µm > 200 µm).
+
+   **Seguimos o texto publicado**, porque o propósito declarado do software é reproduzir
+   e generalizar o método do artigo, e mudar a equação faria o caso-ouro deixar de
+   reproduzi-lo. Mas a variante geométrica é **calculada e emitida no rastro de cálculo**
+   (`Eq. 21*`), para que ela apareça no memorial que vai anexo ao relatório em vez de
+   viver só neste comentário. Ver `test/golden_alves_komesu.jl`.
 """
 
 struct Separator <: AbstractEquipment end
@@ -134,6 +159,22 @@ function sizing_constraints(m::StewartArnold, s::StreamState,
     d_max_oiw = hw_max / beta
     trace!(tr, :settling, "Eq. 19", "d_max (água em óleo)", "(h_o)max/β", d_max_wio, "mm")
     trace!(tr, :settling, "Eq. 21", "d_max (óleo em água)", "(h_w)max/β", d_max_oiw, "mm")
+
+    # A variante geométrica da Eq. 21, que NÃO decide nada — só é registrada.
+    #
+    # β é a altura fracionária do ÓLEO; a da água é `0,5 − β`. O artigo divide as duas
+    # espessuras por β, e a diferença não é de arredondamento: o fator `β/(0,5−β)` vale
+    # ~6,3 no caso publicado, e sob a leitura geométrica o teto cairia de 16508 para
+    # 3810 mm, invertendo qual mecanismo governa e recusando toda a Tabela 3.
+    #
+    # Emitir a linha aqui é o que faz esse número chegar ao memorial — e o memorial é o
+    # que vai anexo ao relatório. Deixá-la só no comentário do topo do arquivo seria
+    # esconder do leitor do resultado a única coisa que ele não teria como recalcular.
+    # O `*` no nome, e não "(geom.)": `linha_memorial` alinha `var` em 24 colunas, e um
+    # rótulo que estoure a coluna cola no valor. Ver o teste de larguras em smoke.jl.
+    trace!(tr, :settling, "Eq. 21*", "d_max (óleo em água)*",
+           "(h_w)max/(0,5−β) — variante não adotada; ver nota 3 em stewart_arnold.jl",
+           hw_max / (0.5 - beta), "mm")
 
     d_max, mechanism = d_max_wio <= d_max_oiw ? (d_max_wio, :water_in_oil) :
                                                 (d_max_oiw, :oil_in_water)

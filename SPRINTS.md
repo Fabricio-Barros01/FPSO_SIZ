@@ -12,7 +12,7 @@ lido inteiro sem abrir mais nada.
 
 **SPRINT ATUAL: 5 — Segundo equipamento no registro**
 
-**1305 testes passando** (595 no core, 710 na interface).
+**2291 testes passando** (611 no core, 1680 na interface).
 
 O software dimensiona um separador trifásico horizontal pelo modelo semiempírico de
 Stewart & Arnold (2008), com um motor de envelope multi-caso que entrega **um** vaso
@@ -363,10 +363,63 @@ trifásico, e um caso carregado com as chaves erradas cairia todo nos defaults s
 avisar — exatamente a classe de falha silenciosa que o Sprint 2 corrigiu na herança por
 posição. Ou se pergunta antes, ou se converte o que casa e se avisa do resto.
 
+### Revisão de conceitos, antes de crescer o core
+
+Pedida entre o passo 1 e o 2, e feita contra o artigo-fonte
+(`References/AlvesKomesu_Lajer_2025-1.pdf`) em vez de contra memória. Confirmou como
+corretos o coeficiente da Eq. 22 (as seis linhas da Tabela 3 implicam 4,2005×10⁴; o
+derivado erra 0,35 %, o impresso 1,9 %), a Eq. 23 (19,29 × 4/3 = 25,72 contra 25,71
+publicado), a Eq. 24, o β analítico e o ponto único de conversão de unidades. Achou
+quatro coisas, corrigidas antes do passo 2:
+
+**A Eq. 21 custa mais do que a nota dizia.** β é a altura fracionária do **óleo**; a da
+água é `0,5 − β`. O artigo divide as duas espessuras por β, e o fator `β/(0,5−β)` vale
+~6,3 no caso publicado:
+
+| | `d_max` |
+|---|---|
+| Eq. 19, água em óleo — `(h_o)max/β` | 16508 mm |
+| Eq. 21 publicada — `(h_w)max/β` | 24011 mm → teto 16508 mm, governa **água em óleo** |
+| Eq. 21 geométrica — `(h_w)max/(0,5−β)` | **3810 mm** → governa **óleo em água** |
+
+A diferença **inverte o mecanismo governante** e recusaria toda a Tabela 3: no `d`
+escolhido a camada de água mede 2395 mm contra os 1644 mm que a gotícula de óleo sobe no
+tempo de retenção. O método publicado é não-conservador exatamente no mecanismo que ele
+descarta por argumento de tamanho de gotícula. E a nota afirmava que a alternativa ficava
+"registrada aqui **e no rastro de cálculo**" — o rastro só tinha a forma publicada.
+
+*Decisão:* a forma publicada continua governando (o propósito do software é reproduzir e
+generalizar o método do artigo, e mudá-la faria o caso-ouro deixar de reproduzi-lo), e a
+variante geométrica passou a ser **calculada e emitida no rastro** como `Eq. 21*`. Ela
+atravessa até o memorial de graça, porque `linha_memorial` já serve tela e `.txt`. Um
+teste fixa que as duas existem, que a razão entre elas é `β/(0,5−β)`, e que quem decide
+continua sendo a publicada.
+
+**A banda de esbeltez do envelope era união.** `sr_min = minimum(...)`,
+`sr_max = maximum(...)`. A grade de diâmetros é união de propósito — procurar mais largo
+não perde solução; alargar a **banda de aceitação** é o oposto: com um caso pedindo
+`SR ∈ [3, 5]` e outro `[3,5 , 4,5]`, um vaso com `SR = 3,2` era aceito violando o
+segundo, e o vaso é um só. Virou interseção, com diagnóstico quando as bandas não se
+cruzam. `sr_target` continua sendo a média (é preferência, não restrição) mas agora é
+preso à banda.
+
+**O volume ignora os tampos** — 772,5 m³ mostrados contra 837,9 m³ com os tampos 2:1 que
+a tela desenha, 8,5 % a menos. Como `Lss` é costura a costura, casco-só é a definição
+certa; o rótulo é que prometia demais. Virou "Volume (casco, entre tampos)".
+
+**O exemplo da docstring do módulo não rodava:** mostrava `(5500.0, 4.18…)` com os
+defaults, cuja grade é `3000:150:8000` e não contém 5500. O valor real é `(5550.0, 4.08)`.
+
+*Defeito introduzido e corrigido na mesma rodada:* o rótulo da `Eq. 21*` nasceu com 27
+caracteres numa coluna de 24, e o valor colou no texto — uma linha ilegível no meio do
+memorial que vai anexo ao relatório. Ganhou um teste que confere a largura de **toda**
+entrada de rastro contra a coluna que a recebe.
+
 ### Passos
 
 1. ✅ Generalizar o motor de envelope (obstáculo 1), **sem** o equipamento novo. Foi
    sozinho de propósito: é o passo que se pode errar sem perceber.
+1b. ✅ Revisão de conceitos e as quatro correções acima.
 2. ← **próximo.** `stream_keys(m)` e o formulário filtrado (obstáculo 2).
 3. `src/sizing/vessel/knockout.jl` + `config/equipment/knockout/*.toml`, com `register!`
    em `__init__` (`src/FPSOSiz.jl:95`). O TOML tem de passar em `test/architecture.jl`:

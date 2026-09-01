@@ -16,7 +16,8 @@ using FPSOSiz
 vals = FPSOSiz.default_case_values()
 res  = FPSOSiz.size_equipment(Separator(), StewartArnold(),
                               FPSOSiz.stream_from_case(vals), vals)
-res.diameter_mm, res.sr        # (5500.0, 4.18…)
+res.diameter_mm, res.sr        # (5550.0, 4.08…) — grade default 3000:150:8000
+
 
 # multi-caso: um vaso que atende os dois
 cases = CaseSet([

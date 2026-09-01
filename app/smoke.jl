@@ -413,6 +413,30 @@ FPSOSiz._CASOS[] = ""
         end
     end
 
+    @testset "as colunas do memorial não estouram" begin
+        # `linha_memorial` alinha em larguras fixas (rpad de 10, 10, 24, 16, 8). Um
+        # rótulo mais longo que a sua coluna não quebra nada visível do lado do Julia:
+        # ele apenas cola no campo seguinte, e o memorial — que vai ANEXO ao relatório —
+        # sai com uma linha ilegível no meio de trinta legíveis. Foi o que aconteceu ao
+        # acrescentar a variante geométrica da Eq. 21 ("d_max (óleo em água, geom.)",
+        # 27 caracteres numa coluna de 24).
+        st = A.AppState(); A.dimensionar!(st)
+        larguras = ("block" => 10, "eq" => 10, "var" => 24, "unit" => 8)
+
+        for res in st.resultado.per_case, e in res.trace.entries
+            for (campo, largura) in larguras
+                texto = string(getfield(e, Symbol(campo)))
+                @test textwidth(texto) < largura     # `<`, não `<=`: sobra o separador
+            end
+            # e o valor formatado também tem de caber
+            @test textwidth(A.Formato.num(e.value, 5)) < 16
+
+            # a conferência de fato: nenhuma coluna encosta na seguinte
+            linha = A.linha_memorial(e)
+            @test !occursin(r"\S{25,}", linha[1:min(end, 60)])
+        end
+    end
+
     @testset "memorial sem resultado não quebra" begin
         # Mesmo contrato do resto da tela: ausência de resultado é estado, não exceção.
         st = A.AppState()
