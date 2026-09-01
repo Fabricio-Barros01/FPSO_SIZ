@@ -1,17 +1,22 @@
 # Ambiente local da máquina (o direnv reconstrói a partir do flake)
-.direnv
+.direnv/
 .envrc
 
 # Bibliografia de terceiros — PDFs sob direito autoral, não redistribuíveis.
-# O índice do que há aqui está em FPSO-Optimization/CLAUDE.md › Ativos e referências.
-/references
+# NOTA: a logo do SENAI CETIQT não fica aqui. Ela é recurso da aplicação, vive em
+# app/public/senai-cetiqt.webp e precisa ser versionada — é copiada para dentro do
+# bundle do PackageCompiler junto com o resto de public/.
+/References/
 
-# Artefatos que o Genie escreve ao rodar a GUI do FPSO-Optimization_V1. São estado da
-# execução local, não do projeto: `log/` são os logs do servidor e `.theme` guarda o
-# tema escolhido no navegador daquela máquina.
-FPSO-Optimization_V1/log/
-FPSO-Optimization_V1/app/log/
-FPSO-Optimization_V1/.theme
+# Artefatos de build e execução
+/build/out/
+/dist/
+/scratch/
+# CSV, memorial e SVG gerados pelo app
+/saida/
+*.cov
+*.jl.mem
+/docs/build/
 
-# NOTA: flake.nix, flake.lock e Manifest.toml são versionados DE PROPÓSITO —
-# juntos, são o que torna o ambiente reprodutível (item da Definition of Done).
+# NOTA: flake.nix, flake.lock, Project.toml e Manifest.toml são versionados
+# DE PROPÓSITO — juntos são o que torna o ambiente reprodutível.
