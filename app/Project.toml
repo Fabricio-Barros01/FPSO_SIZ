@@ -1,0 +1,36 @@
+name = "FPSOSizApp"
+uuid = "8c1b4a2e-3f77-4d55-9a10-6e2c9b8d4f31"
+authors = ["Fabricio Barros <fabriciotrabalho01@gmail.com>"]
+version = "0.1.0"
+
+# NOTA DE ARQUITETURA: a interface vive aqui e depende do core, nunca o contrário.
+# `test/architecture.jl` na raiz garante que FPSOSiz não importe nada disto.
+#
+# O Genie entra como **biblioteca de servidor HTTP**, não como framework MVC: nada de
+# `Genie.loadapp()`, de `Genie.Assets.*` ou de Stipple. O motivo é empacotamento — esses
+# caminhos resolvem o diretório-fonte do próprio pacote Genie, que o PackageCompiler não
+# embarca no executável. Ver a nota no topo de src/server.jl.
+#
+# HTTP é dependência indireta do Genie, mas `smoke.jl` e `precompile/aquecimento.jl` a
+# usam direto — e no Julia dependência indireta não é importável.
+
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+FPSOSiz = "4f13f718-4653-46cc-8e94-84be0defd37a"
+Genie = "c43c736e-a2d1-11e8-161f-af95117fbd1e"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[sources]
+FPSOSiz = {path = ".."}
+
+[compat]
+Genie = "6"
+HTTP = "2"
+JSON3 = "1"
+julia = "1.10"

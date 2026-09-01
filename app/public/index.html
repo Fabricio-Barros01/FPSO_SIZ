@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FPSO_Siz — Dimensionamento de Separadores</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:,">
+<!--ESTADO-INICIAL--></head>
+<!--
+  A marca `data-smoke` existe para o teste de fumaça: é como ele distingue "o servidor
+  devolveu a nossa página" de "o servidor devolveu alguma coisa com status 200".
+  Ver app/smoke.jl.
+
+  Nenhum campo de entrada é escrito aqui. O formulário nasce em app.js a partir de
+  /api/esquema, que por sua vez vem dos `ParameterSpec` que o core declara. É a regra de
+  src/interfaces.jl: a interface nunca cita um parâmetro pelo nome.
+-->
+<body data-smoke="fpso-siz-genie">
+
+<header class="topo">
+  <!--
+    A logo vive em public/, não em References/: aquela pasta guarda bibliografia de
+    terceiros e está no .gitignore, enquanto isto é um recurso da aplicação e precisa
+    ser copiado para dentro do bundle do PackageCompiler junto com o resto de public/.
+  -->
+  <img class="marca" src="/senai-cetiqt.webp" alt="SENAI CETIQT" width="860" height="131">
+  <h1>FPSO_Siz</h1>
+  <span class="equipamento" id="rotulo-equipamento">—</span>
+  <span class="metodo" id="rotulo-metodo">—</span>
+  <div class="acoes">
+    <button id="btn-dimensionar" class="primario" type="button">▶&nbsp; Dimensionar</button>
+    <button id="btn-exportar" type="button">⬇&nbsp; Exportar</button>
+    <!-- Fechar a aba não encerraria o servidor: ele é um processo à parte, e o
+         usuário ficaria com o programa rodando sem nada na tela. -->
+    <button id="btn-sair" class="sair" type="button" title="Encerra o programa">Sair</button>
+  </div>
+</header>
+
+<main>
+  <!-- ------------------------------------------------ coluna 1: casos -->
+  <section class="coluna casos">
+    <h2>Casos / correntes</h2>
+
+    <!--
+      Barra de arquivo. Até o Sprint 3 o conjunto de casos era carregado uma vez, na
+      abertura, e o que se editasse na tela morria com o processo — o programa não
+      tinha como guardar um estudo. O seletor lista os exemplos de fábrica e o que o
+      usuário salvou; "Salvar" grava numa pasta gravável (ver `dir_casos()` em
+      src/config.jl), que num programa instalado NÃO é a pasta do próprio programa.
+    -->
+    <div class="arquivo">
+      <label for="sel-arquivo">arquivo de casos</label>
+      <select id="sel-arquivo"></select>
+      <div class="botoes">
+        <button id="btn-abrir" type="button">Abrir</button>
+        <button id="btn-salvar" type="button">Salvar</button>
+        <button id="btn-salvar-como" type="button">Salvar como…</button>
+      </div>
+    </div>
+
+    <hr class="divisor">
+
+    <select id="sel-caso" aria-label="Caso selecionado"></select>
+
+    <div class="botoes">
+      <button id="btn-novo" type="button">+ Novo</button>
+      <button id="btn-duplicar" type="button">Duplicar</button>
+      <button id="btn-remover" type="button">Remover</button>
+    </div>
+
+    <label class="nome-caso">
+      nome
+      <input id="nome-caso" type="text" autocomplete="off">
+    </label>
+
+    <label class="ativo">
+      <input id="chk-ativo" type="checkbox">
+      <span>caso ativo (entra no envelope)</span>
+    </label>
+
+    <p class="dica">
+      Cada entrada é uma faixa. Valores iguais = fixo;<br>
+      diferentes = expandido em casos de canto.
+    </p>
+
+    <!--
+      `role="presentation"`: isto é grade de layout, não dado tabular — não há
+      relação linha×coluna a navegar. Sem a marca, o leitor de tela entra em "modo
+      tabela" e anuncia "linha 12 de 50, coluna 2" antes de cada caixa. O nome de
+      cada caixa vem do `aria-label` que `linhaCampo` escreve (app.js). Só a árvore
+      de acessibilidade muda; o visual continua o mesmo.
+    -->
+    <table class="form" id="form-campos" role="presentation">
+      <thead>
+        <tr><th></th><th>mín</th><th>máx</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- ------------------------------------------------ coluna 2: vaso -->
+  <section class="coluna vaso">
+    <h2 id="titulo-vaso">Elevação</h2>
+    <div class="figura" id="fig-vaso"></div>
+
+    <div class="corte-linha">
+      <div class="figura" id="fig-corte"></div>
+      <ul class="legenda-fases">
+        <li><span class="amostra gas"></span>gás</li>
+        <li><span class="amostra oleo"></span>óleo</li>
+        <li><span class="amostra agua"></span>água</li>
+      </ul>
+    </div>
+
+    <div class="cursor">
+      <label for="slider-d">diâmetro</label>
+      <input id="slider-d" type="range" min="0" max="0" step="1" value="0">
+      <output id="valor-d">—</output>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------ coluna 3: resultados -->
+  <section class="coluna resultados">
+    <h2>Resultado (envelope)</h2>
+    <dl class="cartao">
+      <dt>Diâmetro d</dt>                 <dd id="r-d" class="destaque grande">—</dd>
+      <dt>Comprimento efetivo Leff</dt>   <dd id="r-leff">—</dd>
+      <dt>Comprimento real Lss</dt>       <dd id="r-lss">—</dd>
+      <dt>Esbeltez SR</dt>                <dd id="r-sr">—</dd>
+      <dt>Volume</dt>                     <dd id="r-volume">—</dd>
+      <dt>Restrição governante</dt>       <dd id="r-governa">—</dd>
+      <dt>Caso governante</dt>            <dd id="r-caso">—</dd>
+      <dt>Teto de decantação</dt>         <dd id="r-teto">—</dd>
+    </dl>
+
+    <h2>Varredura (vizinhança do ótimo)</h2>
+    <table class="varredura">
+      <thead>
+        <tr><th>d (mm)</th><th>Leff (m)</th><th>Lss (m)</th><th>SR</th></tr>
+      </thead>
+      <tbody id="corpo-varredura"></tbody>
+    </table>
+
+    <h2>Ajustes da varredura</h2>
+    <table class="form" id="form-ajustes" role="presentation"><tbody></tbody></table>
+  </section>
+</main>
+
+<!-- ------------------------------------------------ gráficos -->
+<section class="graficos">
+  <div class="figura" id="fig-leff"></div>
+  <div class="figura" id="fig-sr"></div>
+  <div class="legenda">
+    <h2>casos</h2>
+    <div id="legenda-casos"></div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------ memorial de cálculo -->
+<!--
+  Recolhido por padrão e carregado só ao abrir. Duas razões, ambas concretas: a tela de
+  três colunas já está cheia, e o memorial é consulta (confere-se uma vez, ao fechar o
+  dimensionamento), não operação; e o rastro dos dez casos de canto do exemplo de
+  referência é grande demais para viajar em toda resposta de "Dimensionar".
+
+  O conteúdo é `<pre>`: as linhas vêm de `linha_memorial` em colunas de largura fixa —
+  as MESMAS que o `.txt` exportado grava. Ver `memorial` em app/src/api.jl.
+-->
+<details class="memorial" id="memorial">
+  <summary>Memorial de cálculo</summary>
+  <div class="memorial-corpo">
+    <label class="memorial-caso">
+      caso
+      <select id="sel-memorial" aria-label="Caso mostrado no memorial de cálculo"></select>
+    </label>
+    <div id="corpo-memorial"></div>
+  </div>
+</details>
+
+<!--
+  `role="status"` + `aria-live="polite"`: esta barra é o único lugar onde o programa
+  responde a "Dimensionar", "Exportar" e a campo recusado. Sem a região viva, o leitor
+  de tela não anuncia nada — o usuário clica e, para ele, não acontece coisa alguma.
+  `polite` e não `assertive` porque a mensagem não interrompe: ela espera a fala corrente.
+-->
+<footer id="status" class="status" role="status" aria-live="polite">Carregando…</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

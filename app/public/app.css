@@ -1,0 +1,304 @@
+/*
+ * FPSO_Siz — folha de estilo.
+ *
+ * ATENÇÃO: os valores de `:root` abaixo são os mesmos de app/src/formato.jl. A folha de
+ * estilo não tem como importar Julia, então a duplicação é inevitável — e por isso é
+ * vigiada: `app/smoke.jl` compara os dois lados e falha se divergirem. Ao trocar uma
+ * cor, troque nos dois lugares.
+ */
+
+:root {
+  --fundo:       #f9f9f8;
+  --painel:      #ffffff;
+  --tinta:       #212327;
+  --tinta-fraca: #6b717a;
+  --linha:       #d6d8db;
+  --destaque:    #1e4fa0;
+  --ok:          #16804a;
+  --alerta:      #b47b0b;
+  --erro:        #ba2929;
+  --gas:         #d9e2ec;
+  --oleo:        #a47938;
+  --agua:        #4484ba;
+
+  --col-lado: 23.5%;
+  --raio: 4px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 8px 12px 0;
+  background: var(--fundo);
+  color: var(--tinta);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 100vh;
+}
+
+h2 {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--destaque);
+}
+
+/* ---------------------------------------------------------------- topo */
+
+.topo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 40px;
+  flex: 0 0 auto;
+}
+/* Wordmark de 860×131: a altura fixa manda, a largura acompanha a proporção. */
+.topo .marca {
+  height: 22px;
+  width: auto;
+  flex: 0 0 auto;
+}
+.topo h1 {
+  margin: 0;
+  padding-left: 14px;
+  border-left: 1px solid var(--linha);
+  font-size: 19px;
+  color: var(--destaque);
+  flex: 0 0 auto;
+}
+.topo .equipamento, .topo .metodo { font-size: 12px; color: var(--tinta); }
+.topo .acoes { margin-left: auto; display: flex; gap: 8px; }
+
+button {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 14px;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  background: var(--painel);
+  color: var(--tinta);
+  cursor: pointer;
+}
+button:hover { background: #edeff5; }
+button:active { background: var(--destaque); color: var(--painel); }
+button:disabled { opacity: .5; cursor: progress; }
+button.primario { border-color: var(--destaque); color: var(--destaque); font-weight: 600; }
+button.sair { color: var(--tinta-fraca); padding: 7px 12px; }
+button.sair:hover { border-color: var(--erro); color: var(--erro); background: var(--painel); }
+
+/* ---------------------------------------------------------------- colunas */
+
+/* `minmax(0, 1fr)` e não `1fr`: o mínimo automático de uma faixa `fr` é `min-content`,
+   então uma coluna com conteúdo indivisível (nome de caso de canto longo, um SVG largo)
+   se recusa a encolher, o total passa de 100% e nasce barra de rolagem horizontal. O
+   `0` no mínimo autoriza a coluna a encolher, que é o que o `overflow` interno já trata. */
+main {
+  display: grid;
+  grid-template-columns: var(--col-lado) minmax(0, 1fr) var(--col-lado);
+  gap: 12px;
+  align-items: start;
+  flex: 1 1 auto;
+}
+
+.coluna {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+select, input[type=text], input.campo {
+  font: inherit;
+  border: 1px solid var(--linha);
+  border-radius: 3px;
+  background: var(--painel);
+  color: var(--tinta);
+  padding: 3px 6px;
+}
+select { width: 100%; height: 26px; font-size: 11px; }
+select:focus, input:focus { outline: none; border-color: var(--destaque); }
+
+/* Barra de arquivo de casos. Fica acima do seletor de caso e separada dele por uma
+   régua: são dois níveis diferentes — o arquivo contém os casos —, e sem a separação
+   os dois <select> em sequência se leem como um par de campos irmãos. */
+.arquivo { display: flex; flex-direction: column; gap: 4px; }
+.arquivo > label { font-size: 10.5px; color: var(--tinta-fraca); }
+
+.divisor {
+  border: 0; border-top: 1px solid var(--linha);
+  margin: 2px 0 1px; width: 100%;
+}
+
+.casos .botoes { display: flex; gap: 5px; }
+.casos .botoes button { flex: 1; padding: 4px 2px; font-size: 10.5px; }
+
+.nome-caso {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; color: var(--tinta-fraca);
+}
+.nome-caso input { flex: 1; font-size: 11px; height: 24px; }
+
+.ativo { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--tinta-fraca); }
+
+.dica { margin: 2px 0 0; font-size: 9.5px; color: var(--tinta-fraca); }
+
+/* ---------------------------------------------------------------- formulário */
+
+table.form { width: 100%; border-collapse: collapse; }
+table.form th {
+  font-size: 9.5px; font-weight: 400; color: var(--tinta-fraca); padding-bottom: 2px;
+}
+table.form td { padding: 1px 2px; vertical-align: middle; }
+table.form td.rotulo { font-size: 10.5px; width: 46%; }
+table.form td.unidade { font-size: 9.5px; color: var(--tinta-fraca); white-space: nowrap; }
+
+input.campo {
+  width: 100%;
+  min-width: 52px;
+  height: 22px;
+  font-size: 11px;
+  text-align: right;
+}
+input.campo.invalido { border-color: var(--erro); background: #fdf3f3; }
+
+/* A queixa do servidor, ao lado da caixa que ela recusa (ligada por aria-describedby).
+   A borda vermelha sozinha é cor, e cor não é informação para quem não a distingue —
+   o texto é. Vazio não ocupa espaço, então a linha só cresce quando há o que dizer. */
+.erro-campo {
+  display: block;
+  padding: 1px 2px 0;
+  font-size: 9.5px;
+  line-height: 1.25;
+  color: var(--erro);
+}
+.erro-campo:empty { display: none; }
+
+/* ---------------------------------------------------------------- vaso */
+
+.figura { width: 100%; line-height: 0; }
+.figura svg { width: 100%; height: auto; display: block; }
+
+/* O corte é um círculo: deixado solto ele cresce com a largura da coluna e empurra os
+   gráficos para fora da tela. Fica na mesma fração que tinha no layout Makie. */
+.corte-linha { display: grid; grid-template-columns: minmax(0, 46%) 1fr; gap: 12px; align-items: start; }
+.corte-linha .figura { min-width: 0; }
+
+.legenda-fases { list-style: none; margin: 4px 0 0; padding: 0; font-size: 10.5px; color: var(--tinta-fraca); }
+.legenda-fases li { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.amostra { width: 16px; height: 11px; border: 1px solid var(--linha); display: inline-block; flex: 0 0 auto; }
+.amostra.gas { background: var(--gas); }
+.amostra.oleo { background: var(--oleo); }
+.amostra.agua { background: var(--agua); }
+
+.cursor { display: flex; align-items: center; gap: 10px; height: 30px; }
+.cursor label { font-size: 11px; color: var(--tinta-fraca); }
+.cursor input[type=range] { flex: 1; accent-color: var(--destaque); }
+.cursor output { width: 80px; font-size: 12px; font-weight: 700; color: var(--destaque); }
+
+/* ---------------------------------------------------------------- resultados */
+
+.cartao { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; margin: 0; }
+.cartao dt { font-size: 11.5px; color: var(--tinta-fraca); }
+.cartao dd { margin: 0; font-size: 12.5px; text-align: right; }
+.cartao dd.grande { font-size: 15px; font-weight: 700; }
+.cartao dd.destaque { color: var(--destaque); }
+.cartao dd.fora { color: var(--erro); }
+
+table.varredura { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+table.varredura th {
+  font-size: 9.5px; font-weight: 400; color: var(--tinta-fraca);
+  padding-bottom: 2px; text-align: right;
+}
+table.varredura td { text-align: right; padding: 1px 3px; color: var(--tinta-fraca); }
+table.varredura tr.na-banda td { color: var(--tinta); }
+table.varredura tr.centro td { color: var(--destaque); font-weight: 700; }
+
+/* ---------------------------------------------------------------- gráficos */
+
+/* Mesmo cuidado do `main`: aqui a terceira coluna é a legenda, cujo "◀ governa" é
+   `nowrap` — sem o `minmax(0, …)` era ela quem empurrava o total além da largura. */
+.graficos {
+  display: grid;
+  grid-template-columns: 36% 34% minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  flex: 0 0 auto;
+}
+.graficos .legenda { padding-top: 4px; }
+
+ul.legenda-casos { list-style: none; margin: 4px 0 0; padding: 0; font-size: 10px; color: var(--tinta-fraca); }
+ul.legenda-casos li { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+ul.legenda-casos .amostra { width: 14px; height: 3px; border: 0; }
+ul.legenda-casos .nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ul.legenda-casos .marca { color: var(--destaque); font-weight: 700; white-space: nowrap; }
+ul.legenda-casos li.governa .nome { color: var(--tinta); }
+ul.legenda-casos li.resto { font-style: italic; }
+
+/* ---------------------------------------------------------------- memorial */
+
+.memorial { flex: 0 0 auto; border-top: 1px solid var(--linha); padding-top: 6px; }
+.memorial > summary {
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--destaque);
+}
+.memorial > summary:focus-visible { outline: 2px solid var(--destaque); outline-offset: 2px; }
+
+.memorial-corpo { padding: 8px 0 4px; }
+.memorial-caso {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; color: var(--tinta-fraca); margin-bottom: 6px;
+}
+.memorial-caso select { width: auto; min-width: 260px; max-width: 100%; }
+
+.memorial h3 {
+  margin: 10px 0 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--tinta-fraca);
+}
+
+/* As linhas vêm em colunas de largura fixa (`linha_memorial`), então a fonte TEM de ser
+   monoespaçada — é o que faz as colunas se alinharem. E o `overflow-x` é obrigatório:
+   a linha tem ~80 caracteres e não pode empurrar a página inteira para o lado. */
+.memorial pre {
+  margin: 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  background: var(--painel);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  font: 11px/1.5 ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace;
+  color: var(--tinta);
+}
+.memorial pre.fecho {
+  margin-top: 8px;
+  border-color: var(--destaque);
+  color: var(--destaque);
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------- status */
+
+.status {
+  flex: 0 0 auto;
+  padding: 4px 0 8px;
+  font-size: 11px;
+  color: var(--tinta-fraca);
+  border-top: 1px solid var(--linha);
+}
+.status.ruim { color: var(--erro); }
+
+/* Telas estreitas: as três colunas viram uma pilha. Um notebook de 13" ainda cabe no
+   layout de três colunas; abaixo disso ele espremeria os ~50 campos até ficarem ilegíveis. */
+@media (max-width: 1100px) {
+  main, .graficos { grid-template-columns: minmax(0, 1fr); }
+}
