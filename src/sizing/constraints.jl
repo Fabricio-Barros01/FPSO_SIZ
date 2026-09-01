@@ -94,6 +94,19 @@ do separador.
 function method_config end
 
 """
+    method_reference(m) -> String
+
+A referência bibliográfica que o memorial exportado cita, declarada no TOML do método.
+
+Existe porque o cabeçalho do memorial trazia "Alves & Komesu (2025)" fixo no código.
+Isso estava certo enquanto havia um método; com dois, o memorial de um vaso bifásico
+mandaria o leitor conferir as contas num artigo sobre separadores trifásicos. Cada
+método cita a fonte que de fato o define.
+"""
+method_reference(m::AbstractSizingMethod) =
+    String(get(method_config(m), "reference", ""))
+
+"""
     lss_from(m, d_mm, leff, gov, k) -> Float64
 
 Comprimento real `Lss` a partir do `Leff` exigido, em metros.

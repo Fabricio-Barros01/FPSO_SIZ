@@ -182,6 +182,24 @@ const TABELA_3_4 = [
         @test isinf(res.d_max_mm)
     end
 
+    @testset "o resumo não inventa um teto que não existe" begin
+        # `governing_summary` fazia `round(Int, r.d_max_mm)` incondicionalmente e
+        # lançava `InexactError` com `d_max_mm = Inf` — o resumo assumia que todo vaso
+        # tem teto de decantação. Só o segundo equipamento revelou isso.
+        env = size_envelope(eq, m, CaseSet([Case("único", vals)]))
+        @test env.feasible
+        @test isinf(env.d_max_mm)
+        resumo = governing_summary(env)                 # não lança
+        @test occursin("Governa", resumo)
+        @test !occursin("Teto de decantação", resumo)   # cala-se em vez de inventar
+
+        # e o trifásico, que tem teto, continua dizendo qual é
+        vals3 = FPSOSiz.default_case_values()
+        env3 = size_envelope(Separator(), StewartArnold(), CaseSet([Case("t", vals3)]))
+        @test env3.feasible
+        @test occursin("Teto de decantação", governing_summary(env3))
+    end
+
     @testset "multi-caso: o motor de envelope serve o vaso novo sem mudança" begin
         # A invariante do Sprint 5. O envelope foi generalizado ANTES de este vaso
         # existir, e não sabe que ele existe.

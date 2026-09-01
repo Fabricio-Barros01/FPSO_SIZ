@@ -73,8 +73,12 @@ function exportar!(st::AppState)
         csv      = base * "_varredura.csv"
         memorial = base * "_memorial.txt"
 
-        escrever_csv(csv, r)
-        escrever_memorial(memorial, r)
+        # O rótulo do método vem do estado, não de um `StewartArnold()` fixo: o CSV e o
+        # memorial de um vaso bifásico têm de dizer qual método os produziu.
+        rotulo_metodo = FPSOSiz.label(st.metodo)
+        escrever_csv(csv, r, rotulo_metodo)
+        escrever_memorial(memorial, r, rotulo_metodo,
+                          FPSOSiz.method_reference(st.metodo))
 
         # Uma figura por arquivo. Concatenar dois `<svg>` num arquivo só daria dois
         # elementos-raiz, o que não é XML válido: o visualizador recusa o arquivo
@@ -108,8 +112,7 @@ function exportar!(st::AppState)
 end
 
 "Varredura envelope: cabeçalho com o projeto escolhido e uma coluna de Leff por caso."
-function escrever_csv(caminho::AbstractString, r)
-    metodo = FPSOSiz.label(FPSOSiz.StewartArnold())
+function escrever_csv(caminho::AbstractString, r, metodo::AbstractString)
     open(caminho, "w") do io
         println(io, "# FPSO_Siz — varredura envelope")
         println(io, "# método;", metodo)
@@ -142,12 +145,12 @@ function escrever_csv(caminho::AbstractString, r)
 end
 
 "Memorial: o rastro de cálculo de cada caso, equação por equação."
-function escrever_memorial(caminho::AbstractString, r)
+function escrever_memorial(caminho::AbstractString, r, metodo::AbstractString,
+                           referencia::AbstractString = "")
     open(caminho, "w") do io
         println(io, "FPSO_Siz — memorial de cálculo")
-        println(io, FPSOSiz.label(FPSOSiz.StewartArnold()))
-        println(io, "Referência: Alves & Komesu (2025), Lajer v.12 n.1 p.16–29,")
-        println(io, "modelo semiempírico de Stewart & Arnold (2008).")
+        println(io, metodo)
+        isempty(referencia) || println(io, "Referência: ", referencia)
         println(io, repeat("=", 78), "\n")
         for (nome, res) in zip(r.case_names, r.per_case)
             println(io, "CASO: ", nome)

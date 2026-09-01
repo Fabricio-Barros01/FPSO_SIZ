@@ -45,8 +45,8 @@ Registrar um equipamento novo no core faz a tela aparecer sem editar uma linha d
 esquema(st::AppState) = Dict{String,Any}(
     "campos"      => [spec_json(s) for s in st.campos],
     "ajustes"     => [spec_json(s) for s in st.ajustes],
-    "equipamento" => FPSOSiz.label(FPSOSiz.Separator()),
-    "metodo"      => FPSOSiz.label(FPSOSiz.StewartArnold()),
+    "equipamento" => FPSOSiz.label(st.equipamento),
+    "metodo"      => FPSOSiz.label(st.metodo),
     "paleta"      => Dict{String,Any}(
         "destaque" => Formato.DESTAQUE, "erro" => Formato.ERRO,
         "ok" => Formato.OK, "tinta_fraca" => Formato.TINTA_FRACA),

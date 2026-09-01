@@ -176,7 +176,13 @@ relatório exibem.
 function governing_summary(r::EnvelopeResult)
     r.feasible || return r.message
     what = r.governing === :gas ? "capacidade de gás" : "capacidade de líquido"
-    return "Governa: $what, pelo caso '$(r.driver_case)'. " *
-           "Teto de decantação: $(round(Int, r.d_max_mm)) mm, " *
-           "imposto pelo caso '$(r.d_max_case)'."
+    resumo = "Governa: $what, pelo caso '$(r.driver_case)'."
+
+    # Nem todo vaso tem teto de decantação: um bifásico não tem duas fases líquidas a
+    # separar, e `d_max_mm` vale `Inf` por direito (ver `VesselConstraints`). O
+    # `round(Int, Inf)` que estava aqui lançava `InexactError` — o resumo assumia que a
+    # frase sempre teria o que dizer. Sem teto, cala-se em vez de inventar um número.
+    isfinite(r.d_max_mm) || return resumo
+    return resumo * " Teto de decantação: $(round(Int, r.d_max_mm)) mm, " *
+                    "imposto pelo caso '$(r.d_max_case)'."
 end

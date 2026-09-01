@@ -1,5 +1,7 @@
 label = "Stewart & Arnold (2008) — bifásico, meio cheio"
 equipment = "knockout"
+# Citada no cabeçalho do memorial exportado. Ver `method_reference`.
+reference = "Stewart & Arnold (2008), Gas-Liquid and Liquid-Liquid Separators, Gulf Equipment Guides, cap. 3, §3.8."
 
 # Vaso de knockout gás-líquido horizontal, 50 % cheio de líquido.
 # Fonte: Stewart & Arnold (2008), "Gas-Liquid and Liquid-Liquid Separators",
@@ -34,11 +36,11 @@ note    = "Eq. 3.9b. Tabela 3.2: 0,5–1 min para 35+ °API, 2 min a 30, 3 a 25,
 key      = "d_min"
 label    = "Diâmetro mínimo"
 unit     = "mm"
-default  = 500.0
+default  = 600.0
 min      = 200.0
 max      = 12000.0
 advanced = true
-note     = "Início da grade de varredura. §3.8.6 passo 2."
+note     = "Início da grade. 600 mm é onde §3.8.6 passo 6 diz que o casco deixa de ser tubo nominal e passa a ser chapa enrolada em incrementos de 150 mm — 600:150 é a série comercial."
 
 [[parameter]]
 key      = "d_max"

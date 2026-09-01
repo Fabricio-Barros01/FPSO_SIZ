@@ -558,6 +558,106 @@ FPSOSiz._CASOS[] = ""
         @test startswith(A.desenho(st)["vaso"], "<svg")
     end
 
+    @testset "o vaso bifásico atravessa a interface inteira" begin
+        # O aceite do Sprint 5 do lado da tela: o segundo equipamento tem de desenhar,
+        # cotar e memorializar sem uma linha de `app/` citar o nome dele.
+        U = FPSOSiz.Units
+        lb_ft3 = U.LB_KG / U.CUFT_M3
+        st = A.AppState(; case_file = "nao_existe_de_proposito.toml",
+                          equipamento = FPSOSiz.KnockoutDrum(),
+                          metodo = FPSOSiz.StewartArnoldTwoPhase())
+
+        # O formulário encolhe sozinho: 8 de corrente (sem as três de água e sem a
+        # viscosidade do líquido) + 2 do método. Nenhum campo escrito à mão em `app/`.
+        @test length(st.campos) == 10
+        chaves = Set(s.key for s in st.campos)
+        for ausente in (:q_water, :rho_water, :mu_water, :mu_oil)
+            @test !(ausente in chaves)
+        end
+        @test :tr_liquid in chaves
+
+        # Exemplo 3.2 do livro, em SI
+        c = A.caso_atual(st)
+        for (k, v) in (:q_gas => 10e6 * U.CUFT_M3 / 24,
+                       :q_oil => 2000 * U.BARREL_M3 / 24,
+                       :rho_oil => 51.5 * lb_ft3, :rho_gas => 3.71 * lb_ft3,
+                       :mu_gas => 0.013, :pressure => 1000 * U.PSI_KPA,
+                       :temperature => (60 - 32) * 5 / 9, :z => 0.84)
+            c.lo[k] = c.hi[k] = v
+        end
+        A.dimensionar!(st)
+        @test st.status_ok
+
+        # o livro escolhe 36 in (914 mm) por 10 ft (3,05 m), SR 3,2
+        @test abs(st.resultado.diameter_mm - 914.4) <= 150.0
+        @test 3.0 <= st.resultado.sr <= 4.0
+        @test A.cartao(st)["teto"] == "—"          # sem teto de decantação
+
+        @testset "o desenho tem DUAS camadas, e nenhum NaN" begin
+            # Com `beta = NaN`, deduzir três camadas de β daria `h_w = NaN·d` nas
+            # coordenadas — e um SVG com NaN num atributo é descartado pelo navegador
+            # em silêncio: a figura some, com status 200 e sem erro em lugar nenhum.
+            @test isnan(A.beta_atual(st))
+            g = A.geometry_from(st.resultado, st.d_sel, A.beta_atual(st))
+            @test [cam.nome for cam in g.camadas] == ["LÍQUIDO", "GÁS"]
+            @test g.camadas[1].y1 ≈ g.d_m / 2      # meio cheio, como o trifásico
+
+            for svg in (A.svg_elevacao(g), A.svg_corte(g))
+                @test startswith(svg, "<svg")
+                @test count("<", svg) == count(">", svg)
+                @test !occursin("NaN", svg)
+                @test !occursin("Sem resultado", svg)   # desenhou de verdade
+            end
+            # β não é anunciado onde não existe
+            @test !occursin("β = hₒ/d", A.svg_corte(g))
+        end
+
+        @testset "o memorial não ganha um Bloco B vazio" begin
+            blocos = A.memorial(st)["casos"][1]["blocos"]
+            titulos = [b["titulo"] for b in blocos]
+            @test any(t -> occursin("Bloco A", t), titulos)
+            @test any(t -> occursin("Bloco C", t), titulos)
+            @test !any(t -> occursin("Bloco B", t), titulos)
+            # e cita a fonte DELE, não o artigo sobre trifásicos
+            @test occursin("Eq. 3.8b", join(blocos[1]["linhas"], "\n"))
+        end
+
+        @testset "exportar carrega o método e a referência certos" begin
+            r = A.exportar!(st)
+            @test r.ok
+            txt = read(only(filter(f -> endswith(f, "_memorial.txt"), r.arquivos)), String)
+            @test occursin("bifásico", txt)
+            @test occursin("Gas-Liquid and Liquid-Liquid Separators", txt)
+            @test !occursin("Alves & Komesu", txt)     # essa é a fonte do OUTRO vaso
+        end
+    end
+
+    @testset "o trifásico continua com três camadas e com β" begin
+        st = A.AppState(); A.dimensionar!(st)
+        g = A.geometry_from(st.resultado, st.d_sel, A.beta_atual(st))
+        @test [cam.nome for cam in g.camadas] == ["ÁGUA", "ÓLEO", "GÁS"]
+        @test isfinite(A.beta_atual(st))
+        @test occursin("β = hₒ/d", A.svg_corte(g))
+        # as camadas fecham no vaso meio cheio
+        @test g.camadas[2].y1 ≈ g.d_m / 2
+        @test g.camadas[1].y0 ≈ 0.0
+        @test g.camadas[end].y1 ≈ g.d_m
+    end
+
+    @testset "sem resultado, β é NaN — não um número plausível" begin
+        # O valor anterior aqui era 0,25: um β de aparência correta que produzia um
+        # desenho errado sem nada denunciar.
+        st = A.AppState()
+        @test st.cons_gov === nothing
+        @test isnan(A.beta_atual(st))
+        for c in st.casos
+            c.enabled = false
+        end
+        A.dimensionar!(st)
+        @test st.cons_gov === nothing
+        @test isnan(A.beta_atual(st))
+    end
+
     # -----------------------------------------------------------------------
     # O servidor de verdade
     # -----------------------------------------------------------------------

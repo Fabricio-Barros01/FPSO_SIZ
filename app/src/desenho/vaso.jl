@@ -47,26 +47,24 @@ function svg_elevacao(g; larg::Real = 920.0)
                      rotulo = "Elevação do separador, d = $(Formato.inteiro(g.d_m * 1000)) mm")
 end
 
-"Gás, óleo e água como faixas horizontais que acompanham os tampos."
+"As fases como faixas horizontais que acompanham os tampos — duas ou três, conforme o vaso."
 function zonas_elevacao!(p, t, g)
-    hw, _, nivel = layer_heights(g.d_m, g.beta)
-    push!(p, poligono(t, hull_band(g.d_m, g.lss_m, nivel, g.d_m);
-                      preenche = Formato.GAS_ZONA, opacidade = Formato.GAS_ZONA_OP))
-    push!(p, poligono(t, hull_band(g.d_m, g.lss_m, hw, nivel);
-                      preenche = Formato.OLEO_ZONA, opacidade = Formato.OLEO_ZONA_OP))
-    push!(p, poligono(t, hull_band(g.d_m, g.lss_m, 0.0, hw);
-                      preenche = Formato.AGUA_ZONA, opacidade = Formato.AGUA_ZONA_OP))
+    for c in g.camadas
+        push!(p, poligono(t, hull_band(g.d_m, g.lss_m, c.y0, c.y1);
+                          preenche = c.zona, opacidade = c.opacidade))
+    end
     return p
 end
 
 "Contorno do casco, nível de líquido, interface óleo/água e as soldas casco/tampo."
 function casco_elevacao!(p, t, g)
-    hw, _, nivel = layer_heights(g.d_m, g.beta)
-
-    for (y, cor, estilo, larg_) in ((nivel, Formato.INTERNO, nothing, 1.8),
-                                    (hw, Formato.AGUA, TRACEJADO, 1.8))
-        l, r = hull_profile(g.d_m, g.lss_m, y)
-        push!(p, segmento(t, (l, y), (r, y); traco = cor, largura = larg_, estilo))
+    # Uma linha no topo de cada faixa que a declare. A fase gasosa não declara nenhuma:
+    # o topo dela é o próprio casco, desenhado logo abaixo.
+    for c in g.camadas
+        isempty(c.interface) && continue
+        l, r = hull_profile(g.d_m, g.lss_m, c.y1)
+        push!(p, segmento(t, (l, c.y1), (r, c.y1); traco = c.interface, largura = 1.8,
+                          estilo = c.tracejada ? TRACEJADO : nothing))
     end
 
     push!(p, poligono(t, hull_band(g.d_m, g.lss_m, 0.0, g.d_m);
@@ -82,30 +80,30 @@ end
 """
     rotulos_zona!(p, t, g)
 
-Nomeia as três zonas dentro do desenho. A camada de óleo pode ficar muito fina quando
-a corrente é rica em água (β pequeno) — nesse caso o rótulo vai para fora, com uma
-linha de chamada, em vez de sumir dentro de uma faixa de dois pixels.
+Nomeia cada faixa dentro do desenho. Uma faixa pode ficar fina demais para caber o
+rótulo — a de óleo some quando a corrente é rica em água (β pequeno) — e nesse caso o
+nome vai para fora, com linha de chamada, em vez de sumir dentro de dois pixels.
+
+O critério é a espessura da faixa, não qual fase ela é: num vaso bifásico a faixa de
+líquido é metade do vaso e nunca precisa disso, e num trifásico qualquer uma das três
+pode precisar.
 """
 function rotulos_zona!(p, t, g)
-    hw, ho, nivel = layer_heights(g.d_m, g.beta)
     x_rot = g.lss_m * 0.30
+    nivel = g.d_m / 2
 
-    push!(p, texto(t, (x_rot, (nivel + g.d_m) / 2), "GÁS";
-                   tam = 13, cor = Formato.TINTA_FRACA, peso = "bold"))
-    push!(p, texto(t, (x_rot, hw / 2), "ÁGUA"; tam = 13, cor = "#ffffff", peso = "bold"))
-
-    cabe = ho > g.d_m * 0.055
-    if cabe
-        push!(p, texto(t, (x_rot, (hw + nivel) / 2), "ÓLEO";
-                       tam = 13, cor = "#ffffff", peso = "bold"))
-    else
-        x = g.lss_m * 0.62
-        y_alvo = nivel + g.d_m * 0.17
-        push!(p, segmento(t, (x, hw + ho / 2), (x, y_alvo);
-                          traco = Formato.OLEO, largura = 1.2))
-        push!(p, marcador(t, (x, hw + ho / 2); raio = 2.6, preenche = Formato.OLEO))
-        push!(p, texto(t, (x, y_alvo), "ÓLEO — $(Formato.num(ho)) m";
-                       tam = 12, cor = Formato.OLEO, base = "auto", peso = "bold"))
+    for c in g.camadas
+        if altura(c) > g.d_m * 0.055
+            push!(p, texto(t, (x_rot, meio(c)), c.nome;
+                           tam = 13, cor = c.rotulo, peso = "bold"))
+        else
+            x = g.lss_m * 0.62
+            y_alvo = nivel + g.d_m * 0.17
+            push!(p, segmento(t, (x, meio(c)), (x, y_alvo); traco = c.cor, largura = 1.2))
+            push!(p, marcador(t, (x, meio(c)); raio = 2.6, preenche = c.cor))
+            push!(p, texto(t, (x, y_alvo), "$(c.nome) — $(Formato.num(altura(c))) m";
+                           tam = 12, cor = c.cor, base = "auto", peso = "bold"))
+        end
     end
     return p
 end
@@ -211,23 +209,22 @@ function svg_corte(g; larg::Real = 460.0)
     # A folga à direita (até 2,6 R) é a coluna das cotas — dimensionada para o rótulo
     # mais largo, "nível = 3,15 m (50 %)".
     t = tela_proporcional(-R * 1.12, -R * 0.10, R * 2.60, g.d_m * 1.06; larg)
-    hw, ho, nivel = layer_heights(g.d_m, g.beta)
+    nivel = g.d_m / 2
 
     p = String[]
-    push!(p, poligono(t, circle_band(g.d_m, nivel, g.d_m);
-                      preenche = Formato.GAS_ZONA, opacidade = Formato.GAS_ZONA_OP))
-    push!(p, poligono(t, circle_band(g.d_m, hw, nivel);
-                      preenche = Formato.OLEO_ZONA, opacidade = Formato.OLEO_ZONA_OP))
-    push!(p, poligono(t, circle_band(g.d_m, 0.0, hw);
-                      preenche = Formato.AGUA_ZONA, opacidade = Formato.AGUA_ZONA_OP))
+    for c in g.camadas
+        push!(p, poligono(t, circle_band(g.d_m, c.y0, c.y1);
+                          preenche = c.zona, opacidade = c.opacidade))
+    end
     push!(p, poligono(t, circle_band(g.d_m, 0.0, g.d_m);
                       preenche = "none", traco = Formato.ACO, largura = 2))
 
     meia_corda(y) = sqrt(max(R^2 - (y - R)^2, 0.0))
-    for (y, cor, estilo) in ((nivel, Formato.INTERNO, nothing),
-                             (hw, Formato.AGUA, TRACEJADO))
-        x = meia_corda(y)
-        push!(p, segmento(t, (-x, y), (x, y); traco = cor, largura = 1.5, estilo))
+    for c in g.camadas
+        isempty(c.interface) && continue
+        x = meia_corda(c.y1)
+        push!(p, segmento(t, (-x, c.y1), (x, c.y1); traco = c.interface, largura = 1.5,
+                          estilo = c.tracejada ? TRACEJADO : nothing))
     end
 
     # Cotas à direita, com linha de chamada do círculo até a coluna de rótulos.
@@ -237,9 +234,12 @@ function svg_corte(g; larg::Real = 460.0)
     # afastados na tela por `espalhar`, e a linha de chamada continua apontando para a
     # altura verdadeira — a cota lê-se sem ambiguidade e o desenho segue exato.
     x_cota = R * 1.20
-    cotas = ((hw / 2, "h_w = $(Formato.num(hw)) m", Formato.AGUA),
-             (hw + ho / 2, "hₒ = $(Formato.num(ho)) m", Formato.OLEO),
-             (nivel, "nível = $(Formato.num(nivel)) m  (50 %)", Formato.INTERNO))
+    cotas = Tuple{Float64,String,String}[]
+    for c in g.camadas
+        c.nome == "GÁS" && continue          # o gás ocupa o que sobra; não se cota
+        push!(cotas, (meio(c), "$(c.nome) = $(Formato.num(altura(c))) m", c.cor))
+    end
+    push!(cotas, (nivel, "nível = $(Formato.num(nivel)) m  (50 %)", Formato.INTERNO))
     ys_px = espalhar([paray(t, c[1]) for c in cotas], 15.0)
 
     for ((y, rotulo, cor), y_px) in zip(cotas, ys_px)
@@ -253,9 +253,13 @@ function svg_corte(g; larg::Real = 460.0)
                              "stroke-dasharray" => PONTILHADO), "/>"))
         push!(p, texto_px(x_px + 4, y_px, rotulo; tam = 11, cor = cor, ancora = "start"))
     end
-    push!(p, texto(t, (x_cota, g.d_m * 0.92), "β = hₒ/d = $(Formato.num(g.beta, 4))";
-                   tam = 11, cor = Formato.TINTA, ancora = "start", dx = 4,
-                   peso = "bold"))
+    # β só existe onde há duas fases líquidas a repartir a metade inferior. Num vaso
+    # bifásico ele é `NaN` (ver `VesselConstraints`), e escrever "β = —" seria anunciar
+    # a ausência de uma grandeza que não faz parte daquele modelo.
+    isfinite(g.beta) &&
+        push!(p, texto(t, (x_cota, g.d_m * 0.92), "β = hₒ/d = $(Formato.num(g.beta, 4))";
+                       tam = 11, cor = Formato.TINTA, ancora = "start", dx = 4,
+                       peso = "bold"))
 
     return documento(t, join(p); rotulo = "Corte transversal A-A")
 end

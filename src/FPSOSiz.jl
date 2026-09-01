@@ -76,7 +76,7 @@ export EnvelopeResult, EnvelopeRow
 # --- vasos registrados
 export Separator, StewartArnold, VesselConstraints
 export KnockoutDrum, StewartArnoldTwoPhase, gas_capacity_dleff
-export sizing_constraints, method_config, lss_from, size_vessel
+export sizing_constraints, method_config, method_reference, lss_from, size_vessel
 export beta_coefficient, water_area_fraction
 export converge_drag, terminal_velocity, reynolds, drag_coefficient, souders_brown
 export size_envelope, governing_summary, mechanism_label

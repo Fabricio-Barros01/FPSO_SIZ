@@ -93,6 +93,8 @@ Estado global da tela. Tudo o que a interface desenha vem de algum destes campos
 há caminho por onde a tela mostre um número que não venha do core.
 """
 mutable struct AppState
+    equipamento::FPSOSiz.AbstractEquipment   # de qual box esta tela é
+    metodo::FPSOSiz.AbstractSizingMethod
     campos::Vector{FPSOSiz.ParameterSpec}    # editáveis por caso
     ajustes::Vector{FPSOSiz.ParameterSpec}   # globais (grade, banda de SR)
     casos::Vector{CaseUI}
@@ -101,6 +103,7 @@ mutable struct AppState
     rotulo::String                           # `label` declarado nesse arquivo
     globais::Dict{Symbol,Float64}
     resultado::Union{FPSOSiz.EnvelopeResult,Nothing}
+    cons_gov::Union{FPSOSiz.VesselConstraints,Nothing}   # do caso governante; ver `beta_atual`
     d_sel::Float64
     status::String
     status_ok::Bool
@@ -116,17 +119,21 @@ Monta o estado inicial. `case_file` é procurado em `FPSOSiz.dirs_casos()` — o
 diretório do usuário primeiro, os exemplos de fábrica depois. Arquivo ausente ou
 ilegível vira um único caso nos defaults, com a queixa na barra de status.
 """
-function AppState(; case_file::AbstractString = "exemplo_alves_komesu.toml")
-    # Os descritores de corrente saem do MÉTODO, não do `stream.toml` inteiro: um vaso
-    # que não tem fase aquosa não deve mostrar campos de água. Ver `stream_keys`.
-    metodo = FPSOSiz.StewartArnold()
-    todos  = vcat(FPSOSiz.stream_parameters(metodo), FPSOSiz.parameters(metodo))
+function AppState(; case_file::AbstractString = "exemplo_alves_komesu.toml",
+                    equipamento::FPSOSiz.AbstractEquipment = FPSOSiz.Separator(),
+                    metodo::FPSOSiz.AbstractSizingMethod = FPSOSiz.StewartArnold())
+    # Os descritores saem do MÉTODO, não de listas fixas: os de corrente por
+    # `stream_parameters(metodo)` (um vaso sem fase aquosa não mostra campos de água) e
+    # os do método por `parameters(metodo)`. É a regra de src/interfaces.jl — trocar de
+    # equipamento troca o formulário inteiro sem uma linha de `app/` saber o nome de
+    # nenhum parâmetro.
+    todos   = vcat(FPSOSiz.stream_parameters(metodo), FPSOSiz.parameters(metodo))
     campos  = filter(s -> !(s.key in CHAVES_GLOBAIS), todos)
     ajustes = filter(s -> s.key in CHAVES_GLOBAIS, todos)
 
-    st = AppState(campos, ajustes, CaseUI[], 1, "", "",
+    st = AppState(equipamento, metodo, campos, ajustes, CaseUI[], 1, "", "",
                   Dict{Symbol,Float64}(s.key => s.default for s in ajustes),
-                  nothing, 0.0,
+                  nothing, nothing, 0.0,
                   "Pronto. Ajuste as entradas e clique em Dimensionar.", true)
     carregar_casos!(st, case_file)
     return st
@@ -274,6 +281,7 @@ function dimensionar!(st::AppState)
 
     if isempty(FPSOSiz.active(cs))
         st.resultado = nothing
+        st.cons_gov = nothing
         st.status = "Nenhum caso ativo — ative ao menos uma corrente."
         st.status_ok = false
         return nothing
@@ -281,16 +289,17 @@ function dimensionar!(st::AppState)
 
     n = FPSOSiz.corner_count(cs)
     res = try
-        FPSOSiz.size_envelope(FPSOSiz.Separator(), FPSOSiz.StewartArnold(), cs;
-                              max_corners = 512)
+        FPSOSiz.size_envelope(st.equipamento, st.metodo, cs; max_corners = 512)
     catch err
         st.resultado = nothing
+        st.cons_gov = nothing
         st.status = "Erro inesperado: " * sprint(showerror, err)
         st.status_ok = false
         return nothing
     end
 
     st.resultado = res
+    st.cons_gov = restricoes_governantes(st, cs, res)
     st.status_ok = res.feasible
     if res.feasible
         st.d_sel = res.diameter_mm
@@ -314,21 +323,44 @@ function grade_slider(st::AppState)
     return [row.d_mm for row in r.rows]
 end
 
-"β do caso governante, para o desenho. Sem resultado, um valor plausível só para a cena."
-function beta_atual(st::AppState)
-    r = st.resultado
-    (r === nothing || !r.feasible) && return 0.25
-    k = FPSOSiz.constants(FPSOSiz.load_config("equipment", "separator",
-                                              "stewart_arnold.toml"))
-    # recalcula β a partir do caso governante expandido — é o mesmo caminho que o
-    # core percorreu, então o desenho não pode divergir dos números
-    cs = FPSOSiz.CaseSet([to_case(c, st.globais) for c in st.casos])
+"""
+    restricoes_governantes(st, cs, res) -> VesselConstraints | nothing
+
+As restrições do caso que governou o resultado — de onde saem β e a fração de área da
+fase aquosa, que o desenho usa.
+
+Calculado **uma vez por dimensionamento** e guardado em `st.cons_gov`. Antes era
+recalculado dentro de `beta_atual`, que `desenho` chama e que o cursor de diâmetro
+chama a cada movimento: re-expandia todos os casos e re-rodava a física inteira, laço
+de convergência do arrasto incluído, dez vezes por movimento no exemplo de referência.
+"""
+function restricoes_governantes(st::AppState, cs, res)
+    (res === nothing || !res.feasible) && return nothing
+    k = FPSOSiz.constants(FPSOSiz.method_config(st.metodo))
+    specs = FPSOSiz.parameters(st.metodo)
     for (nome, vals) in FPSOSiz.expand(cs; max_corners = 512)
-        nome == r.driver_case || continue
-        ok, cons, _ = FPSOSiz.sizing_constraints(
-            FPSOSiz.StewartArnold(), FPSOSiz.stream_from_case(vals),
-            FPSOSiz.with_defaults(FPSOSiz.parameters(FPSOSiz.StewartArnold()), vals), k)
-        ok && return cons.beta
+        nome == res.driver_case || continue
+        stream = try
+            FPSOSiz.stream_from_case(vals; required = FPSOSiz.stream_keys(st.metodo))
+        catch
+            return nothing
+        end
+        ok, cons, _ = FPSOSiz.sizing_constraints(st.metodo, stream,
+                                                 FPSOSiz.with_defaults(specs, vals), k)
+        return ok ? cons : nothing
     end
-    return 0.25
+    return nothing
 end
+
+"""
+    beta_atual(st) -> Float64
+
+β do caso governante, para o desenho — ou `NaN` quando não há.
+
+`NaN` e não um número plausível: o valor anterior aqui era `0.25`, que produzia um
+desenho de **aparência correta e conteúdo errado** sempre que o caso governante não
+fosse encontrado, sem nada que denunciasse. `NaN` faz `camadas` devolver as duas faixas
+de um vaso sem interface líquido-líquido, que é a leitura honesta de "não sei onde ela
+está" — e é o mesmo valor que um vaso bifásico produz de direito.
+"""
+beta_atual(st::AppState) = st.cons_gov === nothing ? NaN : st.cons_gov.beta

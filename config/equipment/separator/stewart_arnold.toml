@@ -1,5 +1,7 @@
 label = "Stewart & Arnold (2008)"
 equipment = "separator"
+# Citada no cabeçalho do memorial exportado. Ver `method_reference`.
+reference = "Alves & Komesu (2025), Lajer v.12 n.1 p.16-29 — modelo semiempírico de Stewart & Arnold (2008)."
 
 # Parâmetros do método. A GUI monta o formulário iterando estes blocos — não há
 # nenhum nome de parâmetro escrito no código da interface.

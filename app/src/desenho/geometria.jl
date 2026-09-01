@@ -70,13 +70,73 @@ end
 """
     layer_heights(d_m, beta) -> (h_agua, h_oleo, nivel)
 
-Alturas das camadas num vaso **preenchido pela metade**: `h_o = β·d`,
+Alturas das camadas num vaso **trifásico** preenchido pela metade: `h_o = β·d`,
 `h_w = (0,5 − β)·d`, e o nível de líquido em `d/2`. Ver `beta.jl` no core.
+
+Só serve a três fases. Quem desenha usa [`camadas`](@ref), que também sabe responder
+por um vaso de duas.
 """
 function layer_heights(d_m, beta)
     h_oleo = beta * d_m
     nivel  = d_m / 2
     return (nivel - h_oleo, h_oleo, nivel)
+end
+
+"""
+Uma faixa de fase dentro do vaso, do fundo (`y0`) ao topo (`y1`), em metros.
+
+`interface` é a cor da linha que fecha a faixa **por cima**; vazia quando não há linha
+a desenhar (o topo da fase gasosa é o próprio casco). `cor` é a da linha e da cota, que
+precisa de contraste sobre o papel; `zona` é a do preenchimento; `rotulo` a do texto
+escrito dentro da faixa.
+"""
+struct Camada
+    nome::String
+    y0::Float64
+    y1::Float64
+    zona::String
+    opacidade::Float64
+    cor::String
+    rotulo::String
+    interface::String
+    tracejada::Bool
+end
+
+altura(c::Camada) = c.y1 - c.y0
+meio(c::Camada)   = (c.y0 + c.y1) / 2
+
+"""
+    camadas(d_m, beta) -> Vector{Camada}
+
+As faixas de fase do vaso, de baixo para cima.
+
+Com `beta` finito são **três** — água, óleo e gás, com `h_o = β·d` e `h_w = (0,5 − β)·d`.
+Com `beta` igual a `NaN` são **duas**: água e líquido, porque um vaso bifásico não tem
+interface líquido-líquido e β não existe nele (ver `VesselConstraints` no core, que usa
+`NaN` para "não se aplica").
+
+Esta função existe para que o desenho **pergunte quantas faixas há** em vez de deduzir
+três de um número. Era essa dedução que fazia o vaso bifásico sair com `h_w = NaN·d` nas
+coordenadas do SVG — e um SVG com `NaN` num atributo é descartado pelo navegador em
+silêncio: a figura simplesmente não aparece, com status 200 e sem erro em lugar nenhum.
+"""
+function camadas(d_m, beta)
+    nivel = d_m / 2
+    gas = Camada("GÁS", nivel, d_m, Formato.GAS_ZONA, Formato.GAS_ZONA_OP,
+                 Formato.TINTA_FRACA, Formato.TINTA_FRACA, "", false)
+
+    isnan(beta) && return [
+        Camada("LÍQUIDO", 0.0, nivel, Formato.OLEO_ZONA, Formato.OLEO_ZONA_OP,
+               Formato.OLEO, "#ffffff", Formato.INTERNO, false),
+        gas]
+
+    hw, _, _ = layer_heights(d_m, beta)
+    return [
+        Camada("ÁGUA", 0.0, hw, Formato.AGUA_ZONA, Formato.AGUA_ZONA_OP,
+               Formato.AGUA, "#ffffff", Formato.AGUA, true),
+        Camada("ÓLEO", hw, nivel, Formato.OLEO_ZONA, Formato.OLEO_ZONA_OP,
+               Formato.OLEO, "#ffffff", Formato.INTERNO, false),
+        gas]
 end
 
 """
@@ -87,9 +147,11 @@ consome. `ok = false` faz a cena inteira desenhar vazia, sem exceção.
 """
 function geometry_from(res, d_mm::Real, beta::Real)
     (res === nothing || !res.feasible) &&
-        return (; d_m = 0.0, leff_m = 0.0, lss_m = 0.0, beta = 0.25,
-                  governing = :none, ok = false, sr = NaN)
+        return (; d_m = 0.0, leff_m = 0.0, lss_m = 0.0, beta = NaN,
+                  camadas = Camada[], governing = :none, ok = false, sr = NaN)
     linha = argmin(r -> abs(r.d_mm - d_mm), res.rows)
-    return (; d_m = linha.d_mm / 1000, leff_m = linha.leff_m, lss_m = linha.lss_m,
-              beta = beta, governing = linha.governing, ok = true, sr = linha.sr)
+    d_m = linha.d_mm / 1000
+    return (; d_m, leff_m = linha.leff_m, lss_m = linha.lss_m, beta,
+              camadas = camadas(d_m, beta), governing = linha.governing,
+              ok = true, sr = linha.sr)
 end

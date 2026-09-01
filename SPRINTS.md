@@ -12,7 +12,7 @@ lido inteiro sem abrir mais nada.
 
 **SPRINT ATUAL: 5 — Segundo equipamento no registro**
 
-**2660 testes passando** (980 no core, 1680 na interface).
+**2706 testes passando** (986 no core, 1720 na interface).
 
 O software dimensiona um separador trifásico horizontal pelo modelo semiempírico de
 Stewart & Arnold (2008), com um motor de envelope multi-caso que entrega **um** vaso
@@ -422,7 +422,33 @@ entrada de rastro contra a coluna que a recebe.
 1b. ✅ Revisão de conceitos e as quatro correções acima.
 2. ✅ `stream_keys(m)` e o formulário filtrado (obstáculo 2).
 3. ✅ **O vaso bifásico existe** — ver abaixo.
-4. ← **próximo.** As camadas do desenho, absorvendo S1.
+4. ✅ As camadas do desenho, absorvendo S1.
+5. ✅ `AppState` carrega o par equipamento/método; os oito pontos fixos sumiram.
+6. ✅ Caso-ouro do bifásico (Tabela 3.4 do livro) e guardas de arquitetura iteradas pelo registro.
+
+**Sprint 5 fechado.** O vaso bifásico atravessa a interface inteira: formulário de 10
+campos montado sozinho, desenho de **duas** camadas, memorial com A e C sem Bloco B
+órfão, exportação citando a fonte dele. Contra o Exemplo 3.2 do livro (36 in × 10 ft,
+SR 3,2) o software escolhe **900 mm × 2,98 m, SR 3,31**.
+
+Três defeitos que só o segundo equipamento revelou:
+
+| # | Defeito | Correção |
+|---|---|---|
+| 1 | `governing_summary` fazia `round(Int, r.d_max_mm)` sem condição e **lançava `InexactError`** com `d_max_mm = Inf`. O resumo assumia que todo vaso tem teto de decantação. | Sem teto, a frase se cala em vez de inventar um número. |
+| 2 | O desenho deduzia **três** camadas de β. Com `β = NaN` as coordenadas do SVG saíam `NaN`, e um SVG com `NaN` num atributo é descartado pelo navegador **em silêncio** — figura some, status 200, nenhum erro. | `camadas(d, β)`: o desenho pergunta quantas faixas há em vez de deduzir. Duas quando não há interface líquido-líquido. |
+| 3 | O cabeçalho do memorial citava "Alves & Komesu (2025)" fixo no código — o memorial de um vaso bifásico mandaria conferir as contas num artigo sobre trifásicos. | `method_reference(m)`, declarada no TOML de cada método. |
+
+Mais o `S1` da revisão: `beta_atual` re-rodava a física inteira a cada movimento do
+cursor (dez avaliações por movimento no exemplo de referência) e devolvia `0.25` quando
+falhava — um β plausível que produzia desenho de aparência correta e conteúdo errado.
+Agora as restrições do caso governante são calculadas **uma vez por dimensionamento** e
+guardadas em `st.cons_gov`; "não sei" é `NaN`, que o desenho lê como "sem interface".
+
+E a grade default do bifásico começava em 500 mm, o que fazia a banda SR 3–4 cair
+**entre** dois pontos (800 mm → 4,39; 950 mm → 2,97). Passou a 600 mm, que é onde
+§3.8.6 diz que o casco deixa de ser tubo nominal e vira chapa enrolada de 150 em 150 —
+a série comercial.
 3. `src/sizing/vessel/knockout.jl` + `config/equipment/knockout/*.toml`, com `register!`
    em `__init__` (`src/FPSOSiz.jl:95`). O TOML tem de passar em `test/architecture.jl`:
    todo parâmetro com rótulo, unidade, proveniência e `min ≤ default ≤ max`.
