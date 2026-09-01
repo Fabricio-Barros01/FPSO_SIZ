@@ -12,7 +12,7 @@ lido inteiro sem abrir mais nada.
 
 **SPRINT ATUAL: 5 — Segundo equipamento no registro**
 
-**2291 testes passando** (611 no core, 1680 na interface).
+**2660 testes passando** (980 no core, 1680 na interface).
 
 O software dimensiona um separador trifásico horizontal pelo modelo semiempírico de
 Stewart & Arnold (2008), com um motor de envelope multi-caso que entrega **um** vaso
@@ -420,7 +420,9 @@ entrada de rastro contra a coluna que a recebe.
 1. ✅ Generalizar o motor de envelope (obstáculo 1), **sem** o equipamento novo. Foi
    sozinho de propósito: é o passo que se pode errar sem perceber.
 1b. ✅ Revisão de conceitos e as quatro correções acima.
-2. ← **próximo.** `stream_keys(m)` e o formulário filtrado (obstáculo 2).
+2. ✅ `stream_keys(m)` e o formulário filtrado (obstáculo 2).
+3. ✅ **O vaso bifásico existe** — ver abaixo.
+4. ← **próximo.** As camadas do desenho, absorvendo S1.
 3. `src/sizing/vessel/knockout.jl` + `config/equipment/knockout/*.toml`, com `register!`
    em `__init__` (`src/FPSOSiz.jl:95`). O TOML tem de passar em `test/architecture.jl`:
    todo parâmetro com rótulo, unidade, proveniência e `min ≤ default ≤ max`.
@@ -429,6 +431,48 @@ entrada de rastro contra a coluna que a recebe.
    `methods_for()`; a troca refaz formulário e casos.
 6. Caso-ouro do novo método, no molde de `test/golden_alves_komesu.jl`, e a guarda de
    constantes-no-TOML no molde de `test/architecture.jl:73`.
+
+### O vaso bifásico, e o que a fonte primária mudou
+
+`References/` ganhou o **Stewart & Arnold (2008) original** — o livro que Alves & Komesu
+reproduzem. Ele entrega o vaso bifásico pronto, e ele cai exatamente na forma que o
+passo 1 preparou:
+
+| | 3φ (Alves & Komesu) | 2φ (livro, cap. 3) |
+|---|---|---|
+| Gás | Eq. 14 | **Eq. 3.8b — a mesma equação** |
+| Líquido | Eq. 22, duas fases | Eq. 3.9b, `d²Leff = 42441·tr·Ql` |
+| Teto de decantação | Eq. 19/21 | **não existe** → `d_max = Inf` |
+| Banda de SR | 3–5 | **3–4** (§3.8.5) |
+| `Lss` | relação do bloco que governa | **o maior dos dois** (§3.8.4) |
+
+`src/sizing/knockout/two_phase.jl` tem **160 linhas e nenhuma varredura**: declara o que
+o vaso é e devolve dois números. O `VesselConstraints(d_leff_gas, d2_leff)` de dois
+argumentos criado no passo 1 — `Inf` no teto, `NaN` na geometria de três camadas — era
+exatamente o caminho de que ele precisava. O bloco A não foi reescrito: saiu para
+`src/sizing/gas_capacity.jl` e é o **mesmo código** nos dois vasos, porque é a mesma
+equação; muda só a numeração citada no memorial, para o leitor conferir na fonte certa.
+
+**Três achados novos ao reproduzir a fonte primária**, todos verificados numericamente:
+
+1. **O `dLeff` impresso no Exemplo 3.2 do livro está errado.** O texto diz
+   `55,04 in·ft`; a Eq. 3.8a com os dados do próprio exemplo dá **39,85**, e é com 39,85
+   que as sete linhas da Tabela 3.4 fecham (com 55,04 erram 38 %). O teste-ouro fixa a
+   tabela e recusa o texto.
+2. **`Lss` — o artigo simplificou o livro.** §3.8.4 e §4.9.1 mandam tomar o **maior**
+   entre `Leff + d/1000` e `(4/3)·Leff`; o artigo usa a relação do bloco que governa. As
+   duas coincidem nas três primeiras linhas da Tabela 3 e divergem nas três últimas: em
+   `d = 5950 mm` o artigo publica `Lss = 19,64 m` contra `20,68 m` — 5 % curto. O 3φ
+   segue o artigo (é o que reproduz a Tabela 3); o 2φ segue o livro. É para diferenças
+   assim que `lss_from` é despachada pelo método.
+3. **O par de coeficientes do livro não é exatamente equivalente:** o `34,5` em SI está
+   0,87 % acima do equivalente exato do `420` de campo (34,202). Benigno — usa-se o
+   publicado, porque o critério do projeto é seguir a fonte *salvo quando ela se
+   contradiz*, e 0,87 % não é contradição. Contraste deliberado com a Eq. 22 do artigo,
+   cujo valor impresso erra 1,9 % contra a tabela do próprio artigo e por isso é derivado.
+
+De brinde, o livro **confirma a derivação da Eq. 22**: a forma de campo do bifásico é
+`tr·Ql/0,7`, e `1/0,7 = 1,42857` — o `1,42` do artigo é esse número arredondado.
 
 ### Aceite
 

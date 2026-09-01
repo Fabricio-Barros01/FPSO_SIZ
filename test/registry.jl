@@ -92,3 +92,67 @@ end
     # todo descritor traz rótulo, unidade e proveniência preenchidos
     @test all(s -> !isempty(s.label) && !isempty(s.unit) && !isempty(s.note), specs)
 end
+
+# --- um método que não é trifásico, para provar `stream_keys` -----------------
+struct MetodoBifasicoFake <: AbstractSizingMethod end
+FPSOSiz.method_id(::MetodoBifasicoFake) = :bifasico_fake
+FPSOSiz.label(::MetodoBifasicoFake) = "Bifásico Fake"
+FPSOSiz.applies_to(::MetodoBifasicoFake) = TratadorFake()
+FPSOSiz.parameters(::MetodoBifasicoFake) = FPSOSiz.parameters(MetodoFake())
+# Sem fase aquosa: nem vazão, nem densidade, nem viscosidade de água.
+FPSOSiz.stream_keys(::MetodoBifasicoFake) =
+    (:q_oil, :q_gas, :rho_oil, :rho_gas, :mu_oil, :mu_gas, :pressure, :temperature, :z)
+
+@testset "um método declara as entradas de corrente que consome" begin
+    @testset "o default continua sendo trifásico" begin
+        @test FPSOSiz.stream_keys(StewartArnold()) === FPSOSiz.STREAM_KEYS
+        @test length(FPSOSiz.stream_parameters(StewartArnold())) ==
+              length(FPSOSiz.stream_parameters())
+    end
+
+    @testset "o formulário encolhe junto com o método" begin
+        specs = FPSOSiz.stream_parameters(MetodoBifasicoFake())
+        chaves = Set(s.key for s in specs)
+        @test length(specs) == 9
+        @test !(:q_water in chaves)
+        @test !(:rho_water in chaves)
+        @test !(:mu_water in chaves)
+        @test :q_oil in chaves && :q_gas in chaves
+        # a ordem do arquivo é preservada — o formulário não pode embaralhar
+        todos = [s.key for s in FPSOSiz.stream_parameters()]
+        @test [s.key for s in specs] == filter(in(chaves), todos)
+    end
+
+    @testset "a fase ausente vira NaN, não zero" begin
+        # Zero é um valor POSSÍVEL (uma corrente pode ter água nula), então usá-lo como
+        # "não informado" faria um resultado errado passar por válido. NaN se propaga e
+        # aparece na tela. Mesma decisão de VesselConstraints.
+        vals = defaults(FPSOSiz.stream_parameters())
+        magro = Dict(k => v for (k, v) in vals
+                     if k in FPSOSiz.stream_keys(MetodoBifasicoFake()))
+
+        s = stream_from_case(magro; required = FPSOSiz.stream_keys(MetodoBifasicoFake()))
+        @test isnan(s.water.volumetric_flow)
+        @test isnan(s.water.density)
+        @test isnan(s.water.viscosity)
+        @test s.oil.density == vals[:rho_oil]        # o que foi declarado chega intacto
+        @test s.gas.density == vals[:rho_gas]
+
+        fu = field_units(s)
+        @test isnan(fu.sg_w)                          # e contamina quem insistir em usar
+        @test !isnan(fu.sg_o)
+    end
+
+    @testset "faltar uma chave que o método EXIGE continua sendo erro" begin
+        vals = defaults(FPSOSiz.stream_parameters())
+        sem_oleo = Dict(k => v for (k, v) in vals if k !== :q_oil)
+        @test_throws ArgumentError stream_from_case(sem_oleo)
+        @test_throws ArgumentError stream_from_case(
+            sem_oleo; required = FPSOSiz.stream_keys(MetodoBifasicoFake()))
+        # mas faltar água só é erro para quem pede água
+        sem_agua = Dict(k => v for (k, v) in vals if k !== :q_water)
+        @test_throws ArgumentError stream_from_case(sem_agua)
+        @test stream_from_case(sem_agua;
+                  required = FPSOSiz.stream_keys(MetodoBifasicoFake())) isa StreamState
+    end
+end

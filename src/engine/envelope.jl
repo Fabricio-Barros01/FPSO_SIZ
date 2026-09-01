@@ -79,7 +79,8 @@ function size_envelope(eq::AbstractEquipment, m::AbstractSizingMethod, cases::Ca
 
     for (name, vals) in expanded
         stream = try
-            stream_from_case(vals)
+            # só as entradas que ESTE método consome: ver `stream_keys`
+            stream_from_case(vals; required = stream_keys(m))
         catch err
             err isa ArgumentError &&
                 return infeasible_envelope("Caso '$name': $(sprint(showerror, err))")

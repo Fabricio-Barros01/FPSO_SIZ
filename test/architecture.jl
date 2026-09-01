@@ -84,14 +84,52 @@ end
         @test haskey(k, c)
         @test float(k[c]) isa Float64
     end
+
+    # Mesma guarda para o vaso bifásico: os coeficientes das Eq. 3.8b e 3.9b não podem
+    # aparecer como literal dentro do .jl, senão o TOML vira decoração.
+    k2 = FPSOSiz.constants(FPSOSiz.load_config("equipment", "knockout",
+                                               "stewart_arnold_2f.toml"))
+    for c in (:gas_capacity_coefficient, :liquid_capacity_coefficient,
+              :lss_liquid_factor, :cd_initial, :cd_relaxation)
+        @test haskey(k2, c)
+        @test float(k2[c]) isa Float64
+    end
+    # O que se proíbe é o número USADO no cálculo, não citado no texto: a fórmula que
+    # o memorial mostra ("42441·tr·Ql") contém o valor de propósito, para que o leitor
+    # do relatório saiba o que foi multiplicado. Daí procurar o operador `*` junto — a
+    # fórmula usa `·`, que não é operador nenhum em Julia.
+    kn = read(joinpath(ROOT, "src", "sizing", "knockout", "two_phase.jl"), String)
+    codigo_kn = join(filter(l -> !startswith(strip(l), "#"), split(kn, '\n')), "\n")
+    for literal in ["42441 *", "42441.0 *", "4.2441e4", "34.5 *"]
+        @test !occursin(literal, codigo_kn)
+    end
 end
 
 @testset "todo parâmetro tem rótulo, unidade e proveniência" begin
-    for met in (StewartArnold(),), spec in parameters(met)
-        @test !isempty(spec.label)
-        @test !isempty(spec.unit)
-        @test !isempty(spec.note)
-        @test spec.min <= spec.default <= spec.max
+    # Iterado pelo REGISTRO, não por uma lista escrita à mão: um equipamento novo entra
+    # nesta guarda por registrar-se, que é a única forma de a guarda não envelhecer.
+    for eq in equipments(), met in methods_for(eq)
+        for spec in vcat(parameters(met), FPSOSiz.stream_parameters(met))
+            @test !isempty(spec.label)
+            @test !isempty(spec.unit)
+            @test !isempty(spec.note)
+            @test spec.min <= spec.default <= spec.max
+        end
+        # Os seis descritores que o motor de envelope exige por nome — mas só para quem
+        # fala o contrato de `VesselConstraints`. Um método registrado que NÃO passe por
+        # ele (uma bomba, um trocador; aqui, o tratador fictício de registry.jl) não tem
+        # grade de diâmetro nem esbeltez, e exigi-los seria impor a forma de um vaso a
+        # todo o registro — exatamente o acoplamento que o Sprint 5 desfez.
+        if hasmethod(FPSOSiz.sizing_constraints,
+                     Tuple{typeof(met), StreamState, AbstractDict, AbstractDict})
+            chaves = Set(s.key for s in parameters(met))
+            for k in (:d_min, :d_max, :d_step, :sr_min, :sr_max, :sr_target)
+                @test k in chaves
+            end
+            # e quem usa o `lss_from` default precisa do fator no próprio TOML
+            @test haskey(FPSOSiz.constants(FPSOSiz.method_config(met)),
+                         :lss_liquid_factor)
+        end
     end
 end
 

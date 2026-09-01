@@ -9,7 +9,8 @@ using FPSOSiz
     @testset "β (Figura 3)"  begin include("beta.jl")         end
     @testset "arrasto"       begin include("drag.jl")         end
     @testset "casos"         begin include("cases.jl")        end
-    @testset "caso-ouro"     begin include("golden_alves_komesu.jl") end
+    @testset "caso-ouro 3φ"  begin include("golden_alves_komesu.jl") end
+    @testset "caso-ouro 2φ"  begin include("golden_knockout.jl")     end
     @testset "envelope"      begin include("envelope.jl")     end
     @testset "registro"      begin include("registry.jl")     end
     @testset "arquitetura"   begin include("architecture.jl") end

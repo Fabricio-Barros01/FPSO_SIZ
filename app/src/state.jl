@@ -117,8 +117,10 @@ diretório do usuário primeiro, os exemplos de fábrica depois. Arquivo ausente
 ilegível vira um único caso nos defaults, com a queixa na barra de status.
 """
 function AppState(; case_file::AbstractString = "exemplo_alves_komesu.toml")
-    todos = vcat(FPSOSiz.stream_parameters(),
-                 FPSOSiz.parameters(FPSOSiz.StewartArnold()))
+    # Os descritores de corrente saem do MÉTODO, não do `stream.toml` inteiro: um vaso
+    # que não tem fase aquosa não deve mostrar campos de água. Ver `stream_keys`.
+    metodo = FPSOSiz.StewartArnold()
+    todos  = vcat(FPSOSiz.stream_parameters(metodo), FPSOSiz.parameters(metodo))
     campos  = filter(s -> !(s.key in CHAVES_GLOBAIS), todos)
     ajustes = filter(s -> s.key in CHAVES_GLOBAIS, todos)
 

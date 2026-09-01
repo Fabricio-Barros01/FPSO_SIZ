@@ -51,7 +51,10 @@ include("sizing/constraints.jl")
 
 include("sizing/separator/beta.jl")
 include("sizing/separator/drag.jl")
+# Bloco de capacidade de gás: idêntico nos dois vasos, então mora fora de ambos.
+include("sizing/gas_capacity.jl")
 include("sizing/separator/stewart_arnold.jl")
+include("sizing/knockout/two_phase.jl")
 
 include("engine/envelope.jl")
 
@@ -64,14 +67,15 @@ export validate, defaults, with_defaults
 # --- tipos
 export PhaseProps, StreamState, stream_from_field, stream_from_case, field_units
 export Interval, Case, CaseSet, expand, corner_count, active
-export load_case_set, case_set_from_config, stream_parameters
+export load_case_set, case_set_from_config, stream_parameters, stream_keys
 export save_case_set, save_case_set_named, list_case_sets, case_set_path
 export dir_casos, dirs_casos, nome_casos_valido
 export SizingResult, SweepRow, CalcTrace, TraceEntry, block_entries, vessel_volume
 export EnvelopeResult, EnvelopeRow
 
-# --- separador
+# --- vasos registrados
 export Separator, StewartArnold, VesselConstraints
+export KnockoutDrum, StewartArnoldTwoPhase, gas_capacity_dleff
 export sizing_constraints, method_config, lss_from, size_vessel
 export beta_coefficient, water_area_fraction
 export converge_drag, terminal_velocity, reynolds, drag_coefficient, souders_brown
@@ -100,6 +104,8 @@ end
 function __init__()
     register!(Separator())
     register!(StewartArnold())
+    register!(KnockoutDrum())
+    register!(StewartArnoldTwoPhase())
     return nothing
 end
 

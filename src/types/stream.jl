@@ -67,30 +67,65 @@ const STREAM_KEYS = (:q_oil, :q_water, :q_gas,
                      :pressure, :temperature, :z)
 
 """
-    stream_from_case(vals) -> StreamState
+    stream_keys(m) -> Tuple{Vararg{Symbol}}
+
+As entradas de corrente que o método `m` de fato consome. Default: todas as
+[`STREAM_KEYS`](@ref).
+
+Existe porque nem todo equipamento é trifásico. Um vaso de knockout gás-líquido não
+tem fase aquosa, e sem esta função o formulário dele mostraria vazão, densidade e
+viscosidade de água que não entram em conta nenhuma. **Campo que não faz nada é pior
+que campo ausente: ele mente** — quem o preenche acredita ter informado algo.
+
+A regra de `src/interfaces.jl` continua de pé: a tela filtra os descritores por esta
+lista, sem citar `:q_water` em lugar nenhum.
+"""
+stream_keys(::AbstractSizingMethod) = STREAM_KEYS
+
+"""
+    stream_parameters(m) -> Vector{ParameterSpec}
+
+Os descritores de corrente do método `m` — os de `config/stream.toml` restritos a
+[`stream_keys`](@ref), na ordem do arquivo.
+
+Um método com uma fase líquida só pode redefinir isto para reetiquetar o que herda
+(o "óleo" de um knockout é o condensado); a filtragem é o comportamento default.
+"""
+stream_parameters(m::AbstractSizingMethod) =
+    filter(s -> s.key in stream_keys(m), stream_parameters())
+
+"""
+    stream_from_case(vals; required = STREAM_KEYS) -> StreamState
 
 Constrói a corrente a partir do dicionário de um caso já expandido (ver
-`FPSOSiz.expand`). Espera as chaves de [`STREAM_KEYS`](@ref) nas unidades de
-engenharia declaradas em `config/stream.toml`.
+`FPSOSiz.expand`). Exige as chaves de `required` nas unidades de engenharia declaradas em
+`config/stream.toml`; passe `stream_keys(m)` para exigir só o que o método consome.
+
+**Fase ausente vira `NaN`, não zero.** Zero é um valor possível e plausível — uma
+corrente pode legitimamente ter vazão de água nula —, então usá-lo como "não informado"
+faria um resultado errado passar por resultado válido. `NaN` se propaga e aparece: um
+método que declare não precisar de água e mesmo assim a use devolve `NaN` na tela, que
+é impossível de confundir com um número. É a mesma decisão de `VesselConstraints`.
 """
-function stream_from_case(vals::AbstractDict)
-    missing_keys = [k for k in STREAM_KEYS if !haskey(vals, k)]
+function stream_from_case(vals::AbstractDict; required = STREAM_KEYS)
+    missing_keys = [k for k in required if !haskey(vals, k)]
     isempty(missing_keys) ||
         throw(ArgumentError("caso sem as entradas de corrente: " *
                             join(missing_keys, ", ")))
+    v = k -> k in required ? float(vals[k]) : NaN
     return stream_from_field(
-        q_oil_m3h   = vals[:q_oil],
-        q_water_m3h = vals[:q_water],
-        q_gas_m3h   = vals[:q_gas],
-        rho_oil     = vals[:rho_oil],
-        rho_water   = vals[:rho_water],
-        rho_gas     = vals[:rho_gas],
-        mu_oil_cp   = vals[:mu_oil],
-        mu_water_cp = vals[:mu_water],
-        mu_gas_cp   = vals[:mu_gas],
-        p_kpa       = vals[:pressure],
-        t_celsius   = vals[:temperature],
-        z           = vals[:z],
+        q_oil_m3h   = v(:q_oil),
+        q_water_m3h = v(:q_water),
+        q_gas_m3h   = v(:q_gas),
+        rho_oil     = v(:rho_oil),
+        rho_water   = v(:rho_water),
+        rho_gas     = v(:rho_gas),
+        mu_oil_cp   = v(:mu_oil),
+        mu_water_cp = v(:mu_water),
+        mu_gas_cp   = v(:mu_gas),
+        p_kpa       = v(:pressure),
+        t_celsius   = v(:temperature),
+        z           = v(:z),
     )
 end
 

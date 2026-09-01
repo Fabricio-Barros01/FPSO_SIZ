@@ -65,6 +65,22 @@ física não é duplicada.
    reproduzi-lo. Mas a variante geométrica é **calculada e emitida no rastro de cálculo**
    (`Eq. 21*`), para que ela apareça no memorial que vai anexo ao relatório em vez de
    viver só neste comentário. Ver `test/golden_alves_komesu.jl`.
+
+4. **Eq. 15 e 23 — qual `Lss` vale.** Stewart & Arnold §3.8.4 e §4.9.1 mandam tomar o
+   **maior** entre `Leff + d/1000` e `(4/3)·Leff`: são duas folgas construtivas
+   independentes (distribuição na entrada e extrator de névoa de um lado, nível de
+   líquido do outro), e o vaso tem de atender às duas. O artigo usa a relação do bloco
+   que governa o `Leff`.
+
+   As duas regras coincidem nas três primeiras linhas da Tabela 3 e divergem nas três
+   últimas, onde `Leff + d` passa a ser o maior: em `d = 5950 mm` o artigo publica
+   `Lss = 19,64 m` contra `20,68 m` pela regra do livro — 5 % curto, e `SR` 3,30 em vez
+   de 3,48. Não muda o vaso escolhido (o ótimo continua em 5650 mm pelos dois
+   critérios), mas encurta o vaso nas pontas da grade.
+
+   Seguimos o artigo aqui, pelo mesmo motivo da nota 3: é o que reproduz a Tabela 3, e
+   reproduzi-la é o propósito declarado. O vaso bifásico, cuja fonte é o livro, usa a
+   regra do livro — ver `lss_from` em `src/sizing/knockout/two_phase.jl`.
 """
 
 struct Separator <: AbstractEquipment end
@@ -116,21 +132,12 @@ function sizing_constraints(m::StewartArnold, s::StreamState,
     relax  = float(k[:cd_relaxation])
 
     # ---------------------------------------------------------------- bloco A
-    drag = converge_drag(fu.rho_o, fu.rho_g, dm_gas, fu.mu_g; cd0, relax)
-    trace!(tr, :gas, "Eq. 9–11", "C_D", "iteração sub-relaxada de 24/Re + 3/√Re + 0,34",
-           drag.cd, "–")
-    trace!(tr, :gas, "Eq. 11", "V_t", "0,0036·[((ρl−ρg)/ρg)·(dm/C_D)]^0,5", drag.vt, "m/s")
-    trace!(tr, :gas, "Eq. 10", "Re", "0,001·ρg·dm·V_t/µg", drag.re, "–")
-
-    drag.converged || return (false,
-        "O coeficiente de arrasto não convergiu em $(drag.iterations) iterações. " *
-        "Verifique a viscosidade do gás (µ_g = $(round(fu.mu_g, digits = 4)) cP).", tr)
-
-    K = souders_brown(fu.rho_o, fu.rho_g, dm_gas, drag.cd)
-    trace!(tr, :gas, "Eq. 13", "K", "[(ρg/(ρl−ρg))·(C_D/dm)]^0,5", K, "–")
-
-    d_leff_gas = c_eq14 * (fu.t_k * fu.z * fu.q_g / fu.p_kpa) * K
-    trace!(tr, :gas, "Eq. 14", "d·Leff", "34,5·[T·Z·Qg/P]·K", d_leff_gas, "mm·m")
+    # A Eq. 14 é a Eq. 3.8b do livro: o artigo reproduz Stewart & Arnold. O bloco vive
+    # em `src/sizing/gas_capacity.jl` e é o MESMO que o vaso bifásico usa — muda só a
+    # numeração citada no memorial, porque cada método cita a sua fonte.
+    ok_gas, d_leff_gas, msg_gas =
+        gas_capacity_dleff(s, dm_gas, c_eq14, cd0, relax, tr; eqs = EQS_GAS_ALVES)
+    ok_gas || return (false, msg_gas, tr)
 
     # ---------------------------------------------------------------- bloco B
     dsg = fu.sg_w - fu.sg_o
