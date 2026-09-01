@@ -250,20 +250,81 @@ commitar.
 
 ## Sprint 5 — Segundo equipamento no registro ⏳ ← ATUAL
 
-`config/stream.toml:6` promete reaproveitamento para *"separador, bomba, tratador,
+`config/stream.toml:4-5` promete reaproveitamento para *"separador, bomba, tratador,
 trocador e vaso flash"*, e `test/registry.jl` já prova que um método registra de fora de
-`src/`. Falta exercer a costura de dentro — e é este sprint que decide se a arquitetura
-dos Sprints 0–4 vale o que diz valer.
+`src/` e aparece com o formulário montado. Falta exercer a costura **de dentro** — e é
+este sprint que diz se a arquitetura dos Sprints 0–4 vale o que promete.
 
 Candidato de menor física nova: **vaso flash / knockout drum bifásico** — blocos A e C
-de Stewart & Arnold sem o bloco B (não há decantação água-óleo a resolver). O
-`BLOCOS_MEMORIAL` de `app/src/report.jl` já foi escrito prevendo isto: bloco vazio não
-vira subtítulo órfão.
+de Stewart & Arnold sem o bloco B, porque não há decantação água-óleo a resolver. Os
+dois blocos que sobram têm exatamente a mesma forma do trifásico (`d·Leff ≥ X` para o
+gás, `d²·Leff ≥ Y` para o líquido), e `BLOCOS_MEMORIAL` (`app/src/report.jl:48`) já foi
+escrito prevendo isto: bloco vazio não vira subtítulo órfão.
 
-### O trabalho está na interface, não na física
+### O que a leitura do código revelou — e corrige o planejamento anterior
 
-O core já é genérico — `size_envelope(equipamento, metodo, casos)` recebe os dois por
-argumento. Quem fixou o separador foi o `app/`, em **oito** pontos:
+A estimativa antiga ("um `struct`, quatro métodos, um TOML, um `include` e um
+`register!`") vale para `size_equipment` de caso único. **Não vale para o motor de
+envelope**, que é onde está o trabalho de verdade. Três obstáculos, todos verificados:
+
+**1. `size_envelope` não é genérico — é declarado sobre os tipos concretos.**
+
+```julia
+# src/engine/envelope.jl:40
+function size_envelope(eq::Separator, m::StewartArnold, cases::CaseSet; …)
+    k     = constants(_sa_config())          # :43  — o TOML do separador
+    conss = SeparatorConstraints[]           # :56  — o struct do separador
+    ok, cons, _ = separator_constraints(…)   # :69  — a função do separador
+```
+
+Ele recebe equipamento e método por argumento, mas o corpo inteiro fala com o
+separador. Um vaso bifásico registrado hoje ganharia formulário e `size_equipment`, e
+**perderia o multi-caso** — que é o diferencial do software. Este é o item maior do
+sprint, e o planejamento anterior o subestimava.
+
+A generalização é pequena porque a costura já existe: os blocos produzem *três números
+que não dependem de `d`*, e essa abstração serve aos dois vasos. O que muda de nome:
+
+| Hoje | Vira | Por quê |
+|---|---|---|
+| `separator_constraints(m::StewartArnold, …)` | `sizing_constraints(m::AbstractSizingMethod, …)` | ponto de extensão, despachado pelo método |
+| `SeparatorConstraints` | `VesselConstraints` | `d_max_mm = Inf` no bifásico (não há teto de decantação); `beta`/`aw_over_a` viram `NaN` |
+| `_sa_config()` dentro do motor | `method_config(m)` | cada método aponta o próprio TOML |
+| `f_lss` lido de `_sa_config` | `lss_factor(m, k)` | a relação `Lss(Leff)` é do método |
+
+`size_envelope(::AbstractEquipment, ::AbstractSizingMethod, …)` passa a chamar só essas
+quatro, e o resto do corpo — grade comum, envelope de `Leff(d)`, teto mais restritivo,
+escolha por `|SR − alvo|` — fica **idêntico**, porque nunca dependeu do separador.
+
+*Guarda:* um teste que rode `size_envelope` para os dois equipamentos pelo registro
+(`for eq in equipments(), m in methods_for(eq)`), sem citar nenhum dos dois pelo nome.
+
+**2. Toda corrente é obrigatoriamente trifásica.**
+
+`stream_from_case` (`src/types/stream.jl:77`) lança se faltar qualquer uma das doze
+`STREAM_KEYS`, água inclusa. Um knockout drum bifásico não tem fase aquosa — e, do jeito
+que está, o formulário dele mostraria vazão, densidade e viscosidade de água que não
+entram em conta nenhuma. Campo que não faz nada é pior que campo ausente: ele mente.
+
+Saída: `stream_keys(m::AbstractSizingMethod)` com default `STREAM_KEYS`, e o bifásico
+declarando o subconjunto sem água. `stream_from_case` passa a receber quais chaves
+exigir; `AppState` monta `campos` filtrando `stream_parameters()` por `stream_keys`. A
+regra de `src/interfaces.jl` continua de pé: a tela filtra por uma lista que o método
+declara, sem citar `:q_water` em lugar nenhum.
+
+**3. O desenho tem três fases embutidas.**
+
+`beta_atual` (`app/src/state.jl:327`) chama `separator_constraints` direto para extrair
+β, e `vaso.jl` usa `layer_heights(g.d_m, g.beta)` em cinco pontos (`:52, :64, :90, :214`)
+mais a cota `β = hₒ/d` (`:256`). Num vaso bifásico β não existe. A saída provável é a
+geometria carregar as **camadas** que o resultado descreve (uma lista de
+`(fração, cor, rótulo)`) em vez de um β do qual as camadas são deduzidas — decidir isso
+faz parte do sprint, e é o único ponto que não é mecânico.
+
+### Os oito pontos que fixam o separador em `app/`
+
+Depois de 1–3, o resto é substituição direta: `AppState` ganha
+`equipamento::AbstractEquipment` e `metodo::AbstractSizingMethod`, e estes leem de `st`.
 
 | Arquivo | O que está fixo |
 |---|---|
@@ -273,34 +334,36 @@ argumento. Quem fixou o separador foi o `app/`, em **oito** pontos:
 | `app/src/api.jl:48-49` | os rótulos do cabeçalho |
 | `app/src/report.jl:112, 148` | o rótulo no CSV e no memorial |
 
-A mudança é a mesma nos oito: `AppState` ganha `equipamento::AbstractEquipment` e
-`metodo::AbstractSizingMethod`, e os pontos acima passam a lê-los de `st`. Trocar de
-equipamento reconstrói `campos`/`ajustes` a partir de `parameters(st.metodo)` e
-**refaz os casos** — as chaves de um vaso bifásico não são as do trifásico, e um caso
-carregado com as chaves erradas cairia todo nos defaults sem avisar.
-
-O desenho é o ponto que não é mecânico: `beta_atual` e `svg_corte` desenham três fases.
-Um vaso bifásico tem duas, e β não existe nele. A saída provável é o desenho perguntar
-ao resultado quantas camadas há, em vez de assumir; decidir isso faz parte do sprint.
+Trocar de equipamento **refaz os casos**: as chaves de um bifásico não são as do
+trifásico, e um caso carregado com as chaves erradas cairia todo nos defaults sem
+avisar — exatamente a classe de falha silenciosa que o Sprint 2 corrigiu na herança por
+posição. Ou se pergunta antes, ou se converte o que casa e se avisa do resto.
 
 ### Passos
 
-1. `src/sizing/vessel/knockout.jl` — `struct KnockoutDrum <: AbstractEquipment`, o
-   método bifásico, os quatro métodos da interface (`method_id`, `label`, `parameters`,
-   `applies_to`) e `size_equipment`. `register!` em `__init__` (`src/FPSOSiz.jl`).
-2. `config/equipment/knockout/*.toml` — constantes e descritores, com proveniência por
-   linha, como manda `test/architecture.jl`.
-3. `AppState` carrega o par equipamento/método; os oito pontos acima passam a lê-lo.
-4. Seletores na barra superior, alimentados por `equipments()` e `methods_for()`.
-5. Um caso-ouro para o novo método, no molde de `test/golden_alves_komesu.jl`.
+1. Generalizar o motor de envelope (obstáculo 1), **sem** o equipamento novo: os 1223
+   testes atuais têm de continuar verdes com o separador passando pelo caminho genérico.
+   É o passo que se pode errar sem perceber, então vai sozinho.
+2. `stream_keys(m)` e o formulário filtrado (obstáculo 2).
+3. `src/sizing/vessel/knockout.jl` + `config/equipment/knockout/*.toml`, com `register!`
+   em `__init__` (`src/FPSOSiz.jl:95`). O TOML tem de passar em `test/architecture.jl`:
+   todo parâmetro com rótulo, unidade, proveniência e `min ≤ default ≤ max`.
+4. As camadas do desenho (obstáculo 3).
+5. Seletores de equipamento e método na barra superior, de `equipments()` e
+   `methods_for()`; a troca refaz formulário e casos.
+6. Caso-ouro do novo método, no molde de `test/golden_alves_komesu.jl`, e a guarda de
+   constantes-no-TOML no molde de `test/architecture.jl:73`.
 
 ### Aceite
 
 **A invariante que a arquitetura inteira existe para provar: nenhum campo de formulário
-novo em `app/`.** O formulário vem de `parameters(metodo)`, então um teste que conte os
-`<input>` gerados para cada equipamento e compare com `length(parameters(m))` fecha o
-sprint. Mais: o cross-check de `smoke.jl` continua verde sem ganhar id novo por campo, e
-`grep -c 'StewartArnold()' app/src/` volta **zero**.
+escrito à mão em `app/`.** Um teste conta os `<input>` gerados por equipamento e compara
+com `length(stream_keys(m)) + length(parameters(m))`. Somados a isso:
+
+- `grep -c 'StewartArnold()\|Separator()' app/src/` volta **zero**;
+- o motor de envelope roda para os dois equipamentos, iterado pelo registro;
+- o memorial do bifásico sai com os blocos A e C e **sem** um subtítulo B vazio;
+- os 1223 testes de hoje continuam passando — a generalização não é reescrita.
 
 ---
 
