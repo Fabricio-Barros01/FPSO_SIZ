@@ -37,33 +37,59 @@ Consequência a conhecer: duas abas abertas compartilham o mesmo estado, como du
 janelas do mesmo editor sobre o mesmo arquivo.
 """
 
-const ESTADO = Ref{Union{AppState,Nothing}}(nothing)
+"""
+Um [`AppState`](@ref) por box do catálogo, criado sob demanda.
+
+Era um `Ref` único quando havia uma aplicação só. Com o menu há várias, e um `Ref`
+faria abrir o vaso bifásico descartar o estudo aberto no separador — sem aviso, porque
+o servidor não teria como saber que aquilo era trabalho de outra tela. Um dicionário
+por box faz "voltar ao menu e entrar noutro" ser o que a pessoa espera: nada se perde.
+"""
+const ESTADO = Dict{Symbol,AppState}()
 const TRAVA = ReentrantLock()
-const ARQUIVO_CASOS = Ref{String}("exemplo_alves_komesu.toml")
+
+"""
+Arquivo de casos aberto na partida, quando dado por `--caso`.
+
+Vazio é o normal: o programa abre **em branco** e quem carrega exemplo ou estudo é a
+barra de arquivo da tela. `--caso` continua existindo porque o modo lote depende dele e
+porque quem já sabe o que quer não deve precisar de dois cliques.
+"""
+const ARQUIVO_CASOS = Ref{String}("")
 
 "Porta em que o servidor subiu, para a conferência de origem. `0` = ainda não subiu."
 const PORTA = Ref{Int}(0)
 
 """
-    estado_atual() -> AppState
+    estado_atual(box) -> AppState
 
-O estado do processo, criado e dimensionado na primeira chamada. Sempre chamado com a
-[`TRAVA`](@ref) na mão.
+O estado daquele box, criado na primeira chamada. Sempre com a [`TRAVA`](@ref) na mão.
+
+**Não dimensiona na criação.** Até o Sprint 5 o programa abria com o caso do artigo já
+carregado e já dimensionado; ninguém tinha pedido nem uma coisa nem outra. Agora a tela
+abre com um caso nos defaults dos descritores e o cartão em travessão, esperando
+"Dimensionar" — salvo quando `--caso` diz explicitamente o que abrir.
 """
-function estado_atual()
-    st = ESTADO[]
-    st === nothing || return st
-    st = AppState(; case_file = ARQUIVO_CASOS[])
-    # `--caso arquivo_que_nao_existe.toml` tem de chegar ao usuário. Sem isto o
-    # `dimensionar!` escreveria "4 caso(s) → 10 canto(s)…" por cima da queixa, e a tela
-    # abriria com um caso em branco sem dizer por quê.
-    redimensionar_sem_perder_queixa!(st)
-    ESTADO[] = st
+function estado_atual(box::FPSOSiz.BoxCatalogo)
+    chave = Symbol(box.id)
+    haskey(ESTADO, chave) && return ESTADO[chave]
+
+    par = FPSOSiz.box_equipamento(box)
+    par === nothing && error("o box '$(box.id)' não resolve num equipamento do registro")
+    eq, m = par
+
+    st = AppState(; case_file = ARQUIVO_CASOS[], equipamento = eq, metodo = m)
+    if !isempty(ARQUIVO_CASOS[])
+        # Só quem pediu um arquivo pela linha de comando é dimensionado na abertura. A
+        # queixa de um `--caso` inexistente tem de sobreviver ao `dimensionar!`.
+        redimensionar_sem_perder_queixa!(st)
+    end
+    ESTADO[chave] = st
     return st
 end
 
-"Zera o estado — usado pelos testes, que precisam de um começo limpo por caso."
-reiniciar_estado!() = (ESTADO[] = nothing)
+"Zera os estados — usado pelos testes, que precisam de um começo limpo por caso."
+reiniciar_estado!() = empty!(ESTADO)
 
 """
     dir_publico() -> String
@@ -143,6 +169,27 @@ recusa_origem() = resposta_json(
          "status_ok" => false); status = 403)
 
 """
+    box_da_rota() -> BoxCatalogo | nothing
+
+O box que a rota `/api/:box/…` nomeia, validado contra o catálogo.
+
+`nothing` quando o id não existe, não está ativo, ou não resolve num par do registro —
+os três casos em que servir a aplicação seria servir uma tela que não monta.
+"""
+function box_da_rota()
+    id = try
+        string(Genie.Router.params(:box, ""))
+    catch
+        ""
+    end
+    isempty(id) && return nothing
+    b = FPSOSiz.box_catalogo(id)
+    (b === nothing || !b.ativo) && return nothing
+    FPSOSiz.box_equipamento(b) === nothing && return nothing
+    return b
+end
+
+"""
     protegido(f) -> resposta
 
 Roda `f(st)` com a trava tomada e transforma qualquer exceção em JSON de erro. Uma
@@ -151,9 +198,19 @@ falha inesperada tem de virar mensagem na barra de status, não uma aba em branc
 """
 function protegido(f::Function; conferir_origem::Bool = false)
     conferir_origem && !mesma_origem() && return recusa_origem()
+
+    # O box vem da URL, então nunca se confia nele: `box_catalogo` só devolve algo para
+    # um id que o catálogo declara, e `box_equipamento` só para um que resolva no
+    # registro. Id inventado morre aqui, com 404, sem tocar em `ESTADO`.
+    box = box_da_rota()
+    box === nothing && return resposta_json(
+        Dict("erro" => "aplicação desconhecida",
+             "status" => "Essa aplicação não existe. Volte ao menu.",
+             "status_ok" => false); status = 404)
+
     return lock(TRAVA) do
         try
-            f(estado_atual())
+            f(estado_atual(box))
         catch err
             @error "falha ao atender a requisição" exception = (err, catch_backtrace())
             resposta_json(Dict("erro" => sprint(showerror, err),
@@ -163,29 +220,64 @@ function protegido(f::Function; conferir_origem::Bool = false)
     end
 end
 
-"Marca em `index.html` onde o estado inicial é injetado."
+"Marca em `casca.html` onde o estado inicial é injetado."
 const MARCA_INICIAL = "<!--ESTADO-INICIAL-->"
 
-"""
-    pagina_inicial(st) -> String
-
-`index.html` com o esquema e o estado já embutidos num `<script>`.
-
-Sem isto a página abriria vazia e só se preencheria depois de dois `fetch`, o que num
-aplicativo de mesa é um piscar de tela sem motivo: o servidor é o mesmo processo, o
-dado já está na memória. Injetando aqui, a primeira pintura já vem completa.
-
-`</script>` dentro do JSON encerraria o bloco no meio; o HTML não interpreta escapes
-dentro de `<script>`, então a barra invertida antes da barra é a única defesa. Nomes de
-caso vêm de TOML do usuário, então o risco é real, não teórico.
-"""
-function pagina_inicial(st::AppState)
-    html = read(joinpath(dir_publico(), "index.html"), String)
-    dados = JSON3.write(Dict("esquema" => esquema(st), "estado" => estado(st)))
-    seguro = replace(dados, "</" => "<\\/")
-    return replace(html, MARCA_INICIAL =>
-                   "<script>window.__INICIAL__ = $seguro;</script>")
+"Lê um arquivo de `public/`, com erro claro se faltar."
+function ler_publico(nome::AbstractString)
+    caminho = joinpath(dir_publico(), nome)
+    isfile(caminho) || error("arquivo da interface não encontrado: $caminho")
+    return read(caminho, String)
 end
+
+"""
+    pagina(; titulo, corpo, scripts, dados) -> String
+
+Monta uma página a partir de `casca.html`: o cabeçalho do documento, a barra de status
+e a tag do script vivem lá uma vez, e cada página traz só o seu corpo.
+
+`dados` é injetado em `window.__INICIAL__`. Sem isso a página abriria vazia e só se
+preencheria depois de dois `fetch`, o que num aplicativo de mesa é um piscar de tela
+sem motivo: o servidor é o mesmo processo e o dado já está na memória.
+
+`</script>` dentro do JSON encerraria o bloco no meio, e o HTML não interpreta escapes
+dentro de `<script>` — a barra invertida antes da barra é a única defesa. Nome de caso e
+rótulo de box vêm de TOML que o usuário edita, então o risco é real, não teórico.
+"""
+function pagina(; titulo::AbstractString, corpo::AbstractString,
+                  scripts::Vector{String}, dados = nothing)
+    html = ler_publico("casca.html")
+    html = replace(html, "<!--TITULO-->" => titulo)
+    html = replace(html, "<!--CORPO-->" => ler_publico(corpo))
+    html = replace(html, "<!--SCRIPT-->" =>
+                   join(["<script src=\"/$s\"></script>" for s in scripts], "\n"))
+
+    injecao = if dados === nothing
+        ""
+    else
+        seguro = replace(JSON3.write(dados), "</" => "<\\/")
+        "<script>window.__INICIAL__ = $seguro;</script>"
+    end
+    return replace(html, MARCA_INICIAL => injecao)
+end
+
+"A página de uma aplicação de dimensionamento de vaso."
+pagina_inicial(st::AppState, box::FPSOSiz.BoxCatalogo) = pagina(;
+    titulo  = "$(box.titulo) — FPSO_Siz",
+    corpo   = "index.html",
+    scripts = ["app.js"],
+    dados   = Dict("box" => box.id, "titulo" => box.titulo,
+                   "esquema" => esquema(st), "estado" => estado(st)))
+
+"O menu de abertura. O catálogo é dado — ver `config/catalogo.toml`."
+pagina_menu() = pagina(;
+    titulo  = "FPSO_Siz — dimensionamento de equipamentos",
+    corpo   = "menu.html",
+    scripts = ["icones.js", "menu.js"],
+    dados   = Dict("boxes" => [Dict("id" => b.id, "titulo" => b.titulo,
+                                    "subtitulo" => b.subtitulo, "icone" => b.icone,
+                                    "ativo" => b.ativo, "motivo" => b.motivo)
+                               for b in FPSOSiz.catalogo()]))
 
 # ---------------------------------------------------------------------------
 # Rotas
@@ -198,27 +290,54 @@ Registra as rotas. Idempotente: o Genie substitui a rota de mesmo caminho, entã
 chamar de novo (o smoke test chama) não duplica nada.
 """
 function rotas!()
+    html(corpo) = HTTP.Response(200, ["Content-Type" => "text/html; charset=utf-8"];
+                               body = corpo)
+
+    # A raiz é o MENU, não uma tela de dimensionamento. Até o Sprint 5 o programa abria
+    # já com o caso do artigo carregado e dimensionado, sem que ninguém tivesse pedido
+    # nem uma coisa nem outra — e sem caminho para o segundo equipamento.
     Genie.Router.route("/") do
-        protegido(st -> HTTP.Response(
-            200, ["Content-Type" => "text/html; charset=utf-8"];
-            body = pagina_inicial(st)))
+        try
+            html(pagina_menu())
+        catch err
+            @error "falha ao montar o menu" exception = (err, catch_backtrace())
+            HTTP.Response(500, ["Content-Type" => "text/plain; charset=utf-8"];
+                          body = "Falha ao montar o menu: " * sprint(showerror, err))
+        end
     end
 
-    Genie.Router.route("/api/esquema") do
+    Genie.Router.route("/app/:box") do
+        box = box_da_rota()
+        box === nothing && return HTTP.Response(
+            404, ["Content-Type" => "text/html; charset=utf-8"];
+            body = "<p style=\"padding:24px;font:14px system-ui\">Essa aplicação não " *
+                   "existe. <a href=\"/\">Voltar ao menu</a></p>")
+        lock(TRAVA) do
+            try
+                html(pagina_inicial(estado_atual(box), box))
+            catch err
+                @error "falha ao montar a aplicação" exception = (err, catch_backtrace())
+                HTTP.Response(500, ["Content-Type" => "text/plain; charset=utf-8"];
+                              body = "Falha ao montar a tela: " * sprint(showerror, err))
+            end
+        end
+    end
+
+    Genie.Router.route("/api/:box/esquema") do
         protegido(st -> resposta_json(esquema(st)))
     end
 
-    Genie.Router.route("/api/estado") do
+    Genie.Router.route("/api/:box/estado") do
         protegido(st -> resposta_json(estado(st)))
     end
 
     # GET de verdade: só lê. O rastro fica fora de `/api/estado` porque é grande e o
     # painel é consulta — a tela pede quando o usuário abre o memorial.
-    Genie.Router.route("/api/memorial") do
+    Genie.Router.route("/api/:box/memorial") do
         protegido(st -> resposta_json(memorial(st)))
     end
 
-    Genie.Router.route("/api/dimensionar"; method = Genie.Router.POST) do
+    Genie.Router.route("/api/:box/dimensionar"; method = Genie.Router.POST) do
         protegido() do st
             erros = aplicar!(st, corpo_json())
             dimensionar!(st)
@@ -234,7 +353,7 @@ function rotas!()
     # que o botão Exportar desenha. Um GET é idempotente por contrato — o navegador pode
     # reemiti-lo por bfcache ou prefetch — e um reenvio silencioso mudaria o arquivo
     # gravado. O verbo agora diz a verdade sobre o efeito.
-    Genie.Router.route("/api/desenho"; method = Genie.Router.POST) do
+    Genie.Router.route("/api/:box/desenho"; method = Genie.Router.POST) do
         protegido() do st
             d = Formato.parse_num(string(get(corpo_json(), "d", "")))
             d === nothing || (st.d_sel = d)
@@ -250,11 +369,11 @@ function rotas!()
     # GET só lê o diretório; os dois POST escrevem (um troca o estado inteiro, o outro
     # grava um arquivo com nome vindo do cliente) e por isso conferem a origem.
 
-    Genie.Router.route("/api/casos/arquivos") do
+    Genie.Router.route("/api/:box/casos/arquivos") do
         protegido(st -> resposta_json(arquivos(st)))
     end
 
-    Genie.Router.route("/api/casos/abrir"; method = Genie.Router.POST) do
+    Genie.Router.route("/api/:box/casos/abrir"; method = Genie.Router.POST) do
         protegido(; conferir_origem = true) do st
             nome = string(get(corpo_json(), "arquivo", ""))
             abrir_casos!(st, nome)
@@ -266,7 +385,7 @@ function rotas!()
         end
     end
 
-    Genie.Router.route("/api/casos/salvar"; method = Genie.Router.POST) do
+    Genie.Router.route("/api/:box/casos/salvar"; method = Genie.Router.POST) do
         protegido(; conferir_origem = true) do st
             corpo = corpo_json()
             # O que se grava é o que está NA TELA, não o que o servidor tinha da última
@@ -284,7 +403,7 @@ function rotas!()
         end
     end
 
-    Genie.Router.route("/api/exportar"; method = Genie.Router.POST) do
+    Genie.Router.route("/api/:box/exportar"; method = Genie.Router.POST) do
         protegido(; conferir_origem = true) do st
             r = exportar!(st)
             resposta_json(Dict{String,Any}("ok" => r.ok, "dir" => r.dir,

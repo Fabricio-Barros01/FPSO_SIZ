@@ -1,0 +1,30 @@
+<!--
+  Menu de abertura. A casca (cabeçalho do documento, barra de status, tag do script)
+  está em `casca.html`; ver `pagina` em app/src/server.jl.
+
+  Nenhum cartão é escrito aqui: a grade nasce em menu.js a partir de
+  `config/catalogo.toml`, injetado no HTML pelo servidor. É a mesma regra que governa o
+  formulário de dimensionamento — acrescentar uma aplicação é editar um TOML, não este
+  arquivo.
+-->
+<header class="topo topo-menu">
+  <img class="marca" src="/senai-cetiqt.webp" alt="SENAI CETIQT" width="860" height="131">
+  <h1>FPSO_Siz</h1>
+  <span class="metodo">Dimensionamento de equipamentos de processamento primário</span>
+  <div class="acoes">
+    <!-- Fechar a aba não encerraria o servidor: ele é um processo à parte, e o
+         usuário ficaria com o programa rodando sem nada na tela. -->
+    <button id="btn-sair" class="sair" type="button" title="Encerra o programa">Sair</button>
+  </div>
+</header>
+
+<main class="menu">
+  <h2 class="menu-titulo">Escolha o equipamento</h2>
+  <div class="grade-boxes" id="grade-boxes"></div>
+
+  <p class="dica menu-rodape">
+    Cada aplicação abre com um caso em branco. Para partir de um exemplo publicado ou de
+    um estudo salvo, use o seletor <strong>arquivo de casos</strong> na coluna da
+    esquerda.
+  </p>
+</main>

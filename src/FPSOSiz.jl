@@ -70,6 +70,7 @@ export Interval, Case, CaseSet, expand, corner_count, active
 export load_case_set, case_set_from_config, stream_parameters, stream_keys
 export save_case_set, save_case_set_named, list_case_sets, case_set_path
 export dir_casos, dirs_casos, nome_casos_valido
+export BoxCatalogo, catalogo, box_catalogo, box_equipamento
 export SizingResult, SweepRow, CalcTrace, TraceEntry, block_entries, vessel_volume
 export EnvelopeResult, EnvelopeRow
 

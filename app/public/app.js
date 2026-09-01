@@ -32,6 +32,10 @@ let arquivoAtual = "";   // nome do que está aberto ("" = nunca salvo)
 // de Abrir, que substitui a lista inteira — sem o aviso, um clique errado apaga um
 // estudo inteiro sem nada a desfazer.
 let sujo = false;
+// Qual aplicação esta tela é — vem do servidor junto com o estado inicial, e prefixa
+// toda chamada de API. A tela não sabe o que é um separador: ela sabe o id do box e os
+// descritores que o servidor mandou.
+let box = "";
 
 // ---------------------------------------------------------------- utilidades
 
@@ -299,7 +303,7 @@ const corpoAtual = () => JSON.stringify({ casos, globais, sel });
 async function dimensionar() {
   ocupado(true);
   status("Dimensionando…");
-  const r = await pedir("/api/dimensionar", {
+  const r = await pedir(`/api/${box}/dimensionar`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: corpoAtual(),
@@ -310,7 +314,7 @@ async function dimensionar() {
 
 async function exportar() {
   ocupado(true);
-  const r = await pedir("/api/exportar", { method: "POST" });
+  const r = await pedir(`/api/${box}/exportar`, { method: "POST" });
   ocupado(false);
   r && status(r.status, r.status_ok);
 }
@@ -350,7 +354,7 @@ function moverCursor() {
   pendente = setTimeout(async () => {
     if (emVoo) emVoo.abort();
     const meu = (emVoo = new AbortController());
-    const r = await pedir("/api/desenho", {
+    const r = await pedir(`/api/${box}/desenho`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ d: String(d) }),
@@ -376,7 +380,7 @@ function esquecerMemorial() {
 }
 
 async function carregarMemorial() {
-  const r = await pedir("/api/memorial");
+  const r = await pedir(`/api/${box}/memorial`);
   if (!r) return;
   memorial = r;
 
@@ -446,7 +450,7 @@ function aplicarLista(lista) {
 }
 
 async function recarregarLista() {
-  const r = await pedir("/api/casos/arquivos");
+  const r = await pedir(`/api/${box}/casos/arquivos`);
   r && aplicarLista(r);
 }
 
@@ -468,7 +472,7 @@ async function abrirArquivo() {
 
   ocupado(true);
   status(`Abrindo '${nome}'…`);
-  const r = await pedir("/api/casos/abrir", {
+  const r = await pedir(`/api/${box}/casos/abrir`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ arquivo: nome }),
@@ -516,7 +520,7 @@ async function salvarArquivo(comoNovo) {
 
   ocupado(true);
   status(`Salvando '${nome}'…`);
-  const r = await pedir("/api/casos/salvar", {
+  const r = await pedir(`/api/${box}/casos/salvar`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     // Vai o conteúdo da tela junto: o servidor grava o que está à vista, e não o que
@@ -578,11 +582,21 @@ async function iniciar() {
   // src/server.jl): a primeira pintura já vem completa, sem piscar. Os `fetch` ficam
   // de reserva para quando a página for aberta por outro caminho.
   const semente = window.__INICIAL__ || {};
-  esquema = semente.esquema || (await pedir("/api/esquema"));
+  box = semente.box || "";
+  esquema = semente.esquema || (await pedir(`/api/${box}/esquema`));
   if (!esquema) return;
   montarFormulario();
 
   q("sel-caso").addEventListener("change", (e) => trocarCaso(Number(e.target.value)));
+  // Voltar não perde o trabalho — o estado de cada box fica no servidor — mas perde o
+  // que foi digitado e ainda não foi enviado, porque a tela só manda ao dimensionar ou
+  // ao salvar. Daí o aviso.
+  q("link-menu").addEventListener("click", (e) => {
+    if (sujo && !confirm("Há alterações que ainda não foram enviadas ao servidor.\n\n" +
+                         "Voltar ao menu descarta essas alterações. Continuar?")) {
+      e.preventDefault();
+    }
+  });
   q("btn-abrir").addEventListener("click", abrirArquivo);
   q("btn-salvar").addEventListener("click", () => salvarArquivo(false));
   q("btn-salvar-como").addEventListener("click", () => salvarArquivo(true));
@@ -617,7 +631,7 @@ async function iniciar() {
     q("sel-caso").value = guardado;
   });
 
-  const inicial = semente.estado || (await pedir("/api/estado"));
+  const inicial = semente.estado || (await pedir(`/api/${box}/estado`));
   inicial && aplicarEstado(inicial);
 
   // A lista de arquivos NÃO viaja no estado embutido: ela lê o diretório a cada pedido,

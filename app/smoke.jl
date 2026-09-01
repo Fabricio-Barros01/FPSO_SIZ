@@ -188,15 +188,22 @@ FPSOSiz._CASOS[] = ""
         # id no HTML e esquecer o JS (ou o contrário) é barato demais para depender de
         # alguém abrir o navegador.
         publico = A.dir_publico()
-        html = read(joinpath(publico, "index.html"), String)
-        js   = read(joinpath(publico, "app.js"), String)
+        casca = read(joinpath(publico, "casca.html"), String)
 
-        ids_html = Set(m.captures[1] for m in eachmatch(r"\bid=\"([^\"]+)\"", html))
-        ids_js   = Set(m.captures[1] for m in eachmatch(r"\bq\(\"([^\"]+)\"\)", js))
+        # Uma página é a casca MAIS o seu corpo, servida com o seu script. Desde o
+        # Sprint 6 são duas — o menu e a tela de dimensionamento —, então o par fixo
+        # (index.html, app.js) virou uma lista de pares.
+        for (corpo, script) in (("index.html", "app.js"), ("menu.html", "menu.js"))
+            html = casca * read(joinpath(publico, corpo), String)
+            js   = read(joinpath(publico, script), String)
 
-        @test !isempty(ids_js)
-        @test isempty(setdiff(ids_js, ids_html))   # JS pede id que o HTML não tem
-        @test isempty(setdiff(ids_html, ids_js))   # HTML declara id que ninguém usa
+            ids_html = Set(m.captures[1] for m in eachmatch(r"\bid=\"([^\"]+)\"", html))
+            ids_js   = Set(m.captures[1] for m in eachmatch(r"\bq\(\"([^\"]+)\"\)", js))
+
+            @test !isempty(ids_js)
+            @test isempty(setdiff(ids_js, ids_html))   # JS pede id que o HTML não tem
+            @test isempty(setdiff(ids_html, ids_js))   # HTML declara id que ninguém usa
+        end
 
         # E as classes que o Julia emite na legenda têm de existir na folha de estilo.
         css = read(joinpath(publico, "app.css"), String)
@@ -219,8 +226,11 @@ FPSOSiz._CASOS[] = ""
             @info "node ausente: verificação de sintaxe do app.js pulada"
             @test true
         else
-            js = joinpath(A.dir_publico(), "app.js")
-            @test success(pipeline(`$node --check $js`; stdout = devnull, stderr = devnull))
+            for nome in ("app.js", "menu.js", "icones.js")
+                js = joinpath(A.dir_publico(), nome)
+                @test success(pipeline(`$node --check $js`;
+                                       stdout = devnull, stderr = devnull))
+            end
         end
     end
 
@@ -230,12 +240,14 @@ FPSOSiz._CASOS[] = ""
         # há HTML para inspecionar — o que dá para vigiar é a presença das construções
         # que produzem a semântica. É a mesma estratégia da paleta e dos ids.
         publico = A.dir_publico()
-        html = read(joinpath(publico, "index.html"), String)
+        html = read(joinpath(publico, "casca.html"), String) *
+               read(joinpath(publico, "index.html"), String)
         js   = read(joinpath(publico, "app.js"), String)
         css  = read(joinpath(publico, "app.css"), String)
 
         # A barra de status é o único retorno de "Dimensionar" e de campo recusado.
-        # Sem região viva, o leitor de tela não anuncia nada ao usuário.
+        # Sem região viva, o leitor de tela não anuncia nada ao usuário. Ela vive na
+        # casca desde o Sprint 6, e por isso serve as duas páginas.
         @test occursin(r"id=\"status\"[^>]*role=\"status\"", html)
         @test occursin(r"id=\"status\"[^>]*aria-live=\"polite\"", html)
 
@@ -704,13 +716,29 @@ FPSOSiz._CASOS[] = ""
         faltando = HTTP.get("$base/nao-existe.js"; status_exception = false)
         @test faltando.status == 404
 
-        esq = JSON3.read(String(HTTP.get("$base/api/esquema").body))
+        esq = JSON3.read(String(HTTP.get("$base/api/separador-3f/esquema").body))
         @test length(esq.campos) > 10
         @test length(esq.ajustes) == length(A.CHAVES_GLOBAIS)
         # nenhum descritor pode chegar à tela sem rótulo e unidade
         @test all(c -> !isempty(c.label) && !isempty(c.unit), esq.campos)
 
-        d = JSON3.read(String(HTTP.post("$base/api/dimensionar"; body = "{}").body))
+        @testset "a aplicação abre EM BRANCO" begin
+            # Até o Sprint 5 o programa abria já com o caso do artigo carregado e
+            # dimensionado, sem que ninguém tivesse pedido nem uma coisa nem outra.
+            vazio = JSON3.read(String(HTTP.get("$base/api/separador-3f/estado").body))
+            @test vazio.arquivo == ""
+            @test length(vazio.casos) == 1
+            @test vazio.cartao.d == "—"          # nada dimensionado
+        end
+
+        # É abrir o arquivo que traz os quatro casos do artigo — e é por este caminho
+        # que a pessoa chega ao exemplo agora.
+        ab0 = JSON3.read(String(HTTP.post("$base/api/separador-3f/casos/abrir";
+            body = """{"arquivo":"exemplo_alves_komesu.toml"}""").body))
+        @test ab0.arquivo == "exemplo_alves_komesu.toml"
+        @test length(ab0.casos) == 4
+
+        d = JSON3.read(String(HTTP.post("$base/api/separador-3f/dimensionar"; body = "{}").body))
         @test d.status_ok
         @test d.viavel
         # O caso de referência de config/cases/: quatro casos, dez cantos.
@@ -722,7 +750,7 @@ FPSOSiz._CASOS[] = ""
 
         # mover o cursor troca a seleção sem redimensionar. É POST porque a rota
         # escreve `st.d_sel`, que é o diâmetro que a exportação desenha.
-        x = JSON3.read(String(HTTP.post("$base/api/desenho";
+        x = JSON3.read(String(HTTP.post("$base/api/separador-3f/desenho";
                                         body = """{"d":"5500"}""").body))
         @test x.d_sel == 5500
         @test x.cartao.d != d.cartao.d
@@ -730,29 +758,29 @@ FPSOSiz._CASOS[] = ""
 
         # E o verbo antigo não pode continuar servindo por acidente: um GET que
         # respondesse 200 aqui seria a porta que este POST existe para fechar.
-        @test HTTP.get("$base/api/desenho?d=5500"; status_exception = false).status != 200
+        @test HTTP.get("$base/api/separador-3f/desenho?d=5500"; status_exception = false).status != 200
 
         # O memorial atravessando o handler — é aqui que um `using` ambíguo apareceria.
         # Antes do POST inválido logo abaixo, que troca o conjunto de casos inteiro.
-        mem = JSON3.read(String(HTTP.get("$base/api/memorial").body))
+        mem = JSON3.read(String(HTTP.get("$base/api/separador-3f/memorial").body))
         @test length(mem.casos) == 10          # o caso de referência: 4 casos → 10 cantos
         @test mem.governante == "Fim de vida"
         @test !isempty(mem.casos[1].blocos)
         @test occursin("Eq.", mem.casos[1].blocos[1].linhas[1])
 
         # --- conjuntos de casos ------------------------------------------
-        lista = JSON3.read(String(HTTP.get("$base/api/casos/arquivos").body))
+        lista = JSON3.read(String(HTTP.get("$base/api/separador-3f/casos/arquivos").body))
         @test any(a -> a.nome == "exemplo_alves_komesu.toml", lista.arquivos)
         @test lista.dir == TEMP_CASOS
 
-        sv = JSON3.read(String(HTTP.post("$base/api/casos/salvar";
+        sv = JSON3.read(String(HTTP.post("$base/api/separador-3f/casos/salvar";
             body = """{"arquivo":"smoke_rota.toml","rotulo":"Pela rota"}""").body))
         @test sv.ok
         @test sv.arquivo == "smoke_rota.toml"
         @test isfile(joinpath(TEMP_CASOS, "smoke_rota.toml"))
         @test any(a -> a.nome == "smoke_rota.toml", sv.lista.arquivos)
 
-        ab = JSON3.read(String(HTTP.post("$base/api/casos/abrir";
+        ab = JSON3.read(String(HTTP.post("$base/api/separador-3f/casos/abrir";
             body = """{"arquivo":"smoke_rota.toml"}""").body))
         @test ab.arquivo == "smoke_rota.toml"
         @test ab.status_ok
@@ -761,13 +789,13 @@ FPSOSiz._CASOS[] = ""
 
         # Nome que sai da pasta: recusado, e com 200 — é erro do usuário, não do
         # transporte, então vira mensagem na barra como todo o resto.
-        mau = JSON3.read(String(HTTP.post("$base/api/casos/salvar";
+        mau = JSON3.read(String(HTTP.post("$base/api/separador-3f/casos/salvar";
             body = """{"arquivo":"../fuga_rota.toml"}""").body))
         @test !mau.ok
         @test !isfile(joinpath(dirname(TEMP_CASOS), "fuga_rota.toml"))
 
         # Arquivo inexistente: mensagem, não 500.
-        faltoso = HTTP.post("$base/api/casos/abrir";
+        faltoso = HTTP.post("$base/api/separador-3f/casos/abrir";
             body = """{"arquivo":"nao_existe_mesmo.toml"}""", status_exception = false)
         @test faltoso.status == 200
         @test !JSON3.read(String(faltoso.body)).status_ok
@@ -775,9 +803,9 @@ FPSOSiz._CASOS[] = ""
         # Origem alheia nas rotas que escrevem. O servidor escuta em 127.0.0.1: um
         # `<form>` numa página qualquer posta para cá sem preflight de CORS, e o
         # `Origin` é o que separa isso de um clique na janela do programa.
-        for (rota, corpo) in ("/api/casos/salvar" => """{"arquivo":"invasor.toml"}""",
-                              "/api/casos/abrir"  => """{"arquivo":"smoke_rota.toml"}""",
-                              "/api/exportar"     => "{}")
+        for (rota, corpo) in ("/api/separador-3f/casos/salvar" => """{"arquivo":"invasor.toml"}""",
+                              "/api/separador-3f/casos/abrir"  => """{"arquivo":"smoke_rota.toml"}""",
+                              "/api/separador-3f/exportar"     => "{}")
             alheia = HTTP.post(base * rota, ["Origin" => "http://exemplo.invalido"];
                                body = corpo, status_exception = false)
             @test alheia.status == 403
@@ -785,27 +813,125 @@ FPSOSiz._CASOS[] = ""
         @test !isfile(joinpath(TEMP_CASOS, "invasor.toml"))
 
         # A origem da própria janela passa...
-        propria = HTTP.post("$base/api/casos/salvar",
+        propria = HTTP.post("$base/api/separador-3f/casos/salvar",
                             ["Origin" => "http://127.0.0.1:$porta"];
                             body = """{"arquivo":"smoke_rota.toml","rotulo":"Pela rota"}""",
                             status_exception = false)
         @test propria.status == 200
 
         # ...e leitura não é afetada: um GET não muda nada de qualquer forma.
-        @test HTTP.get("$base/api/casos/arquivos",
+        @test HTTP.get("$base/api/separador-3f/casos/arquivos",
                        ["Origin" => "http://exemplo.invalido"];
                        status_exception = false).status == 200
 
         # entrada inválida vira aviso em português, não erro 500
-        ruim = JSON3.read(String(HTTP.post("$base/api/dimensionar";
+        ruim = JSON3.read(String(HTTP.post("$base/api/separador-3f/dimensionar";
             body = """{"casos":[{"name":"X","enabled":true,
                        "lo":{"q_oil":"não é número"},"hi":{}}]}""").body))
         @test haskey(ruim, :avisos)
         @test occursin("ilegível", ruim.avisos[1].msg)
 
-        expo = JSON3.read(String(HTTP.post("$base/api/exportar"; body = "{}").body))
+        expo = JSON3.read(String(HTTP.post("$base/api/separador-3f/exportar"; body = "{}").body))
         @test expo.ok
         @test length(expo.arquivos) == 6
+
+        # --- o menu e o roteamento por box -------------------------------
+        @testset "o menu de abertura" begin
+            menu = HTTP.get(base; status_exception = false)
+            @test menu.status == 200
+            html = String(menu.body)
+            @test occursin("fpso-siz-genie", html)          # veio da nossa casca
+            @test occursin("grade-boxes", html)
+
+            # A grade nasce do catálogo injetado, não de HTML escrito à mão.
+            m = match(r"window\.__INICIAL__ = (.*?);</script>", html)
+            @test m !== nothing
+            boxes = JSON3.read(m.captures[1]).boxes
+            @test length(boxes) == length(FPSOSiz.catalogo())
+            @test count(b -> b.ativo, boxes) >= 2
+            # todo box pendente diz por quê — um cartão morto sem explicação é pior
+            # que um cartão ausente
+            @test all(b -> b.ativo || !isempty(b.motivo), boxes)
+
+            for nome in ("/menu.js", "/icones.js")
+                @test HTTP.get(base * nome; status_exception = false).status == 200
+            end
+        end
+
+        @testset "cada box ativo serve a sua aplicação" begin
+            for b in filter(x -> x.ativo, FPSOSiz.catalogo())
+                r = HTTP.get("$base/app/$(b.id)"; status_exception = false)
+                @test r.status == 200
+                h = String(r.body)
+                @test occursin("fpso-siz-genie", h)
+                d = JSON3.read(match(r"window\.__INICIAL__ = (.*?);</script>",
+                                     h).captures[1])
+                @test d.box == b.id
+                # o formulário vem do método daquele box, não de uma lista fixa
+                @test !isempty(d.esquema.campos)
+                @test d.esquema.equipamento ==
+                      FPSOSiz.label(FPSOSiz.box_equipamento(b)[1])
+            end
+        end
+
+        @testset "id de box que não serve não é servido" begin
+            # O id vem da URL. Um inventado, um pendente e um caminho relativo têm de
+            # morrer antes de tocar no estado.
+            for id in ("nao-existe", "bomba-centrifuga", "..")
+                @test HTTP.get("$base/app/$id"; status_exception = false).status == 404
+                @test HTTP.get("$base/api/$id/estado";
+                               status_exception = false).status == 404
+            end
+        end
+
+        @testset "os estados dos boxes não se misturam" begin
+            # O separador já foi dimensionado acima, com o exemplo do artigo aberto.
+            e3 = JSON3.read(String(HTTP.get("$base/api/separador-3f/estado").body))
+            @test e3.viavel
+
+            # O bifásico, nunca tocado, continua em branco.
+            e2 = JSON3.read(String(HTTP.get("$base/api/knockout-2f/estado").body))
+            @test e2.cartao.d == "—"
+            @test length(e2.casos) == 1
+            # e o formulário dele é o dele: 8 de corrente + 2 do método
+            esq2 = JSON3.read(String(HTTP.get("$base/api/knockout-2f/esquema").body))
+            @test length(esq2.campos) == 10
+            @test !any(c -> c.key == "q_water", esq2.campos)
+
+            # Dimensionar o bifásico não mexe no separador.
+            HTTP.post("$base/api/knockout-2f/casos/abrir";
+                      body = """{"arquivo":"exemplo_knockout.toml"}""")
+            d2 = JSON3.read(String(HTTP.post("$base/api/knockout-2f/dimensionar";
+                                             body = "{}").body))
+            @test d2.status_ok
+            @test d2.cartao.d == "900 mm"        # Exemplo 3.2 do livro
+            @test d2.cartao.teto == "—"          # sem teto de decantação
+
+            # O invariante é "não mudou", e não "é tal arquivo": testsets anteriores
+            # neste mesmo servidor já abriram e salvaram outros conjuntos no separador.
+            depois = JSON3.read(String(HTTP.get("$base/api/separador-3f/estado").body))
+            @test depois.cartao.d == e3.cartao.d
+            @test depois.arquivo == e3.arquivo
+            @test length(depois.casos) == length(e3.casos)
+        end
+
+        @testset "cada box só enxerga os arquivos do seu equipamento" begin
+            l3 = JSON3.read(String(HTTP.get("$base/api/separador-3f/casos/arquivos").body))
+            l2 = JSON3.read(String(HTTP.get("$base/api/knockout-2f/casos/arquivos").body))
+            n3 = [a.nome for a in l3.arquivos]
+            n2 = [a.nome for a in l2.arquivos]
+            @test "exemplo_alves_komesu.toml" in n3
+            @test !("exemplo_alves_komesu.toml" in n2)
+            @test "exemplo_knockout.toml" in n2
+            @test !("exemplo_knockout.toml" in n3)
+
+            # E abrir à força um arquivo do outro equipamento é RECUSADO, não
+            # preenchido com defaults em silêncio.
+            r = JSON3.read(String(HTTP.post("$base/api/knockout-2f/casos/abrir";
+                body = """{"arquivo":"exemplo_alves_komesu.toml"}""").body))
+            @test !r.status_ok
+            @test occursin("outro equipamento", r.status)
+        end
 
         try
             A.Genie.down()

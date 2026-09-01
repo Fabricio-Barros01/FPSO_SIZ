@@ -302,3 +302,89 @@ ul.legenda-casos li.resto { font-style: italic; }
 @media (max-width: 1100px) {
   main, .graficos { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ---------------------------------------------------------------- menu de boxes */
+/* A tela de abertura. Cartão ativo é um <a>; pendente é um <div> que diz por quê —
+   e continua alcançável por teclado, com o motivo no nome acessível. */
+
+.topo-menu .metodo { margin-left: 8px; }
+
+main.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.menu-titulo { margin: 0; }
+.menu-rodape { max-width: 70ch; }
+
+/* `auto-fill` com `minmax`: a grade se reacomoda sozinha quando o catálogo cresce ou
+   a janela encolhe, sem media query e sem número de colunas escrito à mão.
+   `minmax(0, 1fr)` no mínimo pela mesma razão de `main`: um título longo não pode
+   impedir a coluna de encolher e criar barra horizontal. */
+.grade-boxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr));
+  gap: 12px;
+}
+
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 14px 16px;
+  border: 1px solid var(--linha);
+  border-radius: 6px;
+  background: var(--painel);
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+
+.box h3 { margin: 0; font-size: 13.5px; line-height: 1.25; }
+.box-sub { margin: 0; font-size: 10.5px; color: var(--tinta-fraca); line-height: 1.4; }
+.box-icone { color: var(--destaque); line-height: 0; }
+
+a.box:hover, a.box:focus-visible {
+  border-color: var(--destaque);
+  box-shadow: 0 1px 6px rgba(30, 79, 160, .16);
+  outline: none;
+}
+
+/* Pendente: esmaecido, mas não invisível — e o motivo ocupa o lugar da ação. Cor não
+   é o único portador da informação: há o selo em texto e o próprio motivo escrito. */
+.box-em-breve { background: transparent; border-style: dashed; cursor: default; }
+.box-em-breve .box-icone { color: var(--linha); }
+.box-em-breve h3 { color: var(--tinta-fraca); }
+
+.box-selo {
+  align-self: flex-start;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--tinta-fraca);
+  border: 1px solid var(--linha);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-top: 2px;
+}
+
+.box-motivo { margin: 0; font-size: 10px; color: var(--tinta-fraca); line-height: 1.45; }
+
+/* Voltar ao menu, no cabeçalho das aplicações. Estilizado como os botões vizinhos
+   para que a barra de ações se leia como uma coisa só. */
+.voltar {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--tinta-fraca);
+  border: 1px solid var(--linha);
+  border-radius: 3px;
+  background: var(--painel);
+  padding: 0 9px;
+  font-size: 11px;
+}
+.voltar:hover, .voltar:focus-visible { border-color: var(--destaque); color: var(--destaque); }

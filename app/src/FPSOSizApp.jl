@@ -63,14 +63,15 @@ método semiempírico de Stewart & Arnold (2008)
   --lote               não abre a interface: dimensiona, grava CSV, memorial e SVG
   --porta N            porta do servidor (padrão 8000; ocupada, escolhe outra)
   --sem-navegador      sobe o servidor mas não abre o navegador
-  --caso ARQUIVO       conjunto de casos em config/cases/ (padrão exemplo_alves_komesu.toml)
+  --caso ARQUIVO       abre já com este conjunto de casos (padrão: começa em branco)
   --ajuda              mostra esta mensagem
 """
 
 "Lê os argumentos de linha de comando. Opção desconhecida vira aviso, não erro fatal."
 function ler_argumentos(argv)
-    opts = (lote = false, porta = 8000, navegador = true,
-            caso = "exemplo_alves_komesu.toml", ajuda = false)
+    # `caso` vazio = a interface abre no menu, e cada aplicação começa em branco. Só
+    # quem passa `--caso` explicitamente entra já com um arquivo carregado.
+    opts = (lote = false, porta = 8000, navegador = true, caso = "", ajuda = false)
     i = 1
     while i <= length(argv)
         a = argv[i]
@@ -130,8 +131,10 @@ end
 
 Sem interface: dimensiona, imprime o resultado e grava CSV, memorial e as figuras.
 """
-function modo_lote(; case_file::AbstractString = "exemplo_alves_komesu.toml")
-    st = AppState(; case_file)
+function modo_lote(; case_file::AbstractString = "")
+    # Sem interface não há de onde escolher um arquivo, então o lote mantém o exemplo
+    # de referência como default — é o que faz `fpso-siz --lote` produzir algo útil.
+    st = AppState(; case_file = isempty(case_file) ? "exemplo_alves_komesu.toml" : case_file)
     dimensionar!(st)
 
     println("FPSO_Siz — modo lote")

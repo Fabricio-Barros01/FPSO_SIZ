@@ -1,23 +1,13 @@
-<!doctype html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FPSO_Siz — Dimensionamento de Separadores</title>
-<link rel="stylesheet" href="/app.css">
-<link rel="icon" href="data:,">
-<!--ESTADO-INICIAL--></head>
 <!--
-  A marca `data-smoke` existe para o teste de fumaça: é como ele distingue "o servidor
-  devolveu a nossa página" de "o servidor devolveu alguma coisa com status 200".
-  Ver app/smoke.jl.
+  Corpo da tela de dimensionamento de vasos. A casca (cabeçalho do documento, barra de
+  status, tag do script) está em `casca.html`; ver `pagina` em app/src/server.jl.
 
   Nenhum campo de entrada é escrito aqui. O formulário nasce em app.js a partir de
-  /api/esquema, que por sua vez vem dos `ParameterSpec` que o core declara. É a regra de
-  src/interfaces.jl: a interface nunca cita um parâmetro pelo nome.
+  /api/<box>/esquema, que por sua vez vem dos `ParameterSpec` que o core declara. É a
+  regra de src/interfaces.jl: a interface nunca cita um parâmetro pelo nome — e é por
+  isso que esta mesma página serve o separador trifásico e o vaso bifásico sem uma
+  linha de diferença.
 -->
-<body data-smoke="fpso-siz-genie">
-
 <header class="topo">
   <!--
     A logo vive em public/, não em References/: aquela pasta guarda bibliografia de
@@ -29,6 +19,10 @@
   <span class="equipamento" id="rotulo-equipamento">—</span>
   <span class="metodo" id="rotulo-metodo">—</span>
   <div class="acoes">
+    <!-- Voltar não descarta nada: o estado de cada box vive no servidor, num
+         `Dict` por box (ver `estado_atual` em server.jl). Sair do separador para
+         abrir o knockout e voltar encontra o separador como estava. -->
+    <a id="link-menu" class="voltar" href="/" title="Voltar ao menu">←&nbsp; Menu</a>
     <button id="btn-dimensionar" class="primario" type="button">▶&nbsp; Dimensionar</button>
     <button id="btn-exportar" type="button">⬇&nbsp; Exportar</button>
     <!-- Fechar a aba não encerraria o servidor: ele é um processo à parte, e o
@@ -181,15 +175,3 @@
     <div id="corpo-memorial"></div>
   </div>
 </details>
-
-<!--
-  `role="status"` + `aria-live="polite"`: esta barra é o único lugar onde o programa
-  responde a "Dimensionar", "Exportar" e a campo recusado. Sem a região viva, o leitor
-  de tela não anuncia nada — o usuário clica e, para ele, não acontece coisa alguma.
-  `polite` e não `assertive` porque a mensagem não interrompe: ela espera a fala corrente.
--->
-<footer id="status" class="status" role="status" aria-live="polite">Carregando…</footer>
-
-<script src="/app.js"></script>
-</body>
-</html>

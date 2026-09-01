@@ -1,4 +1,7 @@
 label = "Exemplo — Alves & Komesu (2025), FPSO no pré-sal da Bacia de Santos"
+# A qual equipamento este conjunto serve. Abrir um arquivo de outro equipamento
+# preencheria com defaults as chaves que faltam, em silêncio — ver `carregar_casos!`.
+equipment = "separator"
 
 # Demonstra as três formas de entrada que o software aceita:
 #   1. o caso publicado, com todos os valores fixos;

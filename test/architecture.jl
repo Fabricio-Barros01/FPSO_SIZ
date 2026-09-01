@@ -139,3 +139,44 @@ end
                           "stewart_arnold.toml"))
     @test isdir(joinpath(ROOT, "config", "cases"))
 end
+
+@testset "o catálogo não promete o que o core não tem" begin
+    # `config/catalogo.toml` é o que o menu de abertura mostra. Um box marcado `ativo`
+    # que aponte para um equipamento inexistente daria um cartão clicável levando a uma
+    # tela que não monta — e a falha apareceria no navegador do usuário, não aqui.
+    boxes = FPSOSiz.catalogo()
+    @test !isempty(boxes)
+    @test length(unique(b.id for b in boxes)) == length(boxes)   # ids únicos
+
+    for b in boxes
+        @test !isempty(b.titulo)
+        @test !isempty(b.subtitulo)
+        @test !isempty(b.icone)
+        # id vai para a URL (/app/<id>) e para o nome de um arquivo de estado: nada de
+        # separador, espaço ou acento.
+        @test occursin(r"^[a-z0-9][a-z0-9-]*$", b.id)
+
+        if b.ativo
+            par = FPSOSiz.box_equipamento(b)
+            @test par !== nothing                # resolve no registro
+            eq, m = par
+            @test FPSOSiz.method_id(eq) === Symbol(b.equipment)
+            @test FPSOSiz.method_id(m) === Symbol(b.method)
+            @test FPSOSiz.method_id(FPSOSiz.applies_to(m)) === FPSOSiz.method_id(eq)
+        else
+            # e um box pendente é obrigado a dizer por quê
+            @test !isempty(b.motivo)
+        end
+    end
+
+    @testset "os dois vasos prontos estão no catálogo" begin
+        ativos = Set(b.equipment for b in boxes if b.ativo)
+        @test "separator" in ativos
+        @test "knockout" in ativos
+    end
+
+    @testset "id desconhecido não resolve" begin
+        @test FPSOSiz.box_catalogo("nao-existe") === nothing
+        @test FPSOSiz.box_catalogo("../etc/passwd") === nothing
+    end
+end

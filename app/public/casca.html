@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!--TITULO--></title>
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:,">
+<!--ESTADO-INICIAL--></head>
+<!--
+  A casca de todas as páginas do programa. Ver `pagina` em app/src/server.jl.
+
+  O que está aqui é o que TODA página tem: o cabeçalho do documento, a folha de estilo,
+  o ponto onde o servidor injeta o estado inicial, a barra de status e a tag do script.
+  O `<header>` visível NÃO está aqui de propósito — o menu e uma tela de dimensionamento
+  têm cabeçalhos diferentes por natureza (um não tem "Dimensionar"), e fingir que são o
+  mesmo custaria mais marcas de substituição do que economizaria linhas.
+
+  A marca `data-smoke` existe para o teste de fumaça: é como ele distingue "o servidor
+  devolveu a nossa página" de "o servidor devolveu alguma coisa com status 200".
+-->
+<body data-smoke="fpso-siz-genie">
+
+<!--CORPO-->
+
+<!--
+  `role="status"` + `aria-live="polite"`: esta barra é o único lugar onde o programa
+  responde a uma ação. Sem a região viva, o leitor de tela não anuncia nada — o usuário
+  clica e, para ele, não acontece coisa alguma. `polite` e não `assertive` porque a
+  mensagem não interrompe: ela espera a fala corrente.
+-->
+<footer id="status" class="status" role="status" aria-live="polite">Carregando…</footer>
+
+<!--SCRIPT-->
+</body>
+</html>

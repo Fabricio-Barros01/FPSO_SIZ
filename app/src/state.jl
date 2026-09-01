@@ -169,6 +169,21 @@ usuário editou à mão e quebrou tem de virar mensagem, não uma janela que nã
 function carregar_casos!(st::AppState, nome::AbstractString)
     chaves = [s.key for s in st.campos]
 
+    # Um arquivo de outro equipamento é RECUSADO, não avisado. As chaves que faltam
+    # entrariam com o default do descritor (o `for` logo abaixo) e o vaso sairia
+    # dimensionado a partir de dados que ninguém informou — a mesma classe de falha
+    # silenciosa que a herança por posição tinha no Sprint 2. Arquivo que não declara
+    # equipamento nenhum é aceito: é um TOML escrito à mão, e não temos o que conferir.
+    meu = String(FPSOSiz.method_id(st.equipamento))
+    for a in FPSOSiz.list_case_sets()
+        a.nome == nome || continue
+        (isempty(a.equipamento) || a.equipamento == meu) && break
+        st.status = "'$nome' é um conjunto de casos de outro equipamento " *
+                    "($(a.equipamento)); esta tela é de $meu. Abra-o na aplicação dele."
+        st.status_ok = false
+        return false
+    end
+
     cs = try
         FPSOSiz.load_case_set(nome)
     catch err
@@ -251,7 +266,9 @@ function salvar_casos!(st::AppState, nome::AbstractString;
                        rotulo::AbstractString = "")
     try
         cs = FPSOSiz.CaseSet([to_case(c, Dict{Symbol,Float64}()) for c in st.casos])
-        caminho = FPSOSiz.save_case_set_named(cs, nome; label = rotulo)
+        caminho = FPSOSiz.save_case_set_named(
+            cs, nome; label = rotulo,
+            equipment = String(FPSOSiz.method_id(st.equipamento)))
         st.arquivo = String(nome)
         st.rotulo = String(rotulo)
         st.status = "$(length(st.casos)) caso(s) salvos em $caminho"

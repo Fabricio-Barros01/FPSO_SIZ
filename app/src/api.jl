@@ -209,14 +209,25 @@ Os conjuntos de casos disponíveis, para o seletor de arquivo, e qual está aber
 de um exemplo é possível (a cópia vai para `dir_casos()` e passa a sombrear o original),
 mas a tela avisa antes, porque a pessoa raramente quer isso.
 """
-arquivos(st::AppState) = Dict{String,Any}(
+function arquivos(st::AppState)
+    # Só os arquivos que servem a ESTE equipamento. Listar os outros seria oferecer um
+    # clique que `carregar_casos!` vai recusar — melhor não oferecer. Arquivo sem
+    # `equipment` declarado aparece: é TOML escrito à mão, e não há o que conferir.
+    meu = String(FPSOSiz.method_id(st.equipamento))
+    lista = filter(a -> isempty(a.equipamento) || a.equipamento == meu,
+                   FPSOSiz.list_case_sets())
+    return _arquivos_json(st, lista)
+end
+
+_arquivos_json(st::AppState, lista) = Dict{String,Any}(
     "arquivos" => [Dict{String,Any}("nome" => a.nome, "rotulo" => a.rotulo,
                                     "casos" => a.casos, "gravavel" => a.gravavel)
-                   for a in FPSOSiz.list_case_sets()],
+                   for a in lista],
     "atual"    => st.arquivo,
     "rotulo"   => st.rotulo,
     "dir"      => FPSOSiz.dir_casos(),
 )
+
 
 """
     estado(st; com_desenho) -> Dict

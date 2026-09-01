@@ -1,0 +1,78 @@
+# Catálogo de aplicações — o que o menu de abertura mostra.
+#
+# Fica aqui, e não no código, pela mesma razão que as constantes das correlações:
+# acrescentar uma aplicação não pode exigir editar Julia, e o que o programa promete ao
+# usuário tem de estar num lugar que se lê sem compilar nada.
+#
+# Um teste amarra este arquivo ao registro do core: todo box `ativo` que declare
+# `equipment`/`method` tem de resolver em `equipments()`/`methods_for()`. Assim o menu
+# não consegue prometer o que o core não tem.
+#
+# Campos:
+#   id         identificador na URL (/app/<id>) e chave do estado no servidor
+#   titulo     o que o cartão mostra em destaque
+#   subtitulo  o método ou a norma, uma linha
+#   icone      nome do desenho em public/icones.js
+#   estado     "ativo" | "em_breve"
+#   motivo     por que ainda não está pronto (obrigatório quando em_breve)
+#   equipment  id do AbstractEquipment no registro   (só para os que são vasos)
+#   method     id do AbstractSizingMethod no registro
+
+# ---------------------------------------------------------------------------
+# Prontos
+# ---------------------------------------------------------------------------
+
+[[box]]
+id        = "separador-3f"
+titulo    = "Separador trifásico horizontal"
+subtitulo = "Óleo, água e gás — Stewart & Arnold (2008), via Alves & Komesu (2025)"
+icone     = "separador3f"
+estado    = "ativo"
+equipment = "separator"
+method    = "stewart_arnold"
+
+[[box]]
+id        = "knockout-2f"
+titulo    = "Vaso de knockout bifásico"
+subtitulo = "Gás e líquido, meio cheio — Stewart & Arnold (2008), cap. 3"
+icone     = "knockout2f"
+estado    = "ativo"
+equipment = "knockout"
+method    = "stewart_arnold_2f"
+
+# ---------------------------------------------------------------------------
+# Planejados. `motivo` é o que o cartão diz em vez de simplesmente não responder ao
+# clique — um botão morto sem explicação é pior que um botão ausente.
+# ---------------------------------------------------------------------------
+
+[[box]]
+id        = "bomba-centrifuga"
+titulo    = "Bombas centrífugas"
+subtitulo = "Carga do sistema, ponto de operação e NPSH"
+icone     = "bomba"
+estado    = "em_breve"
+motivo    = "Fonte disponível (Moran, CEP 2016), mas o resultado tem outra forma: não há varredura em diâmetro nem esbeltez. Precisa de tela própria."
+
+[[box]]
+id        = "trocador-calor"
+titulo    = "Trocadores de calor"
+subtitulo = "LMTD e ε-NTU, coeficiente global e incrustação"
+icone     = "trocador"
+estado    = "em_breve"
+motivo    = "Fonte disponível (Saari, LUT). A análise pinch é outra disciplina — síntese de rede — e ainda não tem fonte em References/."
+
+[[box]]
+id        = "vaso-eletrostatico"
+titulo    = "Vaso eletrostático"
+subtitulo = "Tratamento de emulsão água-óleo por campo elétrico"
+icone     = "eletrostatico"
+estado    = "em_breve"
+motivo    = "Falta referência de dimensionamento: o volume de separadores só cita tratadores eletrostáticos de passagem. Precisa do volume de Emulsions and Oil Treating da mesma série."
+
+[[box]]
+id        = "controle-separador"
+titulo    = "Controle do separador trifásico"
+subtitulo = "Malhas de nível, pressão e interface"
+icone     = "controle"
+estado    = "em_breve"
+motivo    = "Escopo futuro, declarado no planejamento. Dimensionar e controlar são problemas diferentes; este box é a porta para o segundo."

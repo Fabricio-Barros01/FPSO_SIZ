@@ -187,6 +187,87 @@ function case_set_from_config(cfg::AbstractDict)
 end
 
 # ---------------------------------------------------------------------------
+# Catálogo de aplicações — o que o menu de abertura oferece
+# ---------------------------------------------------------------------------
+
+"""
+Uma entrada do catálogo (`config/catalogo.toml`) — um cartão do menu.
+
+`equipment` e `method` são vazios nos boxes que **não** são vasos do registro (uma
+bomba, um trocador): eles compartilham o chassi do programa, não o motor de
+dimensionamento.
+"""
+struct BoxCatalogo
+    id::String
+    titulo::String
+    subtitulo::String
+    icone::String
+    ativo::Bool
+    motivo::String
+    equipment::String
+    method::String
+end
+
+"""
+    catalogo() -> Vector{BoxCatalogo}
+
+Os boxes declarados em `config/catalogo.toml`, na ordem do arquivo.
+
+Lido do disco a cada chamada, e não memoizado: o arquivo é pequeno, o menu é pedido uma
+vez por abertura, e editá-lo com o programa no ar passa a ter efeito imediato — o que é
+o ponto de ele ser dado e não código.
+"""
+function catalogo()
+    cfg = load_config("catalogo.toml")
+    out = BoxCatalogo[]
+    for b in get(cfg, "box", Any[])
+        for campo in ("id", "titulo", "subtitulo", "icone", "estado")
+            haskey(b, campo) || error("bloco [[box]] sem campo obrigatório '$campo': $b")
+        end
+        estado = String(b["estado"])
+        estado in ("ativo", "em_breve") ||
+            error("box '$(b["id"])': estado deve ser \"ativo\" ou \"em_breve\", não \"$estado\"")
+        ativo = estado == "ativo"
+        motivo = String(get(b, "motivo", ""))
+        # Um box pendente é obrigado a dizer por quê: a tela mostra esse texto no lugar
+        # da ação, e um cartão que não responde ao clique sem explicar é pior que um
+        # cartão ausente.
+        if !ativo && isempty(motivo)
+            error("box '$(b["id"])' está em_breve e não diz por quê: falta 'motivo'")
+        end
+        push!(out, BoxCatalogo(String(b["id"]), String(b["titulo"]),
+                               String(b["subtitulo"]), String(b["icone"]), ativo, motivo,
+                               String(get(b, "equipment", "")),
+                               String(get(b, "method", ""))))
+    end
+    return out
+end
+
+"O box de id `id`, ou `nothing`. `id` vem da URL, então nunca se confia nele."
+function box_catalogo(id::AbstractString)
+    for b in catalogo()
+        b.id == id && return b
+    end
+    return nothing
+end
+
+"""
+    box_equipamento(b) -> (equipamento, metodo) | nothing
+
+Resolve o par do registro que o box declara. `nothing` quando o box não é um vaso, ou
+quando o que ele declara não existe no registro — que é o caso que o teste do catálogo
+existe para impedir de chegar ao usuário.
+"""
+function box_equipamento(b::BoxCatalogo)
+    (isempty(b.equipment) || isempty(b.method)) && return nothing
+    eq = equipment(Symbol(b.equipment))
+    eq === nothing && return nothing
+    m = sizing_method(Symbol(b.equipment), Symbol(b.method))
+    m === nothing && return nothing
+    return (eq, m)
+end
+
+# ---------------------------------------------------------------------------
 # Conjuntos de casos: onde ficam, como se listam, como voltam para o disco
 # ---------------------------------------------------------------------------
 #
@@ -288,8 +369,8 @@ erro em vez de sumir: some-lo esconderia do usuário o arquivo que ele acabou de
 """
 function list_case_sets()
     vistos = Set{String}()
-    out = @NamedTuple{nome::String, rotulo::String, casos::Int,
-                      caminho::String, gravavel::Bool}[]
+    out = @NamedTuple{nome::String, rotulo::String, casos::Int, caminho::String,
+                      gravavel::Bool, equipamento::String}[]
     for d in dirs_casos()
         isdir(d) || continue
         for f in sort(readdir(d))
@@ -297,14 +378,15 @@ function list_case_sets()
             f in vistos && continue
             push!(vistos, f)
             caminho = joinpath(d, f)
-            rotulo, n = try
+            rotulo, n, eqp = try
                 cfg = TOML.parsefile(caminho)
-                config_label(cfg, f), length(get(cfg, "case", Any[]))
+                (config_label(cfg, f), length(get(cfg, "case", Any[])),
+                 String(get(cfg, "equipment", "")))
             catch err
-                "(ilegível: " * sprint(showerror, err) * ")", 0
+                ("(ilegível: " * sprint(showerror, err) * ")", 0, "")
             end
             push!(out, (; nome = f, rotulo, casos = n, caminho,
-                        gravavel = d == dir_casos()))
+                        gravavel = d == dir_casos(), equipamento = eqp))
         end
     end
     return out
@@ -336,7 +418,7 @@ Os números saem por `repr`, que é a representação **curta e de ida e volta e
 introduziria a cada gravação sucessiva.
 """
 function save_case_set(cs::CaseSet, caminho::AbstractString;
-                       label::AbstractString = "")
+                       label::AbstractString = "", equipment::AbstractString = "")
     for c in cs.cases, (k, v) in c.values
         finito = v isa Interval ? isfinite(v.lo) && isfinite(v.hi) : isfinite(v)
         finito || error("valor não finito em '$(c.name)', chave '$k': $v")
@@ -344,7 +426,13 @@ function save_case_set(cs::CaseSet, caminho::AbstractString;
 
     mkpath(dirname(abspath(caminho)))
     open(caminho, "w") do io
-        isempty(label) || println(io, "label = ", _toml_texto(label), "\n")
+        isempty(label) || println(io, "label = ", _toml_texto(label))
+        # A qual equipamento este conjunto serve. Sem isto, abrir um arquivo de
+        # separador trifásico dentro de um vaso bifásico não daria erro nenhum: as
+        # chaves que faltam entram com o default do descritor e o vaso sai dimensionado
+        # a partir de dados que ninguém informou. Ver `carregar_casos!` em app/.
+        isempty(equipment) || println(io, "equipment = ", _toml_texto(equipment))
+        println(io)
         println(io, """
                 # Conjunto de casos do FPSO_Siz.
                 #
@@ -369,10 +457,11 @@ end
 
 "Grava em [`dir_casos`](@ref) pelo nome de arquivo, validando-o antes."
 function save_case_set_named(cs::CaseSet, nome::AbstractString;
-                             label::AbstractString = "")
+                             label::AbstractString = "",
+                             equipment::AbstractString = "")
     nome_casos_valido(nome) ||
         throw(ArgumentError("nome de arquivo de casos inválido: $nome"))
-    return save_case_set(cs, joinpath(dir_casos(), nome); label)
+    return save_case_set(cs, joinpath(dir_casos(), nome); label, equipment)
 end
 
 """

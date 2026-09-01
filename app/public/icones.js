@@ -1,0 +1,64 @@
+/*
+ * Ícones dos cartões do menu, em SVG escrito à mão.
+ *
+ * Por que não uma fonte de ícones ou um CDN: o programa é distribuído como executável
+ * autocontido e roda offline — qualquer recurso de rede viraria um retângulo vazio na
+ * máquina de quem o recebeu, sem erro visível. Sete desenhos de vinte linhas custam
+ * menos que essa classe de falha.
+ *
+ * Todos partilham a mesma caixa (24×24), traço `currentColor` e nenhum preenchimento,
+ * para que o CSS controle cor e tamanho num lugar só. `stroke-width` 1.6 é o que
+ * mantém o traço visível quando o cartão encolhe.
+ */
+
+"use strict";
+
+const _svg = (corpo) =>
+  `<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${corpo}</svg>`;
+
+const ICONES = {
+  // Vaso horizontal com duas interfaces: as três fases do separador trifásico.
+  separador3f: _svg(`
+    <rect x="2.5" y="7" width="19" height="10" rx="5"/>
+    <path d="M2.6 13.2h18.8"/>
+    <path d="M3.4 15.6h17.2" stroke-dasharray="2 1.6"/>`),
+
+  // O mesmo vaso com uma interface só: gás e líquido.
+  knockout2f: _svg(`
+    <rect x="2.5" y="7" width="19" height="10" rx="5"/>
+    <path d="M2.6 12h18.8"/>`),
+
+  // Voluta e eixo.
+  bomba: _svg(`
+    <circle cx="11" cy="13" r="6"/>
+    <path d="M11 7V4h6"/>
+    <path d="M17 13h4"/>
+    <circle cx="11" cy="13" r="1.6"/>`),
+
+  // Casco e tubos, com as duas correntes em contracorrente.
+  trocador: _svg(`
+    <rect x="2.5" y="8" width="19" height="8" rx="2"/>
+    <path d="M2.5 12h19"/>
+    <path d="M6 8V5m12 11v3"/>`),
+
+  // Vaso com os eletrodos e o campo entre eles.
+  eletrostatico: _svg(`
+    <rect x="2.5" y="7" width="19" height="10" rx="5"/>
+    <path d="M8 10v4M16 10v4"/>
+    <path d="M10 12h4" stroke-dasharray="1.4 1.4"/>`),
+
+  // Malha fechada: medição, controlador e válvula.
+  controle: _svg(`
+    <circle cx="6" cy="12" r="2.4"/>
+    <rect x="10" y="9.6" width="4.8" height="4.8" rx="1"/>
+    <path d="M18 9.6l3 2.4-3 2.4z"/>
+    <path d="M8.4 12h1.6M14.8 12H18"/>
+    <path d="M6 14.4v3.6h13.5V14.4" stroke-dasharray="2 1.6"/>`),
+
+  // Reserva: um box do catálogo que peça um ícone inexistente ainda desenha algo, em
+  // vez de deixar um buraco silencioso no cartão.
+  generico: _svg(`
+    <rect x="3.5" y="3.5" width="17" height="17" rx="3"/>
+    <path d="M8 12h8"/>`),
+};

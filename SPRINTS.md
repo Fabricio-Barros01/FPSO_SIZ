@@ -10,9 +10,9 @@ lido inteiro sem abrir mais nada.
 
 ## Estado atual
 
-**SPRINT ATUAL: 5 — Segundo equipamento no registro**
+**SPRINT ATUAL: 7 — Artefato distribuível de verdade**
 
-**2706 testes passando** (986 no core, 1720 na interface).
+**2800 testes passando** (1028 no core, 1772 na interface).
 
 O software dimensiona um separador trifásico horizontal pelo modelo semiempírico de
 Stewart & Arnold (2008), com um motor de envelope multi-caso que entrega **um** vaso
@@ -248,7 +248,7 @@ commitar.
 
 ---
 
-## Sprint 5 — Segundo equipamento no registro ⏳ ← ATUAL
+## Sprint 5 — Segundo equipamento no registro ✅
 
 `config/stream.toml:4-5` promete reaproveitamento para *"separador, bomba, tratador,
 trocador e vaso flash"*, e `test/registry.jl` já prova que um método registra de fora de
@@ -513,7 +513,47 @@ com `length(stream_keys(m)) + length(parameters(m))`. Somados a isso:
 
 ---
 
-## Sprint 6 — Artefato distribuível de verdade ⏳
+## Sprint 6 — Menu de aplicações e entrada do programa ✅
+
+O programa abria direto na tela de dimensionamento, **já com o caso do artigo carregado
+e dimensionado** — ninguém tinha pedido nem uma coisa nem outra —, e não havia caminho
+para o segundo equipamento, que existia no core desde o Sprint 5 e não tinha porta.
+
+### Entregue
+
+- **`config/catalogo.toml`** — os seis boxes como dado, não código: id, título,
+  subtítulo, ícone, estado e, para os que são vasos, o par do registro. Acrescentar uma
+  aplicação é editar um TOML. Um teste amarra o catálogo ao registro: **box `ativo` que
+  não resolva em `equipments()`/`methods_for()` quebra a suíte**, então o menu não
+  consegue prometer o que o core não tem.
+- **Casca compartilhada** (`public/casca.html`) com `<!--TITULO-->`, `<!--CORPO-->` e
+  `<!--SCRIPT-->`. O cabeçalho *visível* ficou de fora de propósito: o menu e uma tela
+  de dimensionamento têm cabeçalhos diferentes por natureza (um não tem "Dimensionar").
+- **Rotas** `/` (menu), `/app/:box` e `/api/:box/…`. O id vem da URL, então nunca se
+  confia nele: só passa o que o catálogo declara **e** resolve no registro.
+- **Estado por box** — `ESTADO` virou `Dict{Symbol,AppState}`. Sair do separador, abrir
+  o knockout e voltar encontra o separador como estava.
+- **Abertura em branco.** Cada aplicação começa com um caso nos defaults e o cartão em
+  travessão. Quem carrega exemplo ou estudo é a barra de arquivo do Sprint 4. `--caso`
+  continua abrindo direto, e `--lote` continua produzindo `d = 6300 mm`.
+- **Ícones em SVG inline** (`public/icones.js`). Nada de CDN nem fonte de ícones: o
+  programa roda offline, e um recurso de rede viraria retângulo vazio na máquina de
+  quem o recebeu, sem erro visível.
+
+### O defeito silencioso que este sprint fechou
+
+`carregar_casos!` completa com o default do descritor toda chave ausente. Abrir o
+exemplo trifásico dentro do vaso bifásico **não daria erro nenhum**: as chaves que não
+existem lá entrariam com o default e o vaso sairia dimensionado a partir de dados que
+ninguém informou — a mesma família da herança por posição do Sprint 2.
+
+Agora `config/cases/*.toml` declara `equipment`, o seletor de cada box lista só o que
+lhe serve, e abrir à força um arquivo de outro equipamento é **recusado** com mensagem.
+Mais `config/cases/exemplo_knockout.toml`, o Exemplo 3.2 do livro convertido para SI.
+
+---
+
+## Sprint 7 — Artefato distribuível de verdade ⏳ ← ATUAL
 
 O Sprint 2 entregou o `create_app` funcionando e registrou o limite com honestidade: o
 bundle gerado no NixOS **linka contra a glibc do `/nix/store`** e não roda em outra
@@ -536,7 +576,7 @@ grava as seis saídas — verificado por `ldd`, que não pode apontar para `/nix
 
 ---
 
-## Sprint 7 — Verificação, manual e fecho do TCC ⏳
+## Sprint 8 — Verificação, manual e fecho do TCC ⏳
 
 O que falta não é software: é o que transforma o software em trabalho defensável.
 
