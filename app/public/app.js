@@ -28,10 +28,14 @@ let globais = {};        // {chave: "3000,0"}
 let grade = [];          // diâmetros disponíveis no cursor, em mm
 let arquivos = [];       // conjuntos de casos no disco: [{nome, rotulo, casos, gravavel}]
 let arquivoAtual = "";   // nome do que está aberto ("" = nunca salvo)
-// `true` quando há edição que ainda não foi para o disco. Só serve para avisar antes
-// de Abrir, que substitui a lista inteira — sem o aviso, um clique errado apaga um
-// estudo inteiro sem nada a desfazer.
+// `true` quando há edição que ainda não foi para o disco. Avisa antes de Abrir (que
+// substitui a lista inteira), antes de voltar ao menu, e antes de fechar a aba — sem o
+// aviso, um clique errado apaga um estudo inteiro sem nada a desfazer.
 let sujo = false;
+// Saída que a pessoa já confirmou (o botão Sair, ou o link do menu depois do "Continuar?").
+// Suprime a pergunta do `beforeunload`: duas caixas de diálogo para um clique só é o tipo
+// de aviso que se aprende a fechar sem ler, e aí ele deixa de proteger o que quer que seja.
+let saindoDeProposito = false;
 // Qual aplicação esta tela é — vem do servidor junto com o estado inicial, e prefixa
 // toda chamada de API. A tela não sabe o que é um separador: ela sabe o id do box e os
 // descritores que o servidor mandou.
@@ -39,6 +43,15 @@ let box = "";
 // Unidade do eixo varrido ("mm" num vaso), para o rótulo do cursor. Vem do esquema:
 // era `mm` escrito à mão em dois lugares, o que fazia a tela conhecer a grandeza.
 let unidadeEixo = "";
+// Os campos que o servidor recusou na última resposta, de TODOS os casos.
+//
+// Precisa existir porque o servidor valida o conjunto inteiro (ver `aplicar!` em
+// app/src/api.jl) e a tela mostra um caso por vez. Antes esta lista não era guardada: os
+// avisos de outro caso eram descartados na hora, e os do caso à vista eram apagados por
+// `escreverCaso` na primeira troca de caso e nunca repostos. O resultado era a barra
+// dizendo "3 campo(s) recusado(s)" com nada marcado em lugar nenhum — a tela e o servidor
+// deixando de se corresponder sem que nada denunciasse.
+let avisosPendentes = [];
 
 // ---------------------------------------------------------------- utilidades
 
@@ -52,6 +65,16 @@ function status(texto, ok = true) {
 async function pedir(url, opcoes) {
   try {
     const r = await fetch(url, opcoes);
+    // O `Content-Type` é conferido ANTES de parsear. Sem esta guarda, uma resposta que
+    // não fosse JSON (uma página de erro do Genie, por exemplo) fazia `r.json()` lançar,
+    // e o `catch` lá embaixo escrevia "Sem conexão com o servidor" — mensagem falsa, e
+    // que manda a pessoa procurar no lugar errado: o servidor respondeu, e respondeu
+    // outra coisa. A falha de rede e a resposta inesperada não são o mesmo diagnóstico.
+    const tipo = r.headers.get("content-type") || "";
+    if (!tipo.includes("json")) {
+      status(`O servidor respondeu algo inesperado (HTTP ${r.status}) em ${url}.`, false);
+      return null;
+    }
     const corpo = await r.json();
     if (!r.ok) {
       status(corpo.status || `Erro ${r.status} em ${url}`, false);
@@ -71,14 +94,28 @@ async function pedir(url, opcoes) {
 
 const casoAtual = () => casos[Math.min(Math.max(sel, 1), casos.length) - 1];
 
+// Tudo o que dispara requisição OU mexe em `casos`. Abrir e salvar entram porque as duas
+// escrevem (uma troca o estado inteiro, a outra grava um arquivo) e um duplo clique
+// enquanto a primeira está em voo mandaria a segunda com o estado do meio do caminho.
+//
+// Os seis últimos entraram depois: eles não disparam nada, mas EDITAM o estado local, e
+// o `aplicarEstado` da resposta em voo sobrescreve `casos` inteiro. Criar um caso durante
+// um "Abrir" o fazia desaparecer sem aviso quando a resposta chegava — o mesmo desfecho
+// do duplo clique, por outro caminho.
+const CONTROLES = ["btn-dimensionar", "btn-exportar",
+                   "btn-abrir", "btn-salvar", "btn-salvar-como",
+                   "btn-novo", "btn-duplicar", "btn-remover",
+                   "sel-arquivo", "sel-caso", "slider-d"];
+
 function ocupado(sim) {
-  // Abrir e salvar entram na lista: as duas escrevem (uma troca o estado inteiro, a
-  // outra grava um arquivo) e um duplo clique enquanto a primeira está em voo mandaria
-  // a segunda com o estado do meio do caminho.
-  for (const id of ["btn-dimensionar", "btn-exportar",
-                    "btn-abrir", "btn-salvar", "btn-salvar-como"]) {
-    q(id).disabled = sim;
-  }
+  for (const id of CONTROLES) q(id).disabled = sim;
+  // O cursor tem um dono: `aplicarGrade`, que o desabilita quando não há grade. Liberar
+  // aqui sem consultá-la reabriria um cursor sobre nada depois de um Exportar num estado
+  // inviável — e um cursor de um item só é um controle que mente sobre ter alternativas.
+  if (!sim) q("slider-d").disabled = !grade.length;
+  // `aria-busy` na barra de status: enquanto a operação corre, o leitor de tela sabe que
+  // a mensagem ("Dimensionando…") é de trabalho em curso, e não o resultado final.
+  q("status").setAttribute("aria-busy", sim ? "true" : "false");
 }
 
 // ---------------------------------------------------------------- formulário
@@ -139,6 +176,7 @@ function linhaCampo(spec, extremos) {
 
     inp.addEventListener("input", () => {
       limparInvalido(inp);
+      esquecerAviso(spec.key, extremo, extremos.length === 1);
       if (extremos.length === 1) {
         // Os ajustes de grade NÃO vão para o arquivo de casos (ver `salvar_casos!` em
         // app/src/state.jl), então mexer neles não deixa nada por salvar.
@@ -187,6 +225,9 @@ function escreverCaso() {
     inp.value = c[inp.dataset.extremo][inp.dataset.chave] ?? "";
     limparInvalido(inp);
   }
+  // Repõe as marcas do caso que passou a estar à vista. É o passo que faltava: sem ele,
+  // trocar de caso e voltar apagava a queixa do servidor de vez.
+  aplicarAvisos();
 }
 
 function escreverGlobais() {
@@ -194,14 +235,20 @@ function escreverGlobais() {
     inp.value = globais[inp.dataset.chave] ?? "";
     limparInvalido(inp);
   }
+  aplicarAvisos();
 }
 
 function recarregarSeletor(rotulos) {
   const s = q("sel-caso");
+  const comAviso = casosComAviso();
   s.replaceChildren(...rotulos.map((nome, i) => {
     const o = document.createElement("option");
     o.value = String(i + 1);
-    o.textContent = nome;
+    // A marca no SELETOR é o que torna visível um campo recusado num caso que não está à
+    // vista: sem ela, a única pista de que o caso 3 tem um valor ilegível é uma frase na
+    // barra de status, e ninguém sabe onde procurar. Mesmo idioma do "○ " de desativado
+    // e do "◀ governa" do memorial — símbolo mais texto, nunca cor sozinha.
+    o.textContent = (comAviso.has(i + 1) ? "⚠ " : "") + nome;
     return o;
   }));
   s.value = String(Math.min(Math.max(sel, 1), rotulos.length));
@@ -274,6 +321,11 @@ const AREAS = {
 function aplicarDesenho(d) {
   const conteudo = { principal: [], secundaria: [], grafico: [] };
   let legenda = "";
+  // O título é acumulado e escrito UMA vez, no fim. Antes ele só era escrito quando havia
+  // figura principal com título — e o fallback genérico de `figuras` não declara nenhuma.
+  // O resultado era o título do estado anterior de pé sobre uma área que ficara vazia: a
+  // tela dizendo "Elevação — d = 6300 mm" sobre um espaço em branco.
+  let tituloPrincipal = "";
   for (const f of d.figuras) {
     if (!conteudo[f.area]) continue;       // área desconhecida: ignora, não quebra
     const div = document.createElement("div");
@@ -281,9 +333,10 @@ function aplicarDesenho(d) {
     div.innerHTML = f.svg;
     conteudo[f.area].push(div);
     // Só a figura principal tem título visível: as outras trazem o seu dentro do SVG.
-    if (f.area === "principal" && f.titulo) q("titulo-figura").textContent = f.titulo;
+    if (f.area === "principal" && f.titulo) tituloPrincipal = f.titulo;
     if (f.legenda) legenda = f.legenda;
   }
+  q("titulo-figura").textContent = tituloPrincipal;
   q("legenda-figura").innerHTML = legenda;
   for (const [nome, filhos] of Object.entries(conteudo)) {
     AREAS[nome]().replaceChildren(...filhos);
@@ -295,7 +348,14 @@ function aplicarDesenho(d) {
 function aplicarGrade(novaGrade, dSel) {
   grade = novaGrade || [];
   const sl = q("slider-d");
-  if (!grade.length) { sl.disabled = true; return; }
+  if (!grade.length) {
+    // Estado inviável: sem grade não há valor, e o que estava escrito era do resultado
+    // anterior. Some da tela e some do leitor de tela pelo mesmo gesto.
+    sl.disabled = true;
+    sl.removeAttribute("aria-valuetext");
+    q("valor-d").textContent = "—";
+    return;
+  }
   sl.disabled = false;
   sl.min = 0;
   sl.max = grade.length - 1;
@@ -306,7 +366,21 @@ function aplicarGrade(novaGrade, dSel) {
     if (Math.abs(grade[i] - dSel) < Math.abs(grade[melhor] - dSel)) melhor = i;
   }
   sl.value = melhor;
-  q("valor-d").textContent = `${Math.round(grade[melhor])} ${unidadeEixo}`;
+  escreverValorEixo(grade[melhor]);
+}
+
+/**
+ * O valor do cursor, na tela e para o leitor de tela.
+ *
+ * `aria-valuetext` é obrigatório aqui, e não enfeite: o `value` do `<input type=range>` é
+ * o ÍNDICE na grade (ver a nota em `aplicarGrade` — a grade não tem passo constante), e é
+ * o `value` que o leitor de tela anuncia. Sem o texto, arrastar o cursor lia "3 de 12" em
+ * vez de "5550 mm": o número que a pessoa precisa ouvir é o único que ela não ouvia.
+ */
+function escreverValorEixo(v) {
+  const texto = `${Math.round(v)} ${unidadeEixo}`;
+  q("valor-d").textContent = texto;
+  q("slider-d").setAttribute("aria-valuetext", texto);
 }
 
 /** Aplica uma resposta completa de /api/estado ou /api/dimensionar. */
@@ -314,6 +388,11 @@ function aplicarEstado(e) {
   casos = e.casos;
   sel = e.sel;
   globais = e.globais;
+  // Antes de qualquer escrita na tela: `recarregarSeletor` marca os casos com aviso e
+  // `escreverCaso` repõe as caixas recusadas, e os dois leem esta lista. Os avisos
+  // pertencem à resposta que os produziu — a nova apaga os da anterior, como já vale
+  // para o `memorial`.
+  avisosPendentes = e.avisos || [];
   if (e.arquivo !== undefined) arquivoAtual = e.arquivo;
   if (e.lista) aplicarLista(e.lista);
   recarregarSeletor(e.rotulos);
@@ -325,26 +404,98 @@ function aplicarEstado(e) {
   e.desenho && aplicarDesenho(e.desenho);
   esquecerMemorial();
 
-  let msg = e.status;
-  if (e.avisos && e.avisos.length) {
-    for (const a of e.avisos) marcarInvalido(a);
-    msg = `${e.avisos.length} campo(s) recusado(s): ${e.avisos[0].msg}` +
-          (e.avisos.length > 1 ? " …" : "");
-  }
-  status(msg, e.status_ok && !(e.avisos && e.avisos.length));
+  status(avisosPendentes.length ? textoDosAvisos() : e.status,
+         e.status_ok && !avisosPendentes.length);
 }
 
-/** Marca a caixa que o servidor recusou, e diz por quê ao lado dela. */
-function marcarInvalido(aviso) {
-  const tabela = aviso.escopo === "globais" ? "form-ajustes" : "form-campos";
-  if (aviso.escopo !== "globais" && aviso.escopo !== `caso:${sel}`) return;
-  const inp = q(tabela).querySelector(
-    `input[data-chave="${aviso.chave}"][data-extremo="${aviso.extremo}"]`);
-  if (!inp) return;
-  inp.classList.add("invalido");
-  inp.setAttribute("aria-invalid", "true");
-  const erro = q(idErro(aviso.chave, aviso.extremo));
-  erro && (erro.textContent = aviso.msg);
+// ------------------------------------------------- avisos de validação
+//
+// O servidor valida TODOS os casos e devolve um aviso por caixa recusada, com o escopo
+// ("caso:3" ou "globais") que endereça a caixa na tela. A tela mostra um caso por vez,
+// então três coisas precisam acontecer, e só a primeira acontecia:
+//
+//   1. marcar a caixa recusada do caso à vista;
+//   2. repor essa marca quando se volta ao caso, depois de passar por outro;
+//   3. dizer que existe caixa recusada num caso que NÃO está à vista — senão a barra
+//      anuncia "3 campo(s) recusado(s)" e não há nada marcado em lugar nenhum.
+
+/** Índice 1-based do caso a que o aviso se refere, ou `null` se for de ajuste global. */
+function casoDoAviso(aviso) {
+  const m = /^caso:(\d+)$/.exec(aviso.escopo || "");
+  return m ? Number(m[1]) : null;
+}
+
+/** Os índices de caso que têm alguma caixa recusada. */
+function casosComAviso() {
+  const s = new Set();
+  for (const a of avisosPendentes) {
+    const i = casoDoAviso(a);
+    i !== null && s.add(i);
+  }
+  return s;
+}
+
+/** Marca, no formulário à vista, todas as caixas recusadas que lhe pertencem. */
+function aplicarAvisos() {
+  for (const aviso of avisosPendentes) {
+    const i = casoDoAviso(aviso);
+    if (i !== null && i !== sel) continue;    // é de outro caso: o seletor o denuncia
+    const tabela = i === null ? "form-ajustes" : "form-campos";
+    const inp = q(tabela).querySelector(
+      `input[data-chave="${aviso.chave}"][data-extremo="${aviso.extremo}"]`);
+    if (!inp) continue;
+    inp.classList.add("invalido");
+    inp.setAttribute("aria-invalid", "true");
+    const erro = q(idErro(aviso.chave, aviso.extremo));
+    erro && (erro.textContent = aviso.msg);
+  }
+}
+
+/**
+ * A frase da barra de status.
+ *
+ * Nomeia o CASO: a mensagem era `avisos[0].msg` crua, e o primeiro aviso costuma ser de
+ * um caso que não está à vista — a pessoa lia "Vazão de óleo: valor ilegível" olhando
+ * para uma vazão de óleo perfeitamente legível.
+ */
+function textoDosAvisos() {
+  const a = avisosPendentes[0];
+  const i = casoDoAviso(a);
+  const onde = i === null ? "Ajustes"
+             : (casos[i - 1] ? `Caso '${casos[i - 1].name}'` : `Caso ${i}`);
+  return `${avisosPendentes.length} campo(s) recusado(s). ${onde} — ${a.msg}` +
+         (avisosPendentes.length > 1 ? " …" : "");
+}
+
+/**
+ * Descarta TODOS os avisos.
+ *
+ * Chamado ao criar e ao remover caso. O escopo do aviso é POSICIONAL (`"caso:3"`) — é
+ * como ele endereça a caixa na tela —, então mexer na lista de casos o desendereça: um
+ * aviso do caso 3 passaria a marcar o que era o caso 4. É a mesma armadilha da herança
+ * por posição do Sprint 3, e a saída aqui é mais simples do que lá: os avisos pertencem
+ * à última resposta do servidor, e a lista que ela validou deixou de existir.
+ */
+function esquecerAvisos() {
+  avisosPendentes = [];
+  for (const inp of q("form-campos").querySelectorAll("input.campo")) limparInvalido(inp);
+}
+
+/**
+ * Esquece o aviso da caixa que o usuário acabou de editar.
+ *
+ * `limparInvalido` já tira a marca da caixa; sem isto, o `⚠` do seletor ficaria de pé
+ * sobre um caso que a pessoa acabou de corrigir — pior que não ter marca nenhuma, porque
+ * uma marca que não some deixa de ser lida.
+ */
+function esquecerAviso(chave, extremo, global) {
+  const antes = avisosPendentes.length;
+  avisosPendentes = avisosPendentes.filter((a) => {
+    const i = casoDoAviso(a);
+    const minha = global ? i === null : i === sel;
+    return !(minha && a.chave === chave && a.extremo === extremo);
+  });
+  antes !== avisosPendentes.length && recarregarSeletor(rotulosLocais());
 }
 
 // ---------------------------------------------------------------- ações
@@ -372,6 +523,7 @@ async function exportar() {
 
 async function sair() {
   if (!confirm("Encerrar o FPSO_Siz?\n\nO que já foi exportado continua salvo.")) return;
+  saindoDeProposito = true;
   ocupado(true);
   status("Encerrando…");
   // A resposta chega antes de o servidor descer (ver a rota /api/parar); o `catch`
@@ -400,7 +552,7 @@ function moverCursor() {
   const i = Number(q("slider-d").value);
   if (!grade.length) return;
   const d = grade[i];
-  q("valor-d").textContent = `${Math.round(d)} ${unidadeEixo}`;
+  escreverValorEixo(d);
   clearTimeout(pendente);
   pendente = setTimeout(async () => {
     if (emVoo) emVoo.abort();
@@ -582,8 +734,14 @@ async function salvarArquivo(comoNovo) {
   if (!r) return;
 
   r.lista && aplicarLista(r.lista);
-  if (r.avisos && r.avisos.length) for (const a of r.avisos) marcarInvalido(a);
-  status(r.status, r.status_ok);
+  // Mesmo tratamento do `aplicarEstado`: um campo recusado ao salvar precisa aparecer no
+  // seletor quando é de outro caso, e sobreviver a uma troca de caso.
+  avisosPendentes = r.avisos || [];
+  if (avisosPendentes.length) {
+    recarregarSeletor(rotulosLocais());
+    aplicarAvisos();
+  }
+  status(avisosPendentes.length ? textoDosAvisos() : r.status, r.status_ok);
   if (r.ok) sujo = false;
 }
 
@@ -610,6 +768,7 @@ function novoCaso(copia) {
   casos.push(base);
   sujo = true;
   sel = casos.length;
+  esquecerAvisos();
   recarregarSeletor(rotulosLocais());
   escreverCaso();
 }
@@ -622,6 +781,7 @@ function removerCaso() {
   casos.splice(sel - 1, 1);
   sujo = true;
   sel = Math.min(sel, casos.length);
+  esquecerAvisos();
   recarregarSeletor(rotulosLocais());
   escreverCaso();
 }
@@ -646,7 +806,11 @@ async function iniciar() {
     if (sujo && !confirm("Há alterações que ainda não foram enviadas ao servidor.\n\n" +
                          "Voltar ao menu descarta essas alterações. Continuar?")) {
       e.preventDefault();
+      return;
     }
+    // Já perguntou: o `beforeunload` não pergunta de novo. Duas caixas de diálogo para
+    // um clique só é o tipo de aviso que a pessoa aprende a fechar sem ler.
+    saindoDeProposito = true;
   });
   q("btn-abrir").addEventListener("click", abrirArquivo);
   q("btn-salvar").addEventListener("click", () => salvarArquivo(false));
@@ -691,6 +855,20 @@ async function iniciar() {
   await recarregarLista();
   sujo = false;
 }
+
+// Fechar ou recarregar a aba com edição pendente descartava o estudo em silêncio. Abrir
+// e Voltar ao menu já perguntavam desde o Sprint 3; fechar a aba, que é o gesto mais
+// fácil de fazer sem querer, não perguntava nada — e o estado da tela só existe no
+// servidor depois de Dimensionar, ou no disco depois de Salvar.
+//
+// O navegador mostra um texto próprio, não o nosso: `preventDefault` é o que pede a
+// pergunta, e `returnValue` fica pela compatibilidade com o que ainda não segue a
+// especificação atual.
+window.addEventListener("beforeunload", (e) => {
+  if (!sujo || saindoDeProposito) return;
+  e.preventDefault();
+  e.returnValue = "";
+});
 
 // Uma exceção não tratada deixaria a tela parada em "Carregando…" sem dizer por quê —
 // e o usuário-alvo não vai abrir o console do navegador. Melhor a queixa na barra.

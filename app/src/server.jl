@@ -247,7 +247,10 @@ rótulo de box vêm de TOML que o usuário edita, então o risco é real, não t
 function pagina(; titulo::AbstractString, corpo::AbstractString,
                   scripts::Vector{String}, dados = nothing)
     html = ler_publico("casca.html")
-    html = replace(html, "<!--TITULO-->" => titulo)
+    # O título vem de `box.titulo`, que é `config/catalogo.toml` — o MESMO arquivo que a
+    # nota abaixo classifica como editado pelo usuário. O JSON já era escapado e o título
+    # não era: um `</title>` ali encerraria o elemento no meio do cabeçalho.
+    html = replace(html, "<!--TITULO-->" => escapa(titulo))
     html = replace(html, "<!--CORPO-->" => ler_publico(corpo))
     html = replace(html, "<!--SCRIPT-->" =>
                    join(["<script src=\"/$s\"></script>" for s in scripts], "\n"))
@@ -500,7 +503,10 @@ function servir(; porta::Int = 8000, abrir::Bool = true, bloquear::Bool = true)
     PORTA[] = p                       # `mesma_origem` compara contra ela
     url = "http://127.0.0.1:$p"
     println()
-    println("FPSO_Siz — dimensionamento de separadores")
+    # `LEMA` e não uma frase própria: o banner do terminal, o `--ajuda` e o subtítulo do
+    # menu diziam três coisas diferentes sobre o que o programa faz, e duas delas
+    # prometiam só separadores. Ver a nota de `LEMA` em FPSOSizApp.jl.
+    println(LEMA)
     println("Interface no ar:  ", url)
     println("Saída (CSV, memorial, SVG): ", FPSOSiz.dir_saida())
     println("Conjuntos de casos:          ", FPSOSiz.dir_casos())

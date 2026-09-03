@@ -614,6 +614,41 @@ escolha pelo menor DN — atravessa o motor inteiro em `test/envelope.jl`, e um 
 `app/smoke.jl` lê `index.html` e `app.js` sem comentários e falha se aparecer "Leff",
 "Lss", "esbeltez", "decantação", "óleo", "água", "gás" ou "diâmetro".
 
+### Defeitos de interface corrigidos no fecho
+
+Onze, todos por leitura, nenhum produzindo status ≠ 200 — a mesma classe das rodadas
+anteriores, e o mesmo motivo de o `smoke.jl` não os alcançar sozinho: ele fala HTTP e não
+abre navegador. Cada um levou um teste.
+
+**Os três primeiros são a regra deste sprint furada.** O guarda que a impõe lê
+`index.html` e `app.js`; nada do que o **Julia gera para dentro da tela** passa por ele.
+A correção não foi só apagar as palavras: o teste novo assere sobre a **saída** — as
+figuras que o vaso bifásico produz de fato — em vez do texto dos arquivos, e por isso
+vale para qualquer figura que um método venha a declarar.
+
+| # | Defeito | Correção |
+|---|---|---|
+| 1 | O `aria-label` de `svg_elevacao` dizia **"Elevação do separador"**. `svg_elevacao` serve os dois vasos, então quem depende de leitor de tela ouvia o knockout **bifásico** ser anunciado como separador. Quem enxerga a figura nunca notaria. | Rótulo sem o nome do equipamento — ele já está no cabeçalho da página, que o lê de `esquema.equipamento`. |
+| 2 | O banner do terminal dizia "dimensionamento de **separadores**", com seis aplicações no menu desde o Sprint 6. | `LEMA`, uma frase só, compartilhada com o `--ajuda`. |
+| 3 | `--ajuda` prometia "separadores trifásicos horizontais / **Stewart & Arnold (2008)**". A citação do método é por equipamento e já vive em `method_reference`. | Mesmo `LEMA`; a citação sai. |
+| 4 | **Campo recusado em caso que não estava à vista era invisível.** O servidor valida os casos **todos**; a tela mostra um. Os avisos dos outros eram descartados na chegada, e os do caso à vista, apagados por `escreverCaso` na primeira troca de caso e nunca repostos. A barra dizia "3 campo(s) recusado(s)" e não havia **nada marcado em lugar nenhum** — a tela e o servidor deixando de se corresponder, sem nada denunciando. | `avisosPendentes` guarda a lista inteira; `escreverCaso` repõe as marcas do caso que passa a estar à vista; o seletor ganha `⚠` no caso que tem queixa; a barra **nomeia o caso**. Como o escopo do aviso é posicional (`"caso:3"`), criar ou remover caso o descarta — a mesma armadilha da herança por posição do Sprint 3, aqui resolvida por esquecimento em vez de identidade, porque o aviso pertence à resposta que o produziu. |
+| 5 | O título da figura ficava **obsoleto**: só era escrito quando havia figura principal *com* título, e o fallback genérico não declara nenhuma. Sobrava o título do estado anterior sobre uma área vazia. | Acumulado no laço e escrito uma vez, sempre. |
+| 6 | Abrir e Voltar ao menu perguntavam antes de descartar edição; **fechar a aba, não** — e é o gesto mais fácil de fazer sem querer. | `beforeunload`, com um sinalizador que o suprime nas saídas já confirmadas: duas caixas de diálogo para um clique só é o aviso que se aprende a fechar sem ler. |
+| 7 | `ocupado()` travava os cinco botões que disparam requisição. O que **edita** `casos` — Novo, Duplicar, Remover, os dois seletores, o cursor — ficava vivo, e o `aplicarEstado` da resposta em voo o sobrescrevia. | `CONTROLES` com os onze. O cursor continua tendo dono: `aplicarGrade` é quem sabe se há grade. |
+| 8 | **O foco de teclado era marcado só pela cor da borda** (`outline: none`), nas ~50 caixas do formulário e nos cartões do menu. É a falha que o Sprint 2 corrigiu para campo recusado — *cor sozinha não informa quem não a distingue* — reaparecida no estado que se percorre a tela inteira usando. | Contorno em `:focus-visible`, no padrão que `.memorial > summary` já usava. A borda colorida fica, como reforço. |
+| 9 | **O cursor anunciava o índice, não o valor.** O `value` do `<input type=range>` é a posição na grade (ela não tem passo constante), e é o `value` que o leitor de tela lê: "3 de 12" em vez de "5550 mm". O único número que importa era o único que não se ouvia. | `aria-valuetext` escrito junto do `<output>`, nos dois lugares que já o atualizavam. |
+| 10 | A figura do estado inviável saía com `role="img"` e **`aria-label=""`** — o pior dos dois mundos: anunciada como gráfico sem nome *e* com os `<text>` de dentro escondidos. É justamente ali que o texto de dentro é a única explicação na tela. | `documento_vazio` passa a mensagem como rótulo; `documento` omite `role` e `aria-label` quando não há nome, para que nenhum chamador futuro repita o erro. |
+| 11 | `menu.js` tratava `error` e não `unhandledrejection` (`app.js` trata os dois), e `sair()` é `async`. Mais dois menores: o `<title>` era interpolado **sem escape** enquanto o JSON de `__INICIAL__` já era escapado, e os dois vêm do mesmo TOML; e `pedir()` parseava JSON antes de olhar o `Content-Type`, então uma página de erro do servidor virava *"Sem conexão com o servidor"* — falso, e mandando procurar no lugar errado. | Os dois eventos; `escapa(titulo)`; conferência do tipo antes do parse, com a queixa que corresponde ao que houve. |
+
+*Sobre a verificação:* dos onze, quatro só existem dentro do navegador (o `⚠`, o
+`beforeunload`, o contorno de foco, o `aria-valuetext`). Como não há navegador na suíte, o
+que se vigia é a **presença das construções** que produzem o comportamento — a estratégia
+que `app/smoke.jl` já documenta para a acessibilidade. Onde havia saída para olhar (as
+figuras, `documento_vazio`, `pagina`, `aplicar!`), a asserção é sobre a saída. Os guardas
+foram conferidos reintroduzindo os defeitos: os três casos testados falharam como deviam.
+
+**Contagem:** 1142 no core, 1827 na interface.
+
 ---
 
 ## Sprint 8 — Bomba centrífuga ⏳ ← ATUAL

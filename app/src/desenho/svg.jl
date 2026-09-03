@@ -240,23 +240,36 @@ end
 Envelopa os elementos num `<svg>` com `viewBox`, para que a figura escale sozinha
 dentro do `<div>` que a contém. `preserveAspectRatio` mantém a proporção; sem ele o
 vaso deformaria junto com a janela.
+
+`rotulo` vazio NÃO vira `aria-label=""`: `atrs` só pula o que vier como `nothing`, e um
+`role="img"` com nome vazio é pior que nenhum dos dois — o leitor de tela anuncia
+"gráfico sem nome" *e* deixa de ler os `<text>` de dentro, que é onde estava a mensagem.
+Sem rótulo, a figura sai sem `role` nenhum e o conteúdo volta a ser alcançável.
 """
 function documento(t::Tela, corpo::AbstractString; fundo = nothing, rotulo = "")
     fundinho = fundo === nothing ? "" :
                caixa_px(0, 0, t.larg, t.alt; preenche = fundo)
+    tem_rotulo = !isempty(strip(string(rotulo)))
     return string(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ",
         svgn(t.larg), " ", svgn(t.alt), "\" ",
-        atrs("preserveAspectRatio" => "xMidYMid meet", "role" => "img",
-             "aria-label" => rotulo),
+        atrs("preserveAspectRatio" => "xMidYMid meet",
+             "role" => tem_rotulo ? "img" : nothing,
+             "aria-label" => tem_rotulo ? rotulo : nothing),
         " font-family=\"system-ui, -apple-system, Segoe UI, Roboto, sans-serif\">",
         fundinho, corpo, "</svg>")
 end
 
-"SVG vazio, do tamanho pedido — o que um estado inviável devolve."
+"""
+SVG vazio, do tamanho pedido — o que um estado inviável devolve.
+
+A mensagem vai também no rótulo, e não só desenhada: é justamente no estado inviável que
+a figura não tem nada a mostrar, e o `<text>` do meio é a única explicação na tela. Sem o
+rótulo, quem usa leitor de tela ficava sem nenhuma — o desenho some e nada o substitui.
+"""
 function documento_vazio(larg, alt, mensagem = "")
     t = Tela(0.0, 0.0, 1.0, 1.0, 0.0, 0.0, float(larg), float(alt))
     corpo = isempty(mensagem) ? "" :
             texto_px(larg / 2, alt / 2, mensagem; tam = 12, cor = "#6b717a")
-    return documento(t, corpo)
+    return documento(t, corpo; rotulo = mensagem)
 end

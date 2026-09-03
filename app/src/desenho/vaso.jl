@@ -43,8 +43,13 @@ function svg_elevacao(g; larg::Real = 920.0)
     bocais!(p, t, g)
     cotas!(p, t, g)
 
+    # O rótulo NÃO nomeia o equipamento: `svg_elevacao` serve o separador trifásico e o
+    # vaso bifásico, e dizia "Elevação do separador" nos dois — o leitor de tela anunciava
+    # o knockout como separador. Quem é o equipamento já está no cabeçalho da página, que
+    # o lê de `esquema.equipamento`. É a regra do Sprint 7 (a tela não nomeia o que
+    # dimensiona) aplicada ao que o Julia GERA para dentro da tela, e não só a ela.
     return documento(t, join(p);
-                     rotulo = "Elevação do separador, d = $(Formato.inteiro(g.d_m * 1000)) mm")
+                     rotulo = "Elevação, d = $(Formato.inteiro(g.d_m * 1000)) mm")
 end
 
 "As fases como faixas horizontais que acompanham os tampos — duas ou três, conforme o vaso."

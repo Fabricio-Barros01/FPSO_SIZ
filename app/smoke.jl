@@ -173,6 +173,39 @@ end
         @test startswith(A.svg_elevacao(g), "<svg")  # e ainda produz documento válido
         @test valor_cartao(st, "Diâmetro") == "—"
         @test length(A.tabela(st)["linhas"]) == 9
+
+        # E a figura vazia diz o que houve TAMBÉM para quem não a enxerga. Ela saía com
+        # `role="img"` e `aria-label=""`, que é o pior dos dois mundos: o leitor de tela
+        # anuncia "gráfico sem nome" e para de ler os `<text>` de dentro — e é justamente
+        # no estado inviável que o `<text>` de dentro é a única explicação na tela.
+        vazio = A.documento_vazio(400, 200, "sem resultado")
+        @test occursin("aria-label=\"sem resultado\"", vazio)
+        @test !occursin("aria-label=\"\"", vazio)
+        # Sem mensagem não há nome, e sem nome não há `role="img"`: assim o conteúdo do
+        # SVG volta a ser alcançável em vez de ficar escondido atrás de um nome vazio.
+        sem_nome = A.documento_vazio(400, 200)
+        @test !occursin("aria-label", sem_nome)
+        @test !occursin("role=\"img\"", sem_nome)
+    end
+
+    @testset "o programa não promete só separadores" begin
+        # `USO` (a saída de `--ajuda`) e o banner do terminal diziam "separadores
+        # trifásicos horizontais / Stewart & Arnold (2008)" desde o Sprint 0, quando era
+        # verdade. Desde o menu do Sprint 6 são seis aplicações, e a citação do método é
+        # por equipamento — ela vive em `method_reference` e sai no memorial.
+        @test !occursin("separador", lowercase(A.LEMA))
+        @test !occursin("separador", lowercase(A.USO))
+        @test !occursin("Stewart", A.USO)
+        # O banner do terminal, o `--ajuda` e o subtítulo do menu diziam três coisas
+        # diferentes sobre o que o programa faz; agora os dois primeiros são o mesmo texto.
+        @test occursin(A.LEMA, A.USO)
+
+        # E o `<title>` é escapado como o JSON de `__INICIAL__` já era: os dois vêm de
+        # TOML que o usuário edita, e um `</title>` ali encerraria o elemento no meio do
+        # cabeçalho do documento.
+        html = A.pagina(; titulo = "a<b>c", corpo = "menu.html",
+                        scripts = String[], dados = nothing)
+        @test occursin("<title>a&lt;b&gt;c</title>", html)
     end
 
     @testset "nenhum caso ativo" begin
@@ -359,6 +392,78 @@ end
         # "false" — que faz o leitor anunciar "inválido: falso" em cada campo.
         @test occursin("removeAttribute(\"aria-invalid\")", js)
         @test !occursin("aria-invalid\", \"false\"", js)
+
+        # O cursor é um <input type=range> sobre o ÍNDICE da grade (a grade não tem passo
+        # constante — ver `aplicarGrade`), e é o `value` que o leitor de tela anuncia.
+        # Sem `aria-valuetext` ele lia "3 de 12" em vez de "5550 mm": justamente o número
+        # que a pessoa precisa ouvir era o único que ela não ouvia.
+        @test occursin("aria-valuetext", js)
+
+        # O foco de teclado não pode ser marcado só pela cor da borda — é a mesma regra
+        # que vale para campo recusado, e ela valia para todo campo do formulário. A
+        # proibição sozinha passaria com o foco simplesmente removido, então exige-se
+        # também a regra que o repõe.
+        @test !occursin(r"input:focus\s*\{[^}]*outline:\s*none"s, css)
+        @test occursin(r"input:focus-visible[^{]*\{[^}]*outline:\s*\d"s, css)
+        # O cartão do menu tinha `outline: none` na MESMA regra do `:hover`: percorrer os
+        # seis cartões por Tab não mostrava qual deles o Enter abriria.
+        @test occursin(r"a\.box:focus-visible\s*\{[^}]*outline:\s*\d"s, css)
+
+        # O menu trata os DOIS eventos, como a tela de dimensionamento: `error` não pega
+        # promessa rejeitada, e `sair()` é `async`.
+        menu_js = read(joinpath(publico, "menu.js"), String)
+        @test occursin("unhandledrejection", menu_js)
+        @test occursin("addEventListener(\"error\"", menu_js)
+    end
+
+    @testset "a tela não perde o que o usuário fez" begin
+        # Quatro defeitos de uma família só: a tela e o servidor deixam de se
+        # corresponder, ou o trabalho some, e NADA denuncia. Nenhum deles produz status
+        # ≠ 200 — o que dá para vigiar é a presença das construções que os corrigem, que
+        # é a mesma estratégia do testset acima.
+        publico = A.dir_publico()
+        js = read(joinpath(publico, "app.js"), String)
+
+        # (1) Campo recusado em caso que não está à vista. O servidor valida TODOS os
+        # casos; a tela mostra um. Os avisos dos outros eram descartados na hora, e os do
+        # caso à vista morriam na primeira troca de caso — a barra dizia "3 campo(s)
+        # recusado(s)" e não havia nada marcado em lugar nenhum.
+        @test occursin("avisosPendentes", js)
+        @test occursin("function aplicarAvisos()", js)
+        @test occursin("function casosComAviso()", js)
+        # e `escreverCaso` REPÕE as marcas depois de limpar as caixas
+        corpo_escrever = match(r"function escreverCaso\(\).*?\n\}"s, js)
+        @test corpo_escrever !== nothing
+        @test occursin("aplicarAvisos()", corpo_escrever.match)
+
+        # (2) O escopo do aviso é POSICIONAL ("caso:3"). Criar ou remover caso o
+        # desendereça — a mesma armadilha da herança por posição do Sprint 3.
+        for f in ("function novoCaso(", "function removerCaso(")
+            corpo = match(Regex(replace(f, "(" => "\\(") * ".*?\\n\\}", "s"), js)
+            @test corpo !== nothing && occursin("esquecerAvisos()", corpo.match)
+        end
+
+        # (3) Fechar a aba com edição pendente descartava o estudo em silêncio, enquanto
+        # Abrir e Voltar ao menu já perguntavam desde o Sprint 3.
+        @test occursin("beforeunload", js)
+        # …e não pergunta duas vezes numa saída que a pessoa já confirmou.
+        @test occursin("saindoDeProposito", js)
+
+        # (4) `ocupado` travava só os cinco botões que disparam requisição. O que EDITA
+        # `casos` ficava vivo, e o `aplicarEstado` da resposta em voo o sobrescrevia.
+        controles = match(r"const CONTROLES = \[.*?\];"s, js)
+        @test controles !== nothing
+        for id in ("btn-novo", "btn-duplicar", "btn-remover",
+                   "sel-arquivo", "sel-caso", "slider-d")
+            @test occursin(id, controles.match)
+        end
+
+        # (5) `pedir` parseava JSON antes de olhar o tipo: uma página de erro do servidor
+        # virava "Sem conexão com o servidor", que é falso e manda procurar no lugar
+        # errado.
+        corpo_pedir = match(r"async function pedir\(.*?\n\}"s, js)
+        @test corpo_pedir !== nothing
+        @test occursin("content-type", corpo_pedir.match)
     end
 
     @testset "validação recusa o campo e preserva o valor" begin
@@ -380,6 +485,18 @@ end
             "lo" => Dict("q_oil" => "999999"), "hi" => Dict())]))
         @test length(avisos) == 1
         @test occursin("acima do máximo", avisos[1]["msg"])
+
+        # O aviso pode ser de um caso que NÃO está à vista — e é o caso comum, porque o
+        # servidor valida o conjunto inteiro enquanto a tela mostra um caso por vez. É a
+        # prova de que a situação existe: sem ela, o tratamento do lado do JavaScript
+        # (`avisosPendentes`, o `⚠` no seletor) seria conserto de problema imaginado.
+        caso = i -> Dict("name" => "Caso $i", "enabled" => true,
+                         "lo" => Dict("q_oil" => i == 3 ? "abacaxi" : "200"),
+                         "hi" => Dict())
+        avisos = A.aplicar!(st, Dict("casos" => [caso(1), caso(2), caso(3)], "sel" => 1))
+        @test length(avisos) == 1
+        @test avisos[1]["escopo"] == "caso:3"      # e o selecionado é o 1
+        @test st.sel == 1
     end
 
     @testset "remover um caso não embaralha os valores dos outros" begin
@@ -731,6 +848,28 @@ end
             @test occursin("bifásico", txt)
             @test occursin("Gas-Liquid and Liquid-Liquid Separators", txt)
             @test !occursin("Alves & Komesu", txt)     # essa é a fonte do OUTRO vaso
+        end
+
+        @testset "nem as figuras chamam este vaso de separador" begin
+            # O guarda do Sprint 7 ("a tela não cita nenhuma grandeza pelo nome") lê
+            # `index.html` e `app.js` — e não alcança o que o JULIA GERA para dentro da
+            # tela. Passava por ele o `aria-label` de `svg_elevacao`, que dizia "Elevação
+            # do separador" nos DOIS vasos: `svg_elevacao` serve os dois, e o rótulo era
+            # literal. Quem enxerga a figura não notava; quem depende do leitor de tela
+            # ouvia o knockout bifásico ser anunciado como separador.
+            #
+            # A asserção é sobre a SAÍDA, e não sobre o texto do arquivo: é o que o
+            # usuário recebe, e vale para qualquer figura que um método venha a declarar.
+            for f in A.figuras(st)
+                @test !occursin("separador", lowercase(f["svg"]))
+                @test !occursin("separador", lowercase(f["titulo"]))
+                @test !occursin("separador", lowercase(f["legenda"]))
+            end
+            # E o `role="img"` só existe quando há nome: um SVG com `aria-label=""` é
+            # anunciado como gráfico sem nome E esconde os `<text>` de dentro.
+            for f in A.figuras(st)
+                @test !occursin("aria-label=\"\"", f["svg"])
+            end
         end
     end
 

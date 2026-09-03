@@ -121,7 +121,20 @@ select, input[type=text], input.campo {
   padding: 3px 6px;
 }
 select { width: 100%; height: 26px; font-size: 11px; }
-select:focus, input:focus { outline: none; border-color: var(--destaque); }
+
+/* O contorno FICA. Esta regra era `outline: none; border-color: var(--destaque)`, o que
+   deixava o foco de teclado marcado só pela mudança de cor da borda — a mesma falha que
+   o Sprint 2 corrigiu para campo recusado ("cor sozinha não informa quem não a
+   distingue"), aqui aplicada às ~50 caixas do formulário. Num formulário que se percorre
+   inteiro por Tab, perder de vista onde se está é perder o lugar na tela.
+
+   `:focus-visible` e não `:focus`: o contorno aparece para quem navega por teclado e não
+   para quem clicou, que já sabe onde está. A borda colorida continua, como reforço. */
+select:focus, input:focus { border-color: var(--destaque); }
+select:focus-visible, input:focus-visible {
+  outline: 2px solid var(--destaque);
+  outline-offset: 1px;
+}
 
 /* Barra de arquivo de casos. Fica acima do seletor de caso e separada dele por uma
    régua: são dois níveis diferentes — o arquivo contém os casos —, e sem a separação
@@ -366,8 +379,11 @@ main.menu {
 a.box:hover, a.box:focus-visible {
   border-color: var(--destaque);
   box-shadow: 0 1px 6px rgba(30, 79, 160, .16);
-  outline: none;
 }
+/* Separado do `:hover`: o cartão focado por teclado precisa se distinguir do cartão sob
+   o ponteiro. Com os dois na mesma regra e `outline: none`, percorrer o menu por Tab não
+   mostrava qual dos seis cartões o Enter abriria. */
+a.box:focus-visible { outline: 2px solid var(--destaque); outline-offset: 2px; }
 
 /* Pendente: esmaecido, mas não invisível — e o motivo ocupa o lugar da ação. Cor não
    é o único portador da informação: há o selo em texto e o próprio motivo escrito. */
@@ -403,3 +419,4 @@ a.box:hover, a.box:focus-visible {
   font-size: 11px;
 }
 .voltar:hover, .voltar:focus-visible { border-color: var(--destaque); color: var(--destaque); }
+.voltar:focus-visible { outline: 2px solid var(--destaque); outline-offset: 2px; }

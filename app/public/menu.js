@@ -87,7 +87,12 @@ function iniciar() {
 }
 
 // Uma exceção não tratada deixaria a tela parada em "Carregando…" sem dizer por quê.
+// Os DOIS eventos, como em app.js: `error` não pega promessa rejeitada, e `sair()` é
+// `async` — uma falha lá dentro sumiria sem deixar nada na barra, que é exatamente o
+// desfecho que este par de guardas existe para impedir.
 window.addEventListener("error", (e) =>
   status(`Falha na interface: ${e.message}`, false));
+window.addEventListener("unhandledrejection", (e) =>
+  status(`Falha na interface: ${e.reason}`, false));
 
 iniciar();

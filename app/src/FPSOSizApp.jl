@@ -56,9 +56,14 @@ include("server.jl")
 
 export main, julia_main
 
+# O texto NÃO cita um equipamento nem um método. Dizia "separadores trifásicos
+# horizontais / Stewart & Arnold (2008)" desde o Sprint 0, quando era verdade; desde o
+# menu do Sprint 6 são seis aplicações, e a citação do método é por equipamento — ela
+# vive em `method_reference`, declarada no TOML de cada método, e sai no memorial.
+const LEMA = "FPSO_Siz — dimensionamento de equipamentos de processamento primário"
+
 const USO = """
-FPSO_Siz — dimensionamento de separadores trifásicos horizontais
-método semiempírico de Stewart & Arnold (2008)
+$LEMA
 
   fpso-siz [opções]
 
