@@ -42,15 +42,21 @@ por caso, os dos ajustes globais e os rótulos do equipamento e do método.
 É a regra de `src/interfaces.jl`: a interface nunca cita um parâmetro pelo nome.
 Registrar um equipamento novo no core faz a tela aparecer sem editar uma linha daqui.
 """
-esquema(st::AppState) = Dict{String,Any}(
+function esquema(st::AppState)
+    eixo = FPSOSiz.sweep_axis(st.metodo, st.globais)
+    return Dict{String,Any}(
     "campos"      => [spec_json(s) for s in st.campos],
     "ajustes"     => [spec_json(s) for s in st.ajustes],
     "equipamento" => FPSOSiz.label(st.equipamento),
     "metodo"      => FPSOSiz.label(st.metodo),
+    # O rótulo do cursor: "diâmetro (mm)" num vaso, "diâmetro nominal (mm)" numa bomba.
+    # Estava escrito à mão em index.html, o que fazia a tela conhecer a grandeza.
+    "eixo"        => Dict{String,Any}("label" => eixo.label, "unit" => eixo.unit),
     "paleta"      => Dict{String,Any}(
         "destaque" => Formato.DESTAQUE, "erro" => Formato.ERRO,
         "ok" => Formato.OK, "tinta_fraca" => Formato.TINTA_FRACA),
-)
+    )
+end
 
 # ---------------------------------------------------------------------------
 # Estado → tela
@@ -73,53 +79,87 @@ function caso_json(c::CaseUI, casas::Dict{Symbol,Int})
                             "lo" => fmt(c.lo), "hi" => fmt(c.hi))
 end
 
-"Linha da varredura mais próxima do diâmetro selecionado."
-function linha_sel(r, d)
+"Linha da varredura mais próxima do ponto selecionado no eixo."
+function linha_sel(r, x)
     (r === nothing || isempty(r.rows)) && return nothing
-    return argmin(row -> abs(row.d_mm - d), r.rows)
+    return argmin(row -> abs(row.x - x), r.rows)
 end
 
 """
-    cartao(st) -> Dict
+    _no_cursor(r, l) -> NamedTuple
 
-O cartão de resultados da coluna direita, já em texto. Mesmos oito campos da versão
-Makie, na mesma ordem.
+A linha do cursor vestida de resultado, para atravessar
+[`FPSOSiz.result_fields`](@ref).
+
+O cartão segue o **cursor**, não o ótimo: arrastar o controle mostra o que aquele ponto
+daria. Mas `result_fields` recebe um resultado, e uma linha de varredura não tem
+`feasible` nem o teto do eixo — que são do conjunto, não do ponto. Juntar os dois aqui é
+mais honesto que dar a cada linha uma cópia de campos que não são dela.
+"""
+_no_cursor(r, l) = (; feasible = true, x = l.x, y = l.y, derivados = l.derivados,
+                      governing = l.governing, driver_case = l.driver_case,
+                      ceiling = r.ceiling, ok = l.ok)
+
+"""
+    cartao(st) -> Vector{Dict}
+
+O cartão de resultados da coluna direita, já em texto.
+
+Os campos vêm de [`FPSOSiz.result_fields`](@ref), declarados pelo método — não são mais
+oito chaves fixas com nome de vaso. É a mesma regra do formulário desde o Sprint 0,
+estendida ao resultado: a tela itera e desenha, sem saber que existe uma grandeza
+chamada esbeltez.
 """
 function cartao(st::AppState)
     r = st.resultado
     l = linha_sel(r, st.d_sel)
-    tr = "—"
-    l === nothing && return Dict{String,Any}(
-        "d" => tr, "leff" => tr, "lss" => tr, "sr" => tr, "sr_ok" => true,
-        "volume" => tr, "governa" => tr, "caso" => tr, "teto" => tr)
+    alvo = l === nothing ? _vazio_para_cartao(r) : _no_cursor(r, l)
+    return [campo_json(f) for f in FPSOSiz.result_fields(st.metodo, alvo)]
+end
 
-    return Dict{String,Any}(
-        "d"       => "$(Formato.inteiro(l.d_mm)) mm",
-        "leff"    => "$(Formato.num(l.leff_m)) m",
-        "lss"     => "$(Formato.num(l.lss_m)) m",
-        "sr"      => "$(Formato.num(l.sr)) " * (l.sr_ok ? "✓" : "✗"),
-        "sr_ok"   => l.sr_ok,
-        "volume"  => "$(Formato.num(FPSOSiz.vessel_volume(l.d_mm, l.lss_m), 0)) m³",
-        "governa" => l.governing === :gas ? "capacidade de gás" : "capacidade de líquido",
-        "caso"    => l.driver_case,
-        "teto"    => isfinite(r.d_max_mm) ? "$(Formato.inteiro(r.d_max_mm)) mm" : tr,
-    )
+# Sem varredura ainda: o cartão precisa existir com os rótulos certos e travessão nos
+# valores, senão a coluna da direita muda de altura entre "antes" e "depois" de
+# dimensionar — e o rótulo é o que diz ao usuário o que ele vai receber.
+_vazio_para_cartao(r) = (; feasible = false, x = NaN, y = NaN,
+                           derivados = Dict{Symbol,Float64}(), governing = :none,
+                           driver_case = "—", ceiling = NaN, ok = false)
+
+"Um [`FPSOSiz.ResultField`](@ref) já formatado em PT-BR."
+function campo_json(f::FPSOSiz.ResultField)
+    texto = if f.value isa AbstractString
+        f.value
+    elseif isfinite(f.value)
+        Formato.num(f.value, f.digits) * (isempty(f.unit) ? "" : " " * f.unit)
+    else
+        "—"
+    end
+    marca = f.status === :ok ? " ✓" : f.status === :erro ? " ✗" : ""
+    return Dict{String,Any}("rotulo" => f.label, "valor" => texto * marca,
+                            "destaque" => f.highlight, "status" => String(f.status))
 end
 
 """
-    tabela(st; n_linhas) -> Vector
+    tabela(st; n_linhas) -> Dict
 
-Vizinhança do diâmetro selecionado na varredura — o mesmo recorte de nove linhas
-centrado no cursor que a versão Makie mostrava. Linhas fora da grade vêm vazias, para
-que a tabela não mude de altura ao chegar nas pontas.
+Vizinhança do ponto selecionado na varredura: as colunas que o método declarou em
+[`FPSOSiz.sweep_columns`](@ref) e o mesmo recorte de nove linhas centrado no cursor.
+
+Linhas fora da grade vêm vazias, para que a tabela não mude de altura ao chegar nas
+pontas — e o cabeçalho viaja junto, porque quem decide se a terceira coluna é `Lss` ou
+`v` é o método.
 """
 function tabela(st::AppState; n_linhas::Int = 9)
     r = st.resultado
-    vazia = Dict{String,Any}("d" => "", "leff" => "", "lss" => "", "sr" => "",
-                             "centro" => false, "sr_ok" => false)
-    (r === nothing || isempty(r.rows)) && return [vazia for _ in 1:n_linhas]
+    cols = FPSOSiz.sweep_columns(st.metodo)
+    cabecalho = [c.label for c in cols]
+    vazia = Dict{String,Any}("valores" => ["" for _ in cols],
+                             "centro" => false, "ok" => false)
 
-    centro = argmin(k -> abs(r.rows[k].d_mm - st.d_sel), eachindex(r.rows))
+    (r === nothing || isempty(r.rows)) &&
+        return Dict{String,Any}("colunas" => cabecalho,
+                                "linhas" => [vazia for _ in 1:n_linhas])
+
+    centro = argmin(k -> abs(r.rows[k].x - st.d_sel), eachindex(r.rows))
     meio = (n_linhas + 1) ÷ 2
     linhas = Dict{String,Any}[]
     for i in 1:n_linhas
@@ -131,38 +171,26 @@ function tabela(st::AppState; n_linhas::Int = 9)
         end
         row = r.rows[k]
         push!(linhas, Dict{String,Any}(
-            "d"      => Formato.inteiro(row.d_mm),
-            "leff"   => Formato.num(row.leff_m),
-            "lss"    => Formato.num(row.lss_m),
-            "sr"     => Formato.num(row.sr),
-            "centro" => k == centro,
-            "sr_ok"  => row.sr_ok))
+            "valores" => [Formato.num(FPSOSiz.column_value(row, c), c.digits)
+                          for c in cols],
+            "centro"  => k == centro,
+            "ok"      => row.ok))
     end
-    return linhas
+    return Dict{String,Any}("colunas" => cabecalho, "linhas" => linhas)
 end
 
 """
     desenho(st) -> Dict
 
-Os quatro SVGs mais a legenda. É o que o cursor de diâmetro troca a cada movimento: a
-varredura já está calculada, então isto é formatação, não recálculo.
+As figuras deste equipamento mais a legenda de casos. É o que o cursor troca a cada
+movimento: a varredura já está calculada, então isto é formatação, não recálculo.
+
+A lista de figuras vem de [`figuras`](@ref), que despacha no método — quatro no vaso,
+uma no fallback genérico, e o que a bomba do Sprint 8 declarar.
 """
-function desenho(st::AppState)
-    r = st.resultado
-    g = geometry_from(r, st.d_sel, beta_atual(st))
-    banda = (st.globais[:sr_min], st.globais[:sr_max])
-    return Dict{String,Any}(
-        "vaso"    => svg_elevacao(g),
-        "corte"   => svg_corte(g),
-        "leff"    => svg_grafico_leff(r, st.d_sel),
-        "sr"      => svg_grafico_sr(r, st.d_sel, banda, st.globais[:sr_target]),
-        "legenda" => html_legenda_casos(r),
-        "titulo"  => g.ok ?
-            "Elevação — d = $(Formato.inteiro(g.d_m * 1000)) mm · " *
-            "Lss = $(Formato.num(g.lss_m)) m · SR = $(Formato.num(g.sr))" :
-            "Elevação — sem resultado",
-    )
-end
+desenho(st::AppState) = Dict{String,Any}(
+    "figuras" => figuras(st),
+    "legenda" => html_legenda_casos(st.resultado))
 
 """
     memorial(st) -> Dict
@@ -187,7 +215,7 @@ function memorial(st::AppState)
     casos = Dict{String,Any}[]
     for (nome, res) in zip(r.case_names, r.per_case)
         blocos = Dict{String,Any}[]
-        for (id, titulo) in BLOCOS_MEMORIAL
+        for (id, titulo) in blocos_memorial(st.metodo, res.trace)
             linhas = [linha_memorial(e) for e in FPSOSiz.block_entries(res.trace, id)]
             # Bloco vazio não vira subtítulo órfão: um método que não use um dos blocos
             # (o vaso bifásico do Sprint 5 não usa o B) simplesmente não o mostra.
@@ -195,7 +223,8 @@ function memorial(st::AppState)
                 "id" => String(id), "titulo" => titulo, "linhas" => linhas))
         end
         push!(casos, Dict{String,Any}("nome" => nome, "viavel" => res.feasible,
-                                      "fecho" => fecho_memorial(res), "blocos" => blocos))
+                                      "fecho" => fecho_memorial(st.metodo, res),
+                                      "blocos" => blocos))
     end
     return Dict{String,Any}("casos" => casos, "governante" => r.driver_case)
 end

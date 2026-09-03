@@ -36,6 +36,9 @@ let sujo = false;
 // toda chamada de API. A tela não sabe o que é um separador: ela sabe o id do box e os
 // descritores que o servidor mandou.
 let box = "";
+// Unidade do eixo varrido ("mm" num vaso), para o rótulo do cursor. Vem do esquema:
+// era `mm` escrito à mão em dois lugares, o que fazia a tela conhecer a grandeza.
+let unidadeEixo = "";
 
 // ---------------------------------------------------------------- utilidades
 
@@ -168,6 +171,10 @@ function montarFormulario() {
 
   q("rotulo-equipamento").textContent = esquema.equipamento;
   q("rotulo-metodo").textContent = esquema.metodo;
+
+  const eixo = esquema.eixo || { label: "", unit: "" };
+  unidadeEixo = eixo.unit;
+  q("rotulo-cursor").textContent = eixo.label;
 }
 
 /** Reescreve as caixas com o caso selecionado. */
@@ -205,38 +212,82 @@ const rotulosLocais = () => casos.map((c) => (c.enabled ? c.name : "○ " + c.na
 
 // ---------------------------------------------------------------- resultados
 
-function aplicarCartao(c) {
-  q("r-d").textContent = c.d;
-  q("r-leff").textContent = c.leff;
-  q("r-lss").textContent = c.lss;
-  q("r-sr").textContent = c.sr;
-  q("r-sr").classList.toggle("fora", !c.sr_ok);
-  q("r-volume").textContent = c.volume;
-  q("r-governa").textContent = c.governa;
-  q("r-caso").textContent = c.caso;
-  q("r-teto").textContent = c.teto;
+/*
+ * O cartão, a tabela e as figuras nascem do JSON — nada aqui sabe que existe um
+ * diâmetro, um Leff ou uma esbeltez.
+ *
+ * Até o Sprint 6 esta seção escrevia em oito `id` fixos (`r-d`, `r-leff`, `r-sr`…),
+ * lia quatro colunas pelo nome e enchia quatro `<div>` de figura. Isso fixava a tela no
+ * separador: uma bomba não tem esbeltez para pôr no `r-sr`, e a linha ficaria vazia sem
+ * que nada denunciasse. Agora o servidor manda rótulo e valor, e a tela desenha o que
+ * vier — a mesma regra que o formulário já seguia desde o Sprint 0.
+ */
+
+function aplicarCartao(campos) {
+  const filhos = [];
+  for (const c of campos) {
+    const dt = document.createElement("dt");
+    dt.textContent = c.rotulo;
+    const dd = document.createElement("dd");
+    dd.textContent = c.valor;
+    if (c.destaque) dd.className = "destaque grande";
+    if (c.status === "erro") dd.classList.add("fora");
+    filhos.push(dt, dd);
+  }
+  q("cartao").replaceChildren(...filhos);
 }
 
-function aplicarTabela(linhas) {
-  q("corpo-varredura").replaceChildren(...linhas.map((l) => {
+function aplicarTabela(t) {
+  q("cabecalho-varredura").replaceChildren(...t.colunas.map((rotulo) => {
+    const th = document.createElement("th");
+    th.textContent = rotulo;
+    return th;
+  }));
+  q("corpo-varredura").replaceChildren(...t.linhas.map((l) => {
     const tr = document.createElement("tr");
     if (l.centro) tr.className = "centro";
-    else if (l.sr_ok) tr.className = "na-banda";
-    for (const k of ["d", "leff", "lss", "sr"]) {
+    else if (l.ok) tr.className = "na-banda";
+    for (const v of l.valores) {
       const td = document.createElement("td");
-      td.textContent = l[k];
+      td.textContent = v;
       tr.appendChild(td);
     }
     return tr;
   }));
 }
 
+/*
+ * As três áreas de figura que o HTML oferece.
+ *
+ * Escritas por extenso, e não montadas com `"area-" + f.area`: o teste que cruza os id
+ * do HTML com os do JS procura chamadas de `q` com string literal, e um id construído
+ * por concatenação passaria despercebido por ele — que é justamente o teste que existe
+ * para pegar um id renomeado num arquivo e esquecido no outro.
+ */
+const AREAS = {
+  principal:  () => q("area-principal"),
+  secundaria: () => q("area-secundaria"),
+  grafico:    () => q("area-grafico"),
+};
+
+/** As figuras vão para a área que cada uma declara; áreas sem figura ficam vazias. */
 function aplicarDesenho(d) {
-  q("titulo-vaso").textContent = d.titulo;
-  q("fig-vaso").innerHTML = d.vaso;
-  q("fig-corte").innerHTML = d.corte;
-  q("fig-leff").innerHTML = d.leff;
-  q("fig-sr").innerHTML = d.sr;
+  const conteudo = { principal: [], secundaria: [], grafico: [] };
+  let legenda = "";
+  for (const f of d.figuras) {
+    if (!conteudo[f.area]) continue;       // área desconhecida: ignora, não quebra
+    const div = document.createElement("div");
+    div.className = "figura";
+    div.innerHTML = f.svg;
+    conteudo[f.area].push(div);
+    // Só a figura principal tem título visível: as outras trazem o seu dentro do SVG.
+    if (f.area === "principal" && f.titulo) q("titulo-figura").textContent = f.titulo;
+    if (f.legenda) legenda = f.legenda;
+  }
+  q("legenda-figura").innerHTML = legenda;
+  for (const [nome, filhos] of Object.entries(conteudo)) {
+    AREAS[nome]().replaceChildren(...filhos);
+  }
   q("legenda-casos").innerHTML = d.legenda;
 }
 
@@ -255,7 +306,7 @@ function aplicarGrade(novaGrade, dSel) {
     if (Math.abs(grade[i] - dSel) < Math.abs(grade[melhor] - dSel)) melhor = i;
   }
   sl.value = melhor;
-  q("valor-d").textContent = `${Math.round(grade[melhor])} mm`;
+  q("valor-d").textContent = `${Math.round(grade[melhor])} ${unidadeEixo}`;
 }
 
 /** Aplica uma resposta completa de /api/estado ou /api/dimensionar. */
@@ -349,7 +400,7 @@ function moverCursor() {
   const i = Number(q("slider-d").value);
   if (!grade.length) return;
   const d = grade[i];
-  q("valor-d").textContent = `${Math.round(d)} mm`;
+  q("valor-d").textContent = `${Math.round(d)} ${unidadeEixo}`;
   clearTimeout(pendente);
   pendente = setTimeout(async () => {
     if (emVoo) emVoo.abort();

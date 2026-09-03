@@ -84,7 +84,7 @@ end
         # o caso de fim de vida (1600 m³/h de água) ou o canto de maior água governa
         @test occursin("Fim de vida", env.driver_case) ||
               occursin("q_water↑", env.driver_case)
-        @test all(env.slack_m .>= -1e-9)
+        @test all(env.slack .>= -1e-9)
     end
 end
 

@@ -103,14 +103,13 @@ mutable struct AppState
     rotulo::String                           # `label` declarado nesse arquivo
     globais::Dict{Symbol,Float64}
     resultado::Union{FPSOSiz.EnvelopeResult,Nothing}
-    cons_gov::Union{FPSOSiz.VesselConstraints,Nothing}   # do caso governante; ver `beta_atual`
+    # Do caso governante; ver `beta_atual`. Sem tipo concreto de propósito: cada método
+    # tem o seu objeto de restrições, e um `VesselConstraints` aqui excluiria a bomba.
+    cons_gov::Any
     d_sel::Float64
     status::String
     status_ok::Bool
 end
-
-"Chaves que o painel de ajustes controla globalmente."
-const CHAVES_GLOBAIS = (:d_min, :d_max, :d_step, :sr_min, :sr_max, :sr_target)
 
 """
     AppState(; case_file)
@@ -128,8 +127,12 @@ function AppState(; case_file::AbstractString = "exemplo_alves_komesu.toml",
     # equipamento troca o formulário inteiro sem uma linha de `app/` saber o nome de
     # nenhum parâmetro.
     todos   = vcat(FPSOSiz.stream_parameters(metodo), FPSOSiz.parameters(metodo))
-    campos  = filter(s -> !(s.key in CHAVES_GLOBAIS), todos)
-    ajustes = filter(s -> s.key in CHAVES_GLOBAIS, todos)
+    # Quais parâmetros são decisão de projeto (painel único) e quais são dado de
+    # corrente (um por caso) é o método que diz — ver `global_keys`. Era uma tupla fixa
+    # de seis chaves de vaso aqui; a bomba tem outras quatro.
+    globais = FPSOSiz.global_keys(metodo)
+    campos  = filter(s -> !(s.key in globais), todos)
+    ajustes = filter(s -> s.key in globais, todos)
 
     st = AppState(equipamento, metodo, campos, ajustes, CaseUI[], 1, "", "",
                   Dict{Symbol,Float64}(s.key => s.default for s in ajustes),
@@ -319,29 +322,44 @@ function dimensionar!(st::AppState)
     st.cons_gov = restricoes_governantes(st, cs, res)
     st.status_ok = res.feasible
     if res.feasible
-        st.d_sel = res.diameter_mm
+        st.d_sel = res.x
         st.status = "$(length(cs.cases)) caso(s) → $n canto(s) avaliado(s). " *
-                    FPSOSiz.governing_summary(res)
+                    FPSOSiz.governing_summary(st.metodo, res)
     else
-        # inviável: posiciona o cursor onde o SR chega mais perto da banda, para que
-        # o desenho e os gráficos ainda mostrem algo útil ao diagnóstico
-        isempty(res.rows) ||
-            (st.d_sel = argmin(r -> abs(r.sr - 4.0), res.rows).d_mm)
+        isempty(res.rows) || (st.d_sel = cursor_inviavel(st, res.rows))
         st.status = res.message
     end
     return nothing
 end
 
-"Diâmetros disponíveis para o cursor, a partir do último resultado."
+"""
+    cursor_inviavel(st, rows) -> Float64
+
+Onde pôr o cursor quando não há projeto viável — porque o desenho, os gráficos e a
+tabela continuam existindo, e servem ao diagnóstico.
+
+Num vaso é onde a esbeltez chega mais perto do alvo pedido: é o ponto de onde o usuário
+enxerga o quanto faltou. `sr_target` vem dos ajustes da tela, não de um literal — a
+regra do projeto é que constante de método mora em TOML. Para um método sem esbeltez,
+o meio da grade, que é o palpite honesto de quem não tem critério.
+"""
+function cursor_inviavel(st::AppState, rows)
+    alvo = get(st.globais, :sr_target, NaN)
+    (isfinite(alvo) && haskey(first(rows).derivados, :sr)) ||
+        return rows[(length(rows) + 1) ÷ 2].x
+    return argmin(r -> abs(r.derivados[:sr] - alvo), rows).x
+end
+
+"Pontos do eixo disponíveis para o cursor, a partir do último resultado."
 function grade_slider(st::AppState)
     r = st.resultado
     (r === nothing || isempty(r.rows)) &&
-        return collect(st.globais[:d_min]:st.globais[:d_step]:st.globais[:d_max])
-    return [row.d_mm for row in r.rows]
+        return FPSOSiz.sweep_axis(st.metodo, st.globais).values
+    return [row.x for row in r.rows]
 end
 
 """
-    restricoes_governantes(st, cs, res) -> VesselConstraints | nothing
+    restricoes_governantes(st, cs, res) -> restrições do método | nothing
 
 As restrições do caso que governou o resultado — de onde saem β e a fração de área da
 fase aquosa, que o desenho usa.
@@ -357,12 +375,12 @@ function restricoes_governantes(st::AppState, cs, res)
     specs = FPSOSiz.parameters(st.metodo)
     for (nome, vals) in FPSOSiz.expand(cs; max_corners = 512)
         nome == res.driver_case || continue
-        stream = try
-            FPSOSiz.stream_from_case(vals; required = FPSOSiz.stream_keys(st.metodo))
+        entrada = try
+            FPSOSiz.case_input(st.metodo, vals)
         catch
             return nothing
         end
-        ok, cons, _ = FPSOSiz.sizing_constraints(st.metodo, stream,
+        ok, cons, _ = FPSOSiz.sizing_constraints(st.metodo, entrada,
                                                  FPSOSiz.with_defaults(specs, vals), k)
         return ok ? cons : nothing
     end
@@ -380,4 +398,5 @@ fosse encontrado, sem nada que denunciasse. `NaN` faz `camadas` devolver as duas
 de um vaso sem interface líquido-líquido, que é a leitura honesta de "não sei onde ela
 está" — e é o mesmo valor que um vaso bifásico produz de direito.
 """
-beta_atual(st::AppState) = st.cons_gov === nothing ? NaN : st.cons_gov.beta
+beta_atual(st::AppState) =
+    st.cons_gov isa FPSOSiz.VesselConstraints ? st.cons_gov.beta : NaN

@@ -1,12 +1,15 @@
 <!--
-  Corpo da tela de dimensionamento de vasos. A casca (cabeçalho do documento, barra de
-  status, tag do script) está em `casca.html`; ver `pagina` em app/src/server.jl.
+  Corpo da tela de dimensionamento. A casca (cabeçalho do documento, barra de status,
+  tag do script) está em `casca.html`; ver `pagina` em app/src/server.jl.
 
-  Nenhum campo de entrada é escrito aqui. O formulário nasce em app.js a partir de
-  /api/<box>/esquema, que por sua vez vem dos `ParameterSpec` que o core declara. É a
-  regra de src/interfaces.jl: a interface nunca cita um parâmetro pelo nome — e é por
-  isso que esta mesma página serve o separador trifásico e o vaso bifásico sem uma
-  linha de diferença.
+  Nada de conteúdo é escrito aqui: nem campo de entrada, nem rótulo de resultado, nem
+  cabeçalho de tabela, nem figura. O formulário nasce em app.js a partir de
+  /api/<box>/esquema; o cartão, de `result_fields`; a tabela, de `sweep_columns`; as
+  figuras, de `figuras`. Todos declarados pelo método, no core.
+
+  É a regra de src/interfaces.jl — a interface nunca cita um parâmetro pelo nome —
+  estendida no Sprint 7 às GRANDEZAS. Por isso esta mesma página serve o separador
+  trifásico, o vaso bifásico e, sem uma linha de diferença, o que vier depois.
 -->
 <header class="topo">
   <!--
@@ -93,22 +96,31 @@
     </table>
   </section>
 
-  <!-- ------------------------------------------------ coluna 2: vaso -->
-  <section class="coluna vaso">
-    <h2 id="titulo-vaso">Elevação</h2>
-    <div class="figura" id="fig-vaso"></div>
+  <!-- ------------------------------------------------ coluna 2: o equipamento -->
+  <!--
+    Três áreas, e nenhuma figura escrita aqui. Até o Sprint 6 esta coluna tinha
+    `fig-vaso` e `fig-corte` fixos, o que amarrava a tela a quatro figuras de vaso: uma
+    bomba não tem seção transversal, e o `<div>` ficaria vazio sem nada denunciar. Quem
+    declara o que vai em cada área é o método — ver `figuras` em app/src/desenho.
+  -->
+  <section class="coluna equipamento">
+    <h2 id="titulo-figura">—</h2>
+    <div id="area-principal"></div>
 
     <div class="corte-linha">
-      <div class="figura" id="fig-corte"></div>
-      <ul class="legenda-fases">
-        <li><span class="amostra gas"></span>gás</li>
-        <li><span class="amostra oleo"></span>óleo</li>
-        <li><span class="amostra agua"></span>água</li>
-      </ul>
+      <div id="area-secundaria"></div>
+      <!--
+        A legenda de fases (gás / óleo / água) estava escrita aqui, e era o último
+        pedaço de vaso na tela: uma bomba mostraria três amostras de cor para fases que
+        ela não tem. Agora ela vem junto da figura que explica, declarada em `figuras`.
+      -->
+      <div id="legenda-figura"></div>
     </div>
 
     <div class="cursor">
-      <label for="slider-d">diâmetro</label>
+      <!-- O rótulo vem de `sweep_axis`: "diâmetro" num vaso, "diâmetro nominal" numa
+           bomba. Estava escrito à mão, e era a última grandeza que a tela nomeava. -->
+      <label for="slider-d" id="rotulo-cursor">—</label>
       <input id="slider-d" type="range" min="0" max="0" step="1" value="0">
       <output id="valor-d">—</output>
     </div>
@@ -117,26 +129,21 @@
   <!-- ------------------------------------------------ coluna 3: resultados -->
   <section class="coluna resultados">
     <h2>Resultado (envelope)</h2>
-    <dl class="cartao">
-      <dt>Diâmetro d</dt>                 <dd id="r-d" class="destaque grande">—</dd>
-      <dt>Comprimento efetivo Leff</dt>   <dd id="r-leff">—</dd>
-      <dt>Comprimento real Lss</dt>       <dd id="r-lss">—</dd>
-      <dt>Esbeltez SR</dt>                <dd id="r-sr">—</dd>
-      <!-- "entre tampos" não é preciosismo: `vessel_volume` é o cilindro sobre Lss, que
-           é a medida costura a costura de Stewart & Arnold. O desenho ao lado mostra os
-           tampos elípticos 2:1, que somariam ~8,5 % — quem comparasse os dois sem este
-           rótulo concluiria que um dos dois está errado. -->
-      <dt>Volume (casco, entre tampos)</dt> <dd id="r-volume">—</dd>
-      <dt>Restrição governante</dt>       <dd id="r-governa">—</dd>
-      <dt>Caso governante</dt>            <dd id="r-caso">—</dd>
-      <dt>Teto de decantação</dt>         <dd id="r-teto">—</dd>
-    </dl>
+    <!--
+      Vazios: rótulos e valores vêm de `result_fields`, declarados pelo método. Eram oito
+      `<dt>` com os nomes do vaso ("Esbeltez SR", "Teto de decantação"), que uma bomba
+      não teria como preencher. O mesmo vale para o cabeçalho da varredura abaixo.
+
+      A nota que estava aqui continua valendo e mudou de lugar, para junto do rótulo, em
+      `result_fields` de src/sizing/constraints.jl: "casco, entre tampos" não é
+      preciosismo — `vessel_volume` é o cilindro sobre Lss, e os tampos elípticos 2:1 do
+      desenho somariam ~8,5 %.
+    -->
+    <dl class="cartao" id="cartao"></dl>
 
     <h2>Varredura (vizinhança do ótimo)</h2>
     <table class="varredura">
-      <thead>
-        <tr><th>d (mm)</th><th>Leff (m)</th><th>Lss (m)</th><th>SR</th></tr>
-      </thead>
+      <thead><tr id="cabecalho-varredura"></tr></thead>
       <tbody id="corpo-varredura"></tbody>
     </table>
 
@@ -147,8 +154,7 @@
 
 <!-- ------------------------------------------------ gráficos -->
 <section class="graficos">
-  <div class="figura" id="fig-leff"></div>
-  <div class="figura" id="fig-sr"></div>
+  <div id="area-grafico"></div>
   <div class="legenda">
     <h2>casos</h2>
     <div id="legenda-casos"></div>

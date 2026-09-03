@@ -39,6 +39,9 @@ using .Units
 include("interfaces.jl")
 include("registry.jl")
 
+# O contrato genérico método ↔ motor: o que o motor pede sem saber o que é um vaso.
+include("engine/contract.jl")
+
 include("types/results.jl")
 include("types/stream.jl")
 include("types/cases.jl")
@@ -46,7 +49,7 @@ include("types/cases.jl")
 # depois dos tipos: o carregador de casos constrói `Case`
 include("config.jl")
 
-# O contrato método ↔ motor de envelope, antes de qualquer método que o implemente.
+# A família dos vasos: o contrato acima preenchido para quem varre diâmetro.
 include("sizing/constraints.jl")
 
 include("sizing/separator/beta.jl")
@@ -56,6 +59,7 @@ include("sizing/gas_capacity.jl")
 include("sizing/separator/stewart_arnold.jl")
 include("sizing/knockout/two_phase.jl")
 
+include("engine/single.jl")
 include("engine/envelope.jl")
 
 # --- interfaces e registro
@@ -72,10 +76,17 @@ export save_case_set, save_case_set_named, list_case_sets, case_set_path
 export dir_casos, dirs_casos, nome_casos_valido
 export BoxCatalogo, catalogo, box_catalogo, box_equipamento
 export SizingResult, SweepRow, CalcTrace, TraceEntry, block_entries, vessel_volume
-export EnvelopeResult, EnvelopeRow
+export EnvelopeResult, EnvelopeRow, trace_block_order
+
+# --- o contrato genérico (src/engine/contract.jl)
+export SweepAxis, ResultField, SweepColumn, column_value, der
+export case_input, sweep_axis, requirement, governing_of, ceiling_of, derived
+export admissible, objective, envelope_params, selection_message, per_constraint
+export result_fields, sweep_columns, trace_blocks, governing_label, global_keys
+export size_single, sweep_row, ceiling_mechanism_of, grid_hint, trace_selection!
 
 # --- vasos registrados
-export Separator, StewartArnold, VesselConstraints
+export AbstractVesselMethod, Separator, StewartArnold, VesselConstraints
 export KnockoutDrum, StewartArnoldTwoPhase, gas_capacity_dleff
 export sizing_constraints, method_config, method_reference, lss_from, size_vessel
 export beta_coefficient, water_area_fraction

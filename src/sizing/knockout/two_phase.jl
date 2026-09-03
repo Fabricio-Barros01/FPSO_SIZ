@@ -45,7 +45,7 @@ struct KnockoutDrum <: AbstractEquipment end
 method_id(::KnockoutDrum) = :knockout
 label(::KnockoutDrum) = "Vaso de Knockout Bifásico (gás–líquido)"
 
-struct StewartArnoldTwoPhase <: AbstractSizingMethod end
+struct StewartArnoldTwoPhase <: AbstractVesselMethod end
 method_id(::StewartArnoldTwoPhase) = :stewart_arnold_2f
 applies_to(::StewartArnoldTwoPhase) = KnockoutDrum()
 
@@ -108,7 +108,7 @@ Blocos A e C. Sem bloco B, então sem teto de diâmetro: o
 `mechanism = :none` e a geometria de três camadas em `NaN`.
 
 O memorial não ganha um subtítulo "Bloco B" vazio por causa disso —
-`BLOCOS_MEMORIAL` em `app/src/report.jl` já pula bloco sem entradas.
+`blocos_memorial` em `app/src/report.jl` já pula bloco sem entradas.
 """
 function sizing_constraints(m::StewartArnoldTwoPhase, s::StreamState,
                             p::AbstractDict, k::AbstractDict)

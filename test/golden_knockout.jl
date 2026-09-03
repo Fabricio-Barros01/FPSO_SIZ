@@ -175,21 +175,21 @@ const TABELA_3_4 = [
         res = size_equipment(eq, m, s, vals)
         @test res.feasible
         @test res.method_id === :stewart_arnold_2f
-        @test 3.0 <= res.sr <= 4.0                  # banda §3.8.5, mais estreita que a do 3φ
+        @test 3.0 <= der(res, :sr) <= 4.0                  # banda §3.8.5, mais estreita que a do 3φ
         @test res.governing === :liquid             # como no exemplo do livro
         # o exemplo escolhe 36 in (914 mm); a escolha automática fica perto
-        @test abs(res.diameter_mm - 36 * 25.4) <= 2 * vals[:d_step]
-        @test isinf(res.d_max_mm)
+        @test abs(res.x - 36 * 25.4) <= 2 * vals[:d_step]
+        @test isinf(res.ceiling)
     end
 
     @testset "o resumo não inventa um teto que não existe" begin
-        # `governing_summary` fazia `round(Int, r.d_max_mm)` incondicionalmente e
-        # lançava `InexactError` com `d_max_mm = Inf` — o resumo assumia que todo vaso
+        # `governing_summary` fazia `round(Int, r.ceiling)` incondicionalmente e
+        # lançava `InexactError` com teto `Inf` — o resumo assumia que todo vaso
         # tem teto de decantação. Só o segundo equipamento revelou isso.
         env = size_envelope(eq, m, CaseSet([Case("único", vals)]))
         @test env.feasible
-        @test isinf(env.d_max_mm)
-        resumo = governing_summary(env)                 # não lança
+        @test isinf(env.ceiling)
+        resumo = governing_summary(m, env)              # não lança
         @test occursin("Governa", resumo)
         @test !occursin("Teto de decantação", resumo)   # cala-se em vez de inventar
 
@@ -197,7 +197,7 @@ const TABELA_3_4 = [
         vals3 = FPSOSiz.default_case_values()
         env3 = size_envelope(Separator(), StewartArnold(), CaseSet([Case("t", vals3)]))
         @test env3.feasible
-        @test occursin("Teto de decantação", governing_summary(env3))
+        @test occursin("Teto de decantação", governing_summary(StewartArnold(), env3))
     end
 
     @testset "multi-caso: o motor de envelope serve o vaso novo sem mudança" begin
@@ -207,10 +207,10 @@ const TABELA_3_4 = [
         env = size_envelope(eq, m, CaseSet([Case("normal", vals), Case("dobro", dobro)]))
         @test env.feasible
         @test env.driver_case == "dobro"
-        @test isinf(env.d_max_mm)
-        @test all(env.slack_m .>= -1e-9)
+        @test isinf(env.ceiling)
+        @test all(env.slack .>= -1e-9)
         for row in env.rows
-            @test row.leff_m ≈ maximum(row.per_case_leff)
+            @test row.y ≈ maximum(row.per_case_y)
         end
     end
 end

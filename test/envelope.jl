@@ -18,14 +18,14 @@ base_values() = FPSOSiz.default_case_values()
     env    = size_envelope(Separator(), StewartArnold(), CaseSet([Case("A", vals)]))
 
     @test env.feasible == single.feasible
-    @test env.diameter_mm == single.diameter_mm
-    @test env.leff_m ≈ single.leff_m
-    @test env.lss_m ≈ single.lss_m
-    @test env.sr ≈ single.sr
+    @test env.x == single.x
+    @test env.y ≈ single.y
+    @test der(env, :lss) ≈ der(single, :lss)
+    @test der(env, :sr) ≈ der(single, :sr)
     @test env.governing === single.governing
     @test env.driver_case == "A"
     @test env.case_names == ["A"]
-    @test only(env.slack_m) ≈ 0.0 atol = 1e-12          # sem folga: é o próprio caso
+    @test only(env.slack) ≈ 0.0 atol = 1e-12          # sem folga: é o próprio caso
     @test length(env.rows) == length(single.sweep)
 end
 
@@ -40,24 +40,24 @@ end
 
     # Em TODO diâmetro da grade, a envelope é o máximo entre os casos.
     for row in env.rows
-        @test row.leff_m ≈ maximum(row.per_case_leff)
-        @test length(row.per_case_leff) == 2
+        @test row.y ≈ maximum(row.per_case_y)
+        @test length(row.per_case_y) == 2
     end
 
     # O vaso escolhido atende cada caso individualmente: o Leff envelope é ≥ o de
     # cada caso no mesmo diâmetro.
-    escolhida = only(filter(r -> r.d_mm == env.diameter_mm, env.rows))
-    @test all(escolhida.per_case_leff .<= escolhida.leff_m + 1e-9)
+    escolhida = only(filter(r -> r.x == env.x, env.rows))
+    @test all(escolhida.per_case_y .<= escolhida.y + 1e-9)
 
     # Folga: zero para o caso governante, positiva para o outro.
     i_gov = findfirst(==(env.driver_case), env.case_names)
-    @test env.slack_m[i_gov] ≈ 0.0 atol = 1e-9
-    @test all(env.slack_m .>= -1e-9)
-    @test any(env.slack_m .> 0)
+    @test env.slack[i_gov] ≈ 0.0 atol = 1e-9
+    @test all(env.slack .>= -1e-9)
+    @test any(env.slack .> 0)
 
     # É mais exigente que o caso leve sozinho.
     so_leve = size_envelope(Separator(), StewartArnold(), CaseSet([Case("leve", leve)]))
-    @test env.leff_m > so_leve.leff_m
+    @test env.y > so_leve.y
 end
 
 @testset "(b') o caso governante pode mudar de restrição" begin
@@ -94,7 +94,7 @@ end
     @test env.feasible
     @test length(env.case_names) == 4
     @test length(unique(env.case_names)) == 4
-    @test all(r -> length(r.per_case_leff) == 4, env.rows)
+    @test all(r -> length(r.per_case_y) == 4, env.rows)
 
     # O canto governante é o de maior vazão de água (Eq. 22 é crescente em Qw).
     @test occursin("q_water↑", env.driver_case)
@@ -102,8 +102,8 @@ end
     # E o envelope coincide com dimensionar só o pior canto.
     pior = merge(base_values(), Dict(:q_water => 1600.0, :pressure => 2600.0))
     ref  = size_envelope(Separator(), StewartArnold(), CaseSet([Case("pior", pior)]))
-    @test env.diameter_mm == ref.diameter_mm
-    @test env.leff_m ≈ ref.leff_m
+    @test env.x == ref.x
+    @test env.y ≈ ref.y
 end
 
 @testset "(d) inviabilidade é estado, não exceção" begin
@@ -169,7 +169,7 @@ end
 @testset "resumo de governança" begin
     env = size_envelope(Separator(), StewartArnold(),
                         CaseSet([Case("A", base_values())]))
-    s = governing_summary(env)
+    s = governing_summary(StewartArnold(), env)
     @test occursin("capacidade de líquido", s)
     @test occursin("A", s)
     @test occursin("decantação", s)
@@ -193,7 +193,7 @@ struct VasoFake <: AbstractEquipment end
 FPSOSiz.method_id(::VasoFake) = :vaso_fake
 FPSOSiz.label(::VasoFake) = "Vaso Fake (sem física)"
 
-struct MetodoVasoFake <: AbstractSizingMethod end
+struct MetodoVasoFake <: AbstractVesselMethod end
 FPSOSiz.method_id(::MetodoVasoFake) = :metodo_vaso_fake
 FPSOSiz.label(::MetodoVasoFake) = "Método de mentira"
 FPSOSiz.applies_to(::MetodoVasoFake) = VasoFake()
@@ -244,18 +244,18 @@ FPSOSiz.size_equipment(eq::VasoFake, m::MetodoVasoFake, s::StreamState,
     @testset "dimensiona um equipamento que o motor nunca viu" begin
         env = size_envelope(VasoFake(), MetodoVasoFake(), CaseSet([Case("único", base)]))
         @test env.feasible
-        @test isfinite(env.diameter_mm)
+        @test isfinite(env.x)
         # o resultado por caso carrega o id do método FAKE — o motor não substituiu
         # o método recebido pelo do separador em nenhum ponto do caminho
         @test env.per_case[1].method_id === :metodo_vaso_fake
-        @test 3.0 <= env.sr <= 5.0
+        @test 3.0 <= der(env, :sr) <= 5.0
         # sem teto de decantação: é o caminho `d_max_mm = Inf` do VesselConstraints
-        @test env.d_max_mm == Inf
+        @test env.ceiling == Inf
         @test length(env.per_case) == 1
         @test env.per_case[1].feasible
         # `lss_from` default, com o fator vindo do `method_config` DO MÉTODO (1,25) —
         # se o motor tivesse lido o TOML do separador, este número não fecharia
-        @test env.lss_m ≈ 1.25 * env.leff_m
+        @test der(env, :lss) ≈ 1.25 * env.y
     end
 
     @testset "multi-caso: a envelope cobre todos, e o maior governa" begin
@@ -270,9 +270,9 @@ FPSOSiz.size_equipment(eq::VasoFake, m::MetodoVasoFake, s::StreamState,
         # é o máximo dos Leff de cada caso. É isto que torna o vaso resultante válido
         # para os dois sem hipótese de monotonicidade.
         for row in env.rows
-            @test row.leff_m ≈ maximum(row.per_case_leff)
+            @test row.y ≈ maximum(row.per_case_y)
         end
-        @test all(env.slack_m .>= -1e-9)          # nenhum caso fica de fora
+        @test all(env.slack .>= -1e-9)          # nenhum caso fica de fora
     end
 
     @testset "um caso mais exigente não encolhe o vaso" begin
@@ -280,8 +280,8 @@ FPSOSiz.size_equipment(eq::VasoFake, m::MetodoVasoFake, s::StreamState,
         com = size_envelope(VasoFake(), MetodoVasoFake(),
                             CaseSet([Case("n", base), Case("d", dobro)]))
         @test com.feasible && so.feasible
-        @test com.leff_m >= so.leff_m
-        @test com.volume_m3 >= so.volume_m3
+        @test com.y >= so.y
+        @test der(com, :volume) >= der(so, :volume)
     end
 
     @testset "par equipamento/método incoerente é recusado" begin
@@ -322,8 +322,8 @@ end
         @test env.feasible
         # Sob a união, [3,0 , 5,0] seria aceito e um vaso com SR = 3,2 passaria —
         # violando o caso "estreito", que pediu SR ≥ 3,5. O vaso é um só.
-        @test 3.5 <= env.sr <= 4.0
-        @test all(r -> !r.sr_ok || 3.5 <= r.sr <= 4.0, env.rows)
+        @test 3.5 <= der(env, :sr) <= 4.0
+        @test all(r -> !r.ok || 3.5 <= der(r, :sr) <= 4.0, env.rows)
     end
 
     @testset "bandas que não se cruzam viram diagnóstico, não vaso" begin
@@ -343,6 +343,197 @@ end
         fora = merge(base, Dict(:sr_min => 3.0, :sr_max => 3.5, :sr_target => 5.0))
         env = size_envelope(VasoFake(), MetodoVasoFake(), CaseSet([Case("fora", fora)]))
         @test env.feasible
-        @test 3.0 <= env.sr <= 3.5
+        @test 3.0 <= der(env, :sr) <= 3.5
+    end
+end
+
+# ---------------------------------------------------------------------------
+# A genericidade sobre a GRANDEZA, provada por algo que não é vaso
+# ---------------------------------------------------------------------------
+#
+# O `VasoFake` acima prova que o motor não conhece o equipamento. Não prova que ele não
+# conhece a grandeza: até o Sprint 6 o corpo do laço dizia `max(d_leff_gas/d, d2_leff/d²)`,
+# a linha da varredura se chamava `d_mm` e o resultado tinha `lss_m` e `sr`. Um vaso
+# fictício atravessava isso sem reclamar justamente por ser vaso.
+#
+# Esta linha de recalque fictícia não é: o eixo é diâmetro nominal de tubulação, a
+# grandeza envelopada é carga do sistema, a banda é de velocidade, não há teto e o
+# critério de escolha é o menor DN. Se algum dia alguém reintroduzir esbeltez no motor,
+# é aqui que quebra — e é aqui que a bomba do Sprint 8 vai encaixar.
+
+struct LinhaFake <: AbstractEquipment end
+FPSOSiz.method_id(::LinhaFake) = :linha_fake
+FPSOSiz.label(::LinhaFake) = "Linha de recalque (sem física)"
+
+# Note o supertipo: `AbstractSizingMethod`, e NÃO `AbstractVesselMethod`. Nenhum dos
+# defaults da família dos vasos vale aqui.
+struct MetodoLinhaFake <: AbstractSizingMethod end
+FPSOSiz.method_id(::MetodoLinhaFake) = :metodo_linha_fake
+FPSOSiz.label(::MetodoLinhaFake) = "Método de linha de mentira"
+FPSOSiz.applies_to(::MetodoLinhaFake) = LinhaFake()
+
+FPSOSiz.parameters(::MetodoLinhaFake) = [
+    ParameterSpec(:dn_min, "DN mínimo",  "mm",  50.0, 25.0, 600.0, false, "fake"),
+    ParameterSpec(:dn_max, "DN máximo",  "mm", 400.0, 25.0, 600.0, false, "fake"),
+    ParameterSpec(:dn_step, "Passo",     "mm",  25.0,  5.0, 100.0, false, "fake"),
+    ParameterSpec(:v_max,  "Velocidade máxima", "m/s", 1.5, 0.5, 5.0, false, "fake"),
+    ParameterSpec(:fator,  "Fator de atrito agregado", "–", 1.0e10, 1.0, 1e14, true, "fake"),
+]
+
+FPSOSiz.method_config(::MetodoLinhaFake) = Dict{String,Any}("constants" => Dict{String,Any}())
+
+# A entrada NÃO é uma `StreamState`: este equipamento não tem óleo, água nem gás. É o
+# hook `case_input` fazendo o que existe para fazer.
+struct EntradaLinha
+    q::Float64          # vazão, m³/h
+    h_est::Float64      # carga estática, m
+    comprimento::Float64
+end
+
+function FPSOSiz.case_input(::MetodoLinhaFake, vals::AbstractDict)
+    faltando = [k for k in (:q, :h_est, :comprimento) if !haskey(vals, k)]
+    isempty(faltando) || throw(ArgumentError("entradas ausentes: $(join(faltando, ", "))"))
+    return EntradaLinha(float(vals[:q]), float(vals[:h_est]), float(vals[:comprimento]))
+end
+
+# As restrições que não dependem do DN: a carga estática e o agregado de atrito.
+function FPSOSiz.sizing_constraints(::MetodoLinhaFake, e::EntradaLinha,
+                                    p::AbstractDict, k::AbstractDict)
+    tr = FPSOSiz.CalcTrace()
+    atrito = p[:fator] * e.comprimento * e.q^2
+    FPSOSiz.trace!(tr, :estatica, "—", "h_est", "cota do reservatório", e.h_est, "m")
+    FPSOSiz.trace!(tr, :atrito, "—", "K", "fator·L·Q²", atrito, "m·mm⁵")
+    return (true, (h_est = e.h_est, atrito = atrito, q = e.q), tr)
+end
+
+# `hf ∝ L·Q²/D⁵`, que é a forma de Darcy-Weisbach — nenhum `Leff`, nenhum `d²·Leff`.
+FPSOSiz.requirement(::MetodoLinhaFake, dn::Real, c) = c.h_est + c.atrito / dn^5
+FPSOSiz.governing_of(::MetodoLinhaFake, dn::Real, c) =
+    c.atrito / dn^5 > c.h_est ? :atrito : :estatica
+
+FPSOSiz.sweep_axis(::MetodoLinhaFake, p::AbstractDict) =
+    SweepAxis(:dn, "diâmetro nominal", "mm", collect(p[:dn_min]:p[:dn_step]:p[:dn_max]))
+
+function FPSOSiz.derived(::MetodoLinhaFake, dn::Real, y::Real, gov::Symbol, c,
+                         k::AbstractDict, p::AbstractDict)
+    area = π * (dn / 1000)^2 / 4
+    return Dict{Symbol,Float64}(:v => c.q / 3600 / area, :carga => y)
+end
+
+FPSOSiz.admissible(::MetodoLinhaFake, dn::Real, d::AbstractDict, p::AbstractDict) =
+    d[:v] <= p[:v_max]
+
+# O menor DN admissível é o mais barato — critério que não tem alvo nem distância.
+FPSOSiz.objective(::MetodoLinhaFake, dn::Real, d::AbstractDict, p::AbstractDict) = dn
+
+function FPSOSiz.envelope_params(::MetodoLinhaFake, params::Vector{<:AbstractDict})
+    return (true, Dict{Symbol,Float64}(
+        :dn_min  => minimum(p[:dn_min] for p in params),
+        :dn_max  => maximum(p[:dn_max] for p in params),
+        :dn_step => minimum(p[:dn_step] for p in params),
+        :v_max   => minimum(p[:v_max] for p in params),      # interseção, como a banda
+        :fator   => maximum(p[:fator] for p in params)))
+end
+
+FPSOSiz.selection_message(::MetodoLinhaFake, rows, teto::Real, p::AbstractDict;
+                          mechanism::Symbol = :none) =
+    "Nenhum DN da grade mantém a velocidade abaixo de $(p[:v_max]) m/s."
+
+FPSOSiz.governing_label(::MetodoLinhaFake, g::Symbol) =
+    g === :atrito ? "perda por atrito" : g === :estatica ? "carga estática" : String(g)
+
+FPSOSiz.result_fields(m::MetodoLinhaFake, r) = ResultField[
+    ResultField("Diâmetro nominal", r.feasible ? r.x : NaN; unit = "mm", digits = 0,
+                highlight = true),
+    ResultField("Carga do sistema", r.feasible ? r.y : NaN; unit = "m"),
+    ResultField("Velocidade", der(r, :v); unit = "m/s"),
+    ResultField("Termo governante",
+                r.feasible ? FPSOSiz.governing_label(m, r.governing) : "—"),
+]
+
+FPSOSiz.sweep_columns(::MetodoLinhaFake) = [
+    SweepColumn("DN (mm)", :x; digits = 0),
+    SweepColumn("H (m)",   :y),
+    SweepColumn("v (m/s)", :v),
+]
+
+FPSOSiz.size_equipment(eq::LinhaFake, m::MetodoLinhaFake, e, params::AbstractDict) =
+    FPSOSiz.size_single(eq, m, e, params)
+
+@testset "o motor de envelope é genérico sobre a grandeza" begin
+    register!(LinhaFake())
+    register!(MetodoLinhaFake())
+
+    base = Dict{Symbol,Any}(:q => 100.0, :h_est => 12.0, :comprimento => 250.0)
+
+    @testset "dimensiona algo que não é vaso" begin
+        env = size_envelope(LinhaFake(), MetodoLinhaFake(), CaseSet([Case("único", base)]))
+        @test env.feasible
+        @test env.x in 50.0:25.0:400.0
+
+        # A banda é de VELOCIDADE, e é ela que decide — não há esbeltez em lugar nenhum.
+        @test der(env, :v) <= 1.5
+        escolhida = only(filter(r -> r.x == env.x, env.rows))
+        @test escolhida.ok
+        # menor DN admissível: o anterior na grade tem de violar a banda
+        anteriores = filter(r -> r.x < env.x, env.rows)
+        @test !isempty(anteriores)
+        @test all(!r.ok for r in anteriores)
+    end
+
+    @testset "sem teto declarado, o motor usa o default Inf" begin
+        env = size_envelope(LinhaFake(), MetodoLinhaFake(), CaseSet([Case("único", base)]))
+        @test isinf(env.ceiling)
+        @test env.ceiling_mechanism === :none
+        resumo = governing_summary(MetodoLinhaFake(), env)
+        @test occursin("Governa", resumo)
+        @test !occursin("Teto", resumo)
+    end
+
+    @testset "a envelope cobre os casos, sem saber o que envelopa" begin
+        magro = merge(base, Dict{Symbol,Any}(:q => 60.0))
+        env = size_envelope(LinhaFake(), MetodoLinhaFake(),
+                            CaseSet([Case("cheio", base), Case("magro", magro)]))
+        @test env.feasible
+        @test env.driver_case == "cheio"                 # mais vazão, mais carga
+        @test all(env.slack .>= -1e-9)
+        for row in env.rows
+            @test row.y ≈ maximum(row.per_case_y)
+        end
+    end
+
+    @testset "a apresentação é do método, não do vaso" begin
+        env = size_envelope(LinhaFake(), MetodoLinhaFake(), CaseSet([Case("único", base)]))
+        rotulos = [f.label for f in FPSOSiz.result_fields(MetodoLinhaFake(), env)]
+        @test "Carga do sistema" in rotulos
+        @test "Velocidade" in rotulos
+        @test !any(occursin("Esbeltez", r) for r in rotulos)
+        @test !any(occursin("Leff", r) for r in rotulos)
+
+        colunas = FPSOSiz.sweep_columns(MetodoLinhaFake())
+        @test [c.label for c in colunas] == ["DN (mm)", "H (m)", "v (m/s)"]
+        # E as colunas leem mesmo as linhas da varredura, pelas chaves que declararam.
+        linha = first(env.rows)
+        @test FPSOSiz.column_value(linha, colunas[1]) == linha.x
+        @test FPSOSiz.column_value(linha, colunas[3]) == linha.derivados[:v]
+        # Chave que o método não produz vira NaN, não zero: zero seria um número.
+        @test isnan(FPSOSiz.column_value(linha, SweepColumn("SR", :sr)))
+    end
+
+    @testset "sem blocos declarados, o memorial usa a ordem de aparição" begin
+        # Default de `trace_blocks`: vazio. A interface então agrupa pela ordem em que os
+        # blocos apareceram no rastro, que é a ordem do cálculo — legível sem títulos.
+        @test isempty(FPSOSiz.trace_blocks(MetodoLinhaFake()))
+        env = size_envelope(LinhaFake(), MetodoLinhaFake(), CaseSet([Case("único", base)]))
+        @test FPSOSiz.trace_block_order(first(env.per_case).trace) == [:estatica, :atrito]
+    end
+
+    @testset "entrada ausente é diagnóstico com o nome do caso, não exceção" begin
+        incompleto = Dict{Symbol,Any}(:q => 100.0)      # sem h_est nem comprimento
+        env = size_envelope(LinhaFake(), MetodoLinhaFake(),
+                            CaseSet([Case("torto", incompleto)]))
+        @test !env.feasible
+        @test occursin("torto", env.message)
+        @test occursin("h_est", env.message)
     end
 end

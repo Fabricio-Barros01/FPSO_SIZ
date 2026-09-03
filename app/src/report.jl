@@ -27,28 +27,46 @@ linha_memorial(e) = string(rpad(String(e.block), 10), rpad(e.eq, 10),
                            rpad(e.unit, 8), e.formula)
 
 """
-    fecho_memorial(res) -> String
+    fecho_memorial(m, res) -> String
 
 A linha que encerra o rastro de um caso, com o que ele daria dimensionado sozinho.
 Separada pelo mesmo motivo que [`linha_memorial`](@ref): vai para o `.txt` e para a
 tela, e os dois têm de dizer exatamente a mesma coisa.
+
+O que ela imprime são os campos que o método marcou como **destaque** e os que carregam
+um sinal de aprovação — num vaso, o diâmetro e a esbeltez, que é o que estava escrito à
+mão aqui. Recebe o método porque só ele sabe quais são.
 """
-fecho_memorial(res) = res.feasible ?
-    "  → d = $(Formato.inteiro(res.diameter_mm)) mm, SR = $(Formato.num(res.sr))" :
-    "  → inviável isolado: $(res.message)"
+function fecho_memorial(m, res)
+    res.feasible || return "  → inviável isolado: $(res.message)"
+    campos = FPSOSiz.result_fields(m, res)
+    mostra = filter(f -> f.highlight || f.status !== :neutro, campos)
+    isempty(mostra) && (mostra = campos[1:min(2, length(campos))])
+    return "  → " * join([_campo_curto(f) for f in mostra], ", ")
+end
+
+function _campo_curto(f::FPSOSiz.ResultField)
+    v = f.value isa AbstractString ? f.value :
+        isfinite(f.value) ? Formato.num(f.value, f.digits) : "—"
+    return string(f.label, " = ", v, isempty(f.unit) ? "" : " " * f.unit)
+end
 
 """
-Blocos do memorial, na ordem do cálculo, com o nome que a tela mostra.
+    blocos_memorial(m, tr) -> Vector{Pair{Symbol,String}}
 
-Os símbolos são os que `stewart_arnold.jl` carimba em cada `TraceEntry`. A ordem é a em
-que o método os percorre, e não alfabética: um memorial só se lê de cima para baixo. As
-letras A/B/C são as de Stewart & Arnold — as mesmas que o Sprint 5 vai reaproveitar num
-vaso bifásico, que usa A e C sem o B.
+Os blocos do memorial, na ordem do cálculo, com o título que a tela mostra.
+
+Vem de [`FPSOSiz.trace_blocks`](@ref), declarado pelo método — era uma constante daqui
+com as letras A/B/C de Stewart & Arnold, o que fazia o memorial de uma bomba prometer
+"Bloco B — decantação". Um método que não declare nada cai na ordem de aparição no
+rastro, que é a ordem do cálculo: legível sem títulos em português, e é o que um
+equipamento novo ganha de graça.
 """
-const BLOCOS_MEMORIAL = (:gas       => "Bloco A — capacidade de gás",
-                         :settling  => "Bloco B — decantação",
-                         :liquid    => "Bloco C — capacidade de líquido",
-                         :selection => "Seleção do diâmetro")
+function blocos_memorial(m, tr)
+    declarados = FPSOSiz.trace_blocks(m)
+    isempty(declarados) || return declarados
+    return [b => String(b) for b in FPSOSiz.trace_block_order(tr)]
+end
 
 """
     exportar!(st) -> NamedTuple
@@ -76,25 +94,14 @@ function exportar!(st::AppState)
         # O rótulo do método vem do estado, não de um `StewartArnold()` fixo: o CSV e o
         # memorial de um vaso bifásico têm de dizer qual método os produziu.
         rotulo_metodo = FPSOSiz.label(st.metodo)
-        escrever_csv(csv, r, rotulo_metodo)
-        escrever_memorial(memorial, r, rotulo_metodo,
+        escrever_csv(csv, st, r, rotulo_metodo)
+        escrever_memorial(memorial, st.metodo, r, rotulo_metodo,
                           FPSOSiz.method_reference(st.metodo))
 
-        # Uma figura por arquivo. Concatenar dois `<svg>` num arquivo só daria dois
-        # elementos-raiz, o que não é XML válido: o visualizador recusa o arquivo
-        # inteiro, não só a segunda figura. Separadas, ainda vão cada uma para o ponto
-        # do documento onde fazem sentido.
-        g = geometry_from(r, st.d_sel, beta_atual(st))
-        banda = (st.globais[:sr_min], st.globais[:sr_max])
-        figuras = (
-            "_vaso.svg"    => svg_elevacao(g; larg = 1100),
-            "_corte.svg"   => svg_corte(g; larg = 520),
-            "_leff.svg"    => svg_grafico_leff(r, st.d_sel; larg = 700, alt = 320),
-            "_sr.svg"      => svg_grafico_sr(r, st.d_sel, banda, st.globais[:sr_target];
-                                             larg = 700, alt = 320),
-        )
+        # As figuras são as que o método declara — ver `figuras_exportadas`. Uma por
+        # arquivo, e cada uma vai para o ponto do documento onde faz sentido.
         caminhos_svg = String[]
-        for (sufixo, svg) in figuras
+        for (sufixo, svg) in figuras_exportadas(st)
             caminho = base * sufixo
             write(caminho, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" * svg)
             push!(caminhos_svg, caminho)
@@ -111,33 +118,39 @@ function exportar!(st::AppState)
     end
 end
 
-"Varredura envelope: cabeçalho com o projeto escolhido e uma coluna de Leff por caso."
-function escrever_csv(caminho::AbstractString, r, metodo::AbstractString)
+"""
+Varredura envelope: cabeçalho com o projeto escolhido e uma coluna por caso.
+
+As colunas são as **mesmas** que a tabela da tela mostra (`FPSOSiz.sweep_columns`), e
+não uma segunda lista escrita aqui: duas listas divergiriam no primeiro método novo, e
+quem confere o CSV contra a tela não teria como saber qual das duas está certa.
+"""
+function escrever_csv(caminho::AbstractString, st::AppState, r, metodo::AbstractString)
+    m = st.metodo
+    cols = FPSOSiz.sweep_columns(m)
     open(caminho, "w") do io
         println(io, "# FPSO_Siz — varredura envelope")
         println(io, "# método;", metodo)
         println(io, "# casos;", length(r.case_names))
         if r.feasible
-            println(io, "# projeto;d=", Formato.inteiro(r.diameter_mm), " mm;Leff=",
-                    Formato.num(r.leff_m), " m;Lss=", Formato.num(r.lss_m),
-                    " m;SR=", Formato.num(r.sr))
-            println(io, "# ", FPSOSiz.governing_summary(r))
+            println(io, "# projeto;",
+                    join([_campo_curto(f) for f in FPSOSiz.result_fields(m, r)], ";"))
+            println(io, "# ", FPSOSiz.governing_summary(m, r))
         else
             println(io, "# INVIÁVEL;", r.message)
         end
         println(io)
 
-        cabecalho = ["d (mm)", "Leff envelope (m)", "Lss (m)", "SR",
-                     "governa", "caso governante", "SR na banda"]
-        append!(cabecalho, ["Leff — " * n * " (m)" for n in r.case_names])
+        cabecalho = [c.label for c in cols]
+        append!(cabecalho, ["governa", "caso governante", "admissível"])
+        append!(cabecalho, ["envelope — " * n for n in r.case_names])
         println(io, join(cabecalho, ";"))
 
         for row in r.rows
-            campos = [Formato.inteiro(row.d_mm), Formato.num(row.leff_m),
-                      Formato.num(row.lss_m), Formato.num(row.sr),
-                      row.governing === :gas ? "gás" : "líquido",
-                      row.driver_case, row.sr_ok ? "sim" : "não"]
-            append!(campos, [Formato.num(v) for v in row.per_case_leff])
+            campos = [Formato.num(FPSOSiz.column_value(row, c), c.digits) for c in cols]
+            append!(campos, [FPSOSiz.governing_label(m, row.governing),
+                             row.driver_case, row.ok ? "sim" : "não"])
+            append!(campos, [Formato.num(v) for v in row.per_case_y])
             println(io, join(campos, ";"))
         end
     end
@@ -145,7 +158,7 @@ function escrever_csv(caminho::AbstractString, r, metodo::AbstractString)
 end
 
 "Memorial: o rastro de cálculo de cada caso, equação por equação."
-function escrever_memorial(caminho::AbstractString, r, metodo::AbstractString,
+function escrever_memorial(caminho::AbstractString, m, r, metodo::AbstractString,
                            referencia::AbstractString = "")
     open(caminho, "w") do io
         println(io, "FPSO_Siz — memorial de cálculo")
@@ -158,7 +171,7 @@ function escrever_memorial(caminho::AbstractString, r, metodo::AbstractString,
             for e in res.trace.entries
                 println(io, linha_memorial(e))
             end
-            println(io, fecho_memorial(res))
+            println(io, fecho_memorial(m, res))
             println(io)
         end
     end

@@ -10,9 +10,9 @@ lido inteiro sem abrir mais nada.
 
 ## Estado atual
 
-**SPRINT ATUAL: 7 — Artefato distribuível de verdade**
+**SPRINT ATUAL: 8 — Bomba centrífuga**
 
-**2800 testes passando** (1028 no core, 1772 na interface).
+**2915 testes passando** (1142 no core, 1773 na interface).
 
 O software dimensiona um separador trifásico horizontal pelo modelo semiempírico de
 Stewart & Arnold (2008), com um motor de envelope multi-caso que entrega **um** vaso
@@ -553,7 +553,101 @@ Mais `config/cases/exemplo_knockout.toml`, o Exemplo 3.2 do livro convertido par
 
 ---
 
-## Sprint 7 — Artefato distribuível de verdade ⏳ ← ATUAL
+## Sprint 7 — O eixo genérico ✅
+
+Os quatro boxes que dizem "em breve" precisam sair de lá. O obstáculo não é a física —
+as duas referências novas bastam — e sim que **a pilha inteira está nomeada em termos de
+vaso**, e uma bomba não tem esbeltez:
+
+| onde | o que está fixado |
+|---|---|
+| `src/types/results.jl` | `SweepRow`/`EnvelopeRow` = `d_mm, leff_*, lss_m, sr` |
+| `src/engine/envelope.jl` | `max(c.d_leff_gas/d, c.d2_leff/d²)` no corpo do laço |
+| `app/src/api.jl` | `cartao` com oito campos de vaso, fixos |
+| `app/src/report.jl` | `BLOCOS_MEMORIAL` com as letras A/B/C de Stewart & Arnold |
+| `app/public/index.html` | `<dl>` e `<thead>` escritos à mão em `d/Leff/Lss/SR` |
+| `app/public/app.js` | `aplicarCartao` grava em oito `id` fixos; cursor = "diâmetro" |
+
+A alternativa — uma tela por equipamento — duplicaria formulário, arquivos, memorial,
+exportação e guarda de origem, e perderia o multi-caso em cada cópia. Então generaliza-se
+o eixo, aprofundando a regra que o projeto já tem: *a interface nunca cita um parâmetro
+pelo nome* passa a valer também para a **grandeza**.
+
+O motor já é quase genérico: `size_envelope` aceita `AbstractEquipment` qualquer e só
+pede três coisas ao método. Falta essas três coisas pararem de se chamar `d_leff_gas`,
+`d2_leff` e `sr`.
+
+### Entregue
+
+- **`src/engine/contract.jl`** — os hooks que o motor pede sem saber o que é um vaso:
+  `case_input`, `sweep_axis`, `requirement`, `governing_of`, `ceiling_of`, `derived`,
+  `admissible`, `objective`, `envelope_params`, `selection_message`, mais os de
+  apresentação (`result_fields`, `sweep_columns`, `trace_blocks`, `global_keys`).
+  `requirement`, `governing_of` e `ceiling_of` despacham nas **restrições**, não no
+  método: quem produzir um `VesselConstraints` ganha o comportamento de vaso inteiro.
+- **`AbstractVesselMethod`** — a família dos vasos declarada por supertipo, com os
+  defaults de grade, banda, cartão, colunas e blocos do memorial num lugar só.
+- **`src/engine/single.jl`** — `size_single`, o caso único genérico. `size_vessel`
+  passou a ser um apelido dele: a sequência nunca teve nada de vaso.
+- **Resultados renomeados** — `SweepRow`/`EnvelopeRow`/`SizingResult`/`EnvelopeResult`
+  passam a ter `x`, `y` e `derivados`. Os nomes do vaso vivem agora nos `label` que
+  `result_fields` e `sweep_columns` declaram, que é onde o leitor os vê.
+- **A tela deixou de citar grandezas** — `<dl>`, `<thead>`, as figuras e o rótulo do
+  cursor nascem do JSON. `app/src/desenho/figuras.jl` declara o que cada método põe em
+  cada área (`principal`, `secundaria`, `grafico`), e o fallback genérico desenha só o
+  gráfico de envelope, que existe para qualquer eixo.
+
+### O defeito que este sprint revelou
+
+A legenda de fases estava escrita em `index.html` e prometia **gás, óleo e água** — no
+vaso **bifásico** também, que não tem fase aquosa. Errada desde o Sprint 5, e invisível:
+quem a escrevia era o HTML, e o HTML não sabia de qual vaso se tratava. Agora ela vem de
+`legenda_fases`, sobre as mesmas `Camada` que o desenho usou, e o bifásico mostra duas
+amostras.
+
+### Aceite verificado
+
+Separador e knockout reproduzem Tabela 3 e Tabela 3.4 número a número — **nenhum valor
+se moveu** (6300 mm / 18,59 / 24,78 / 3,93 e 900 mm / 2,98 / 3,31). Uma linha de recalque
+fictícia — eixo em DN, grandeza em carga do sistema, banda de velocidade, sem teto,
+escolha pelo menor DN — atravessa o motor inteiro em `test/envelope.jl`, e um teste em
+`app/smoke.jl` lê `index.html` e `app.js` sem comentários e falha se aparecer "Leff",
+"Lss", "esbeltez", "decantação", "óleo", "água", "gás" ou "diâmetro".
+
+---
+
+## Sprint 8 — Bomba centrífuga ⏳ ← ATUAL
+
+Fonte: **Moran, *Pump Sizing*, CEP dez/2016** — autocontida. Varre-se o diâmetro nominal
+da tubulação; por DN e por caso: `v = Q/A`, `Re`, `f` por Colebrook-White, perda reta por
+Darcy-Weisbach, perda localizada por k-values, `H = h_est + h_atrito`. Envelope = `max H`
+sobre os casos. Banda = velocidade 1,0–1,5 m/s **e** margem de NPSH. Escolha = menor DN
+admissível. Casos-ouro da própria fonte: Antoine para água a 30 °C (Pv = 4243,81 Pa,
+exato) e o nomograma da Fig. 3 (25 mm a 1 m/s ≈ 6 m/100 m, aproximado por declaração da
+própria figura).
+
+**Limitação registrada:** as equações do artigo são imagem no PDF. Formas padrão e
+inequívocas foram recuperadas da prosa; os coeficientes da Tabela 2 (Zigrang-Sylvester,
+Haaland) não. Implementa-se só Colebrook-White, que é a que o autor prefere.
+
+---
+
+## Sprint 9 — Trocador de calor ⏳
+
+Fonte: **Saari, *Heat Exchanger Dimensioning*, LUT**. Casco-e-tubos, um passe no casco.
+Varre-se o número de tubos; `q` pelo balanço, `ΔT_lm` com fator `F`, `U` das resistências
+com incrustação, `A = q/(U·F·ΔT_lm)`, `L = A/(N·π·d_o)`. Envelope = `max L`.
+
+**Buraco declarado:** Saari não traz exemplo numérico resolvido — é texto de aula. O
+trocador é o box mais fraco em verificação, e o que dá para provar é o cruzamento
+**LMTD ↔ ε-NTU**, que o próprio §4.1 afirma ser exato ("essentially equivalent, and will
+yield the same results if correctly applied"). Um exemplo de literatura fecharia o
+buraco. A **aba pinch** fica dentro deste box, desabilitada e com o motivo à vista, até
+haver Kemp/Linnhoff em `References/`.
+
+---
+
+## Sprint 10 — Artefato distribuível de verdade ⏳
 
 O Sprint 2 entregou o `create_app` funcionando e registrou o limite com honestidade: o
 bundle gerado no NixOS **linka contra a glibc do `/nix/store`** e não roda em outra
@@ -576,7 +670,7 @@ grava as seis saídas — verificado por `ldd`, que não pode apontar para `/nix
 
 ---
 
-## Sprint 8 — Verificação, manual e fecho do TCC ⏳
+## Sprint 11 — Verificação, manual e fecho do TCC ⏳
 
 O que falta não é software: é o que transforma o software em trabalho defensável.
 

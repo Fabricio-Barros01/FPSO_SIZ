@@ -48,6 +48,8 @@ include("desenho/vaso.jl")
 include("desenho/graficos.jl")
 
 include("state.jl")
+# Depois de `state.jl`: o dispatcher de figuras despacha no método E recebe o `AppState`.
+include("desenho/figuras.jl")
 include("report.jl")
 include("api.jl")
 include("server.jl")
@@ -147,10 +149,16 @@ function modo_lote(; case_file::AbstractString = "")
     end
 
     @printf("%d caso(s) de canto avaliado(s)\n", length(r.case_names))
-    @printf("d = %s mm   Leff = %s m   Lss = %s m   SR = %s   V = %s m³\n",
-            Formato.inteiro(r.diameter_mm), Formato.num(r.leff_m), Formato.num(r.lss_m),
-            Formato.num(r.sr), Formato.num(r.volume_m3, 0))
-    println(FPSOSiz.governing_summary(r))
+    # Os campos do resultado são os que o método declara — não uma linha de printf com
+    # os nomes do vaso, que o lote de uma bomba teria de reescrever. Um por linha, e não
+    # todos numa só: a quantidade agora varia com o método, e uma linha de 200 colunas
+    # no terminal se lê pior que oito de 40.
+    for f in FPSOSiz.result_fields(st.metodo, r)
+        v = f.value isa AbstractString ? f.value :
+            isfinite(f.value) ? Formato.num(f.value, f.digits) : "—"
+        println(rstrip(@sprintf("  %-32s %s %s", f.label, v, f.unit)))
+    end
+    println(FPSOSiz.governing_summary(st.metodo, r))
     println()
 
     exportar!(st)

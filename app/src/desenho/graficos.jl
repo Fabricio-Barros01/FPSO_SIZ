@@ -1,13 +1,18 @@
 """
 Os dois gráficos da faixa inferior, em SVG.
 
-`Leff × d` é o gráfico que comunica o diferencial do software numa imagem só: uma
-curva fina por caso e a **envelope em negrito** por cima de todas. Quem olha entende
-imediatamente que o vaso foi dimensionado para o pior caso em cada diâmetro, e não
-para uma média.
+**O gráfico de envelope** comunica o diferencial do software numa imagem só: uma curva
+fina por caso e a envelope em negrito por cima de todas. Quem olha entende imediatamente
+que o equipamento foi dimensionado para o pior caso em cada ponto do eixo, e não para
+uma média.
 
-`SR × d` mostra a banda 3–5 de Stewart & Arnold sombreada e onde o ponto escolhido
+**O gráfico de banda** mostra a faixa recomendada sombreada e onde o ponto escolhido
 caiu dentro dela.
+
+Nenhum dos dois cita `d`, `Leff` ou `SR`: título, rótulos de eixo e a chave do derivado
+que se plota chegam por argumento, de quem sabe o que está dimensionando. Eram
+`svg_grafico_leff` e `svg_grafico_sr`, com os nomes das grandezas do vaso no corpo — o
+que fazia deles dois gráficos de separador em vez de dois gráficos.
 
 Porte de `views/charts.jl`. O que o Makie dava de graça — eixos, grade, marcas — está
 em [`moldura!`](@ref) e [`ticks_bonitos`](@ref) aqui embaixo.
@@ -86,10 +91,10 @@ function moldura!(p, t::Tela, xs, ys; titulo = "", xlabel = "", ylabel = "",
     return p
 end
 
-"Faixa de diâmetros coberta pela varredura."
-function _faixa_d(res)
-    ds = [r.d_mm for r in res.rows]
-    return (minimum(ds), maximum(ds))
+"Faixa do eixo coberta pela varredura."
+function _faixa_x(res)
+    xs = [r.x for r in res.rows]
+    return (minimum(xs), maximum(xs))
 end
 
 """
@@ -122,74 +127,80 @@ function _cursor!(p, t, d_sel, y_topo, y_base, ponto, cor_ponto)
 end
 
 """
-    svg_grafico_leff(res, d_sel; larg, alt, max_curvas) -> String
+    svg_grafico_envelope(res, x_sel; titulo, xlabel, ylabel, ...) -> String
 
-Curvas `Leff(d)`: uma por caso (fina, cor do caso), a envelope por cima (grossa), e
-uma linha vertical no diâmetro selecionado. Limitado a `max_curvas` curvas individuais
-para que 64 casos de canto não virem espaguete — a envelope continua correta, apenas
-não se desenha cada canto.
+A grandeza exigida contra o eixo varrido: uma curva fina por caso (cor do caso), a
+envelope por cima (grossa), e uma linha vertical no ponto selecionado.
+
+Limitado a `max_curvas` curvas individuais para que 64 casos de canto não virem
+espaguete — a envelope continua correta, apenas não se desenha cada canto.
 """
-function svg_grafico_leff(res, d_sel::Real; larg::Real = 560.0, alt::Real = 260.0,
-                          max_curvas::Int = 12)
+function svg_grafico_envelope(res, x_sel::Real; titulo::AbstractString = "",
+                              xlabel::AbstractString = "", ylabel::AbstractString = "",
+                              larg::Real = 560.0, alt::Real = 260.0,
+                              max_curvas::Int = 12)
     (res === nothing || isempty(res.rows)) &&
-        return documento_vazio(larg, alt, "Leff × d — sem varredura.")
+        return documento_vazio(larg, alt, "Sem varredura.")
 
-    dlo, dhi = _faixa_d(res)
-    ymax = maximum(r.leff_m for r in res.rows)
-    t = tela_livre(dlo, 0.0, dhi, ymax * 1.08; larg, alt, margem = MARGEM_GRAFICO)
+    xlo, xhi = _faixa_x(res)
+    ymax = maximum(r.y for r in res.rows)
+    t = tela_livre(xlo, 0.0, xhi, ymax * 1.08; larg, alt, margem = MARGEM_GRAFICO)
 
     p = String[]
-    moldura!(p, t, ticks_bonitos(dlo, dhi), ticks_bonitos(0.0, ymax * 1.08);
-             titulo = "Comprimento efetivo exigido por caso, e a envelope",
-             xlabel = "diâmetro d (mm)", ylabel = "Leff (m)",
+    moldura!(p, t, ticks_bonitos(xlo, xhi), ticks_bonitos(0.0, ymax * 1.08);
+             titulo, xlabel, ylabel,
              fx = Formato.inteiro, fy = v -> Formato.num(v, 0))
 
-    corte, envolver = _painel("fpso-rec-leff", larg, alt)
+    corte, envolver = _painel("fpso-rec-env", larg, alt)
     push!(p, corte)
 
     series = String[]
     for i in 1:min(max_curvas, length(res.case_names))
-        pts = [(r.d_mm, r.per_case_leff[i]) for r in res.rows]
+        pts = [(r.x, r.per_case_y[i]) for r in res.rows]
         push!(series, polilinha(t, pts; traco = Formato.cor_caso(i), largura = 1.0))
     end
-    push!(series, polilinha(t, [(r.d_mm, r.leff_m) for r in res.rows];
+    push!(series, polilinha(t, [(r.x, r.y) for r in res.rows];
                             traco = Formato.TINTA, largura = 2.6))
 
-    linha = argmin(r -> abs(r.d_mm - d_sel), res.rows)
-    _cursor!(series, t, d_sel, MARGEM_GRAFICO.topo, alt - MARGEM_GRAFICO.base,
-             (linha.d_mm, linha.leff_m), Formato.DESTAQUE)
+    linha = argmin(r -> abs(r.x - x_sel), res.rows)
+    _cursor!(series, t, x_sel, MARGEM_GRAFICO.topo, alt - MARGEM_GRAFICO.base,
+             (linha.x, linha.y), Formato.DESTAQUE)
     push!(p, envolver(join(series)))
 
-    return documento(t, join(p); fundo = Formato.FUNDO,
-                     rotulo = "Leff exigido por caso contra diâmetro")
+    return documento(t, join(p); fundo = Formato.FUNDO, rotulo = titulo)
 end
 
 """
-    svg_grafico_sr(res, d_sel, banda, alvo; larg, alt) -> String
+    svg_grafico_banda(res, x_sel, chave, banda, alvo; titulo, ...) -> String
 
-Esbeltez contra diâmetro, com a banda recomendada sombreada. O ponto escolhido é
-marcado; fora da banda ele fica vermelho, que é a sinalização mais direta de que o
-projeto não fecha naquele diâmetro.
+Um derivado contra o eixo varrido, com a faixa recomendada sombreada. O ponto escolhido
+é marcado; fora da banda ele fica vermelho, que é a sinalização mais direta de que o
+projeto não fecha ali.
+
+`chave` é o derivado a plotar — `:sr` num vaso, `:v` numa bomba. O eixo y é limitado a
+`banda[2]·2,5`: em diâmetros pequenos a esbeltez dispara (`Leff ~ 1/d²`) e achataria a
+banda até virar um traço, que é justamente o que o gráfico existe para mostrar.
 """
-function svg_grafico_sr(res, d_sel::Real, banda::Tuple{<:Real,<:Real}, alvo::Real;
-                        larg::Real = 560.0, alt::Real = 260.0)
+function svg_grafico_banda(res, x_sel::Real, chave::Symbol,
+                           banda::Tuple{<:Real,<:Real}, alvo::Real;
+                           titulo::AbstractString = "", xlabel::AbstractString = "",
+                           ylabel::AbstractString = "",
+                           larg::Real = 560.0, alt::Real = 260.0)
     (res === nothing || isempty(res.rows)) &&
-        return documento_vazio(larg, alt, "SR × d — sem varredura.")
+        return documento_vazio(larg, alt, "Sem varredura.")
 
-    dlo, dhi = _faixa_d(res)
-    # Em diâmetros pequenos o SR dispara (Leff ~ 1/d²) e achata a banda 3–5 até virar
-    # um traço — que é justamente o que o gráfico existe para mostrar.
-    alto = min(maximum(r.sr for r in res.rows), banda[2] * 2.5)
+    valor = r -> get(r.derivados, chave, NaN)
+    xlo, xhi = _faixa_x(res)
+    alto = min(maximum(valor(r) for r in res.rows), banda[2] * 2.5)
     ytop = max(alto * 1.1, banda[2] * 1.3)
-    t = tela_livre(dlo, 0.0, dhi, ytop; larg, alt, margem = MARGEM_GRAFICO)
+    t = tela_livre(xlo, 0.0, xhi, ytop; larg, alt, margem = MARGEM_GRAFICO)
 
     p = String[]
-    moldura!(p, t, ticks_bonitos(dlo, dhi), ticks_bonitos(0.0, ytop);
-             titulo = "Esbeltez e a banda recomendada por Stewart & Arnold",
-             xlabel = "diâmetro d (mm)", ylabel = "esbeltez SR = Lss/d",
+    moldura!(p, t, ticks_bonitos(xlo, xhi), ticks_bonitos(0.0, ytop);
+             titulo, xlabel, ylabel,
              fx = Formato.inteiro, fy = v -> Formato.num(v, 0))
 
-    corte, envolver = _painel("fpso-rec-sr", larg, alt)
+    corte, envolver = _painel("fpso-rec-banda", larg, alt)
     push!(p, corte)
 
     series = String[]
@@ -200,21 +211,20 @@ function svg_grafico_sr(res, d_sel::Real, banda::Tuple{<:Real,<:Real}, alvo::Rea
     for (v, cor, estilo, op) in ((banda[1], Formato.OK, TRACEJADO, 0.45),
                                  (banda[2], Formato.OK, TRACEJADO, 0.45),
                                  (alvo, Formato.TINTA_FRACA, PONTILHADO, 0.6))
-        push!(series, segmento(t, (dlo, v), (dhi, v); traco = cor, largura = 1,
+        push!(series, segmento(t, (xlo, v), (xhi, v); traco = cor, largura = 1,
                                estilo, opacidade = op))
     end
 
-    push!(series, polilinha(t, [(r.d_mm, r.sr) for r in res.rows];
+    push!(series, polilinha(t, [(r.x, valor(r)) for r in res.rows];
                             traco = Formato.TINTA, largura = 2.2))
 
-    linha = argmin(r -> abs(r.d_mm - d_sel), res.rows)
-    _cursor!(series, t, d_sel, MARGEM_GRAFICO.topo, alt - MARGEM_GRAFICO.base,
-             (linha.d_mm, min(linha.sr, ytop)),
-             linha.sr_ok ? Formato.OK : Formato.ERRO)
+    linha = argmin(r -> abs(r.x - x_sel), res.rows)
+    _cursor!(series, t, x_sel, MARGEM_GRAFICO.topo, alt - MARGEM_GRAFICO.base,
+             (linha.x, min(valor(linha), ytop)),
+             linha.ok ? Formato.OK : Formato.ERRO)
     push!(p, envolver(join(series)))
 
-    return documento(t, join(p); fundo = Formato.FUNDO,
-                     rotulo = "Esbeltez contra diâmetro")
+    return documento(t, join(p); fundo = Formato.FUNDO, rotulo = titulo)
 end
 
 """
@@ -230,7 +240,7 @@ function html_legenda_casos(res; max_itens::Int = 12)
     itens = String[]
     for (i, nome) in enumerate(res.case_names)
         i > max_itens && break
-        folga = isempty(res.slack_m) ? "" : "  (+$(Formato.num(res.slack_m[i])) m)"
+        folga = isempty(res.slack) ? "" : "  (+$(Formato.num(res.slack[i])) m)"
         governa = nome == res.driver_case
         push!(itens, string(
             "<li", governa ? " class=\"governa\"" : "", ">",

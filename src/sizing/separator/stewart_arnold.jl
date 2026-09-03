@@ -87,7 +87,7 @@ struct Separator <: AbstractEquipment end
 method_id(::Separator) = :separator
 label(::Separator) = "Separador Trifásico Horizontal"
 
-struct StewartArnold <: AbstractSizingMethod end
+struct StewartArnold <: AbstractVesselMethod end
 method_id(::StewartArnold) = :stewart_arnold
 applies_to(::StewartArnold) = Separator()
 

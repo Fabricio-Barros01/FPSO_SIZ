@@ -115,13 +115,18 @@ end
             @test !isempty(spec.note)
             @test spec.min <= spec.default <= spec.max
         end
-        # Os seis descritores que o motor de envelope exige por nome — mas só para quem
-        # fala o contrato de `VesselConstraints`. Um método registrado que NÃO passe por
-        # ele (uma bomba, um trocador; aqui, o tratador fictício de registry.jl) não tem
-        # grade de diâmetro nem esbeltez, e exigi-los seria impor a forma de um vaso a
-        # todo o registro — exatamente o acoplamento que o Sprint 5 desfez.
-        if hasmethod(FPSOSiz.sizing_constraints,
-                     Tuple{typeof(met), StreamState, AbstractDict, AbstractDict})
+        # Os seis descritores que a FAMÍLIA DOS VASOS exige por nome — e só ela. Um
+        # método registrado que não seja vaso (uma bomba, um trocador; aqui, o tratador
+        # fictício de registry.jl) não tem grade de diâmetro nem esbeltez, e exigi-los
+        # seria impor a forma de um vaso a todo o registro — exatamente o acoplamento
+        # que os Sprints 5 e 7 desfizeram.
+        #
+        # A condição era um `hasmethod` sobre a assinatura de `sizing_constraints` com
+        # `StreamState`. Deixou de servir no Sprint 7: `case_input` soltou a entrada da
+        # `StreamState`, então um vaso pode legitimamente receber outra coisa, e um
+        # não-vaso pode legitimamente receber uma `StreamState`. O supertipo é a
+        # declaração explícita de quem é da família.
+        if met isa FPSOSiz.AbstractVesselMethod
             chaves = Set(s.key for s in parameters(met))
             for k in (:d_min, :d_max, :d_step, :sr_min, :sr_max, :sr_target)
                 @test k in chaves

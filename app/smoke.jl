@@ -41,20 +41,57 @@ const TEMP_CASOS = mktempdir(; prefix = "fpso_siz_casos_")
 ENV["FPSOSIZ_CASOS"] = TEMP_CASOS
 FPSOSiz._CASOS[] = ""
 
+"""
+    valor_cartao(st, rotulo) -> String
+
+Um campo do cartão pelo RÓTULO, e não por uma chave fixa.
+
+O cartão deixou de ser oito chaves com nome de vaso (`"d"`, `"sr"`, `"teto"`) e passou a
+ser a lista que `result_fields` declara. Procurar pelo rótulo é o que o usuário faz na
+tela, e é o que continua funcionando quando o método muda os campos.
+"""
+valor_cartao(st, rotulo) =
+    something(findfirst(c -> occursin(rotulo, c["rotulo"]), A.cartao(st)),
+              0) == 0 ? "" :
+    A.cartao(st)[findfirst(c -> occursin(rotulo, c["rotulo"]), A.cartao(st))]["valor"]
+
+"O SVG de uma figura pelo id — `\"vaso\"`, `\"corte\"`, `\"envelope\"`, `\"banda\"`."
+function svg_figura(st, id)
+    f = findfirst(f -> f["id"] == id, A.desenho(st)["figuras"])
+    return f === nothing ? "" : A.desenho(st)["figuras"][f]["svg"]
+end
+
+"O mesmo, sobre o JSON que a rota devolve."
+function svg_figura_json(d, id)
+    for f in d.figuras
+        f.id == id && return f.svg
+    end
+    return ""
+end
+
+"Um campo do cartão sobre o JSON que a rota devolve."
+function valor_cartao_json(d, rotulo)
+    for c in d.cartao
+        occursin(rotulo, c.rotulo) && return c.valor
+    end
+    return ""
+end
+
 @testset "fumaça da interface" begin
 
     @testset "estado inicial" begin
         st = A.AppState()
         @test !isempty(st.casos)
         @test !isempty(st.campos)
-        @test length(st.ajustes) == length(A.CHAVES_GLOBAIS)
+        @test length(st.ajustes) == length(FPSOSiz.global_keys(st.metodo))
         # todo campo editável tem valor nos dois extremos
         for c in st.casos, s in st.campos
             @test haskey(c.lo, s.key)
             @test haskey(c.hi, s.key)
         end
         # as chaves globais NÃO são editáveis por caso
-        @test all(k -> !(k in [s.key for s in st.campos]), A.CHAVES_GLOBAIS)
+        @test all(k -> !(k in [s.key for s in st.campos]),
+                  FPSOSiz.global_keys(st.metodo))
     end
 
     @testset "dimensiona e desenha" begin
@@ -63,12 +100,12 @@ FPSOSiz._CASOS[] = ""
         @test st.resultado !== nothing
         @test st.resultado.feasible
         @test st.status_ok
-        @test st.d_sel == st.resultado.diameter_mm
+        @test st.d_sel == st.resultado.x
 
         g = A.geometry_from(st.resultado, st.d_sel, A.beta_atual(st))
         for svg in (A.svg_elevacao(g), A.svg_corte(g),
-                    A.svg_grafico_leff(st.resultado, st.d_sel),
-                    A.svg_grafico_sr(st.resultado, st.d_sel, (3.0, 5.0), 4.0))
+                    A.svg_grafico_envelope(st.resultado, st.d_sel),
+                    A.svg_grafico_banda(st.resultado, st.d_sel, :sr, (3.0, 5.0), 4.0))
             @test startswith(svg, "<svg")
             @test endswith(svg, "</svg>")
             # Um SVG malformado é recusado inteiro pelo navegador, em silêncio: a
@@ -82,9 +119,9 @@ FPSOSiz._CASOS[] = ""
         r = st.resultado
         g = A.geometry_from(r, st.d_sel, A.beta_atual(st))
         @test g.ok
-        @test g.d_m ≈ r.diameter_mm / 1000
-        @test g.lss_m ≈ r.lss_m
-        @test g.sr ≈ r.sr
+        @test g.d_m ≈ r.x / 1000
+        @test g.lss_m ≈ FPSOSiz.der(r, :lss)
+        @test g.sr ≈ FPSOSiz.der(r, :sr)
 
         # as camadas fecham no vaso meio cheio
         hw, ho, nivel = A.layer_heights(g.d_m, g.beta)
@@ -103,7 +140,7 @@ FPSOSiz._CASOS[] = ""
     @testset "mexer no cursor não quebra nada" begin
         st = A.AppState(); A.dimensionar!(st)
         for row in st.resultado.rows
-            st.d_sel = row.d_mm
+            st.d_sel = row.x
             g = A.geometry_from(st.resultado, st.d_sel, A.beta_atual(st))
             @test g.ok
             @test isfinite(g.lss_m) && g.lss_m > 0
@@ -134,8 +171,8 @@ FPSOSiz._CASOS[] = ""
         g = A.geometry_from(st.resultado, st.d_sel, A.beta_atual(st))
         @test !g.ok                                  # desenha vazio, sem exceção
         @test startswith(A.svg_elevacao(g), "<svg")  # e ainda produz documento válido
-        @test A.cartao(st)["d"] == "—"
-        @test length(A.tabela(st)) == 9
+        @test valor_cartao(st, "Diâmetro") == "—"
+        @test length(A.tabela(st)["linhas"]) == 9
     end
 
     @testset "nenhum caso ativo" begin
@@ -146,7 +183,7 @@ FPSOSiz._CASOS[] = ""
         A.dimensionar!(st)
         @test !st.status_ok
         @test st.resultado === nothing
-        @test startswith(A.desenho(st)["vaso"], "<svg")
+        @test startswith(svg_figura(st, "vaso"), "<svg")
     end
 
     @testset "formatação PT-BR" begin
@@ -207,9 +244,57 @@ FPSOSiz._CASOS[] = ""
 
         # E as classes que o Julia emite na legenda têm de existir na folha de estilo.
         css = read(joinpath(publico, "app.css"), String)
-        for classe in ("legenda-casos", "amostra", "governa", "marca", "nome", "resto")
+        for classe in ("legenda-casos", "legenda-fases", "amostra",
+                       "governa", "marca", "nome", "resto")
             @test occursin("." * classe, css)
         end
+    end
+
+    @testset "o aquecimento bate nas rotas que existem" begin
+        # `app/precompile/aquecimento.jl` exercita o ciclo HTTP no build — é a parte
+        # cara de compilar, e é o que faz o executável abrir rápido. Ele está envolto
+        # num `try` que degrada para `@warn`, então uma rota errada ali NÃO quebra o
+        # build: só devolve um binário lento, com um aviso no meio de mil linhas de
+        # compilação. Foi o que aconteceu no Sprint 6, quando as rotas ganharam o
+        # prefixo do box e o aquecimento continuou pedindo `/api/dimensionar`.
+        aquecimento = read(joinpath(dirname(A.dir_publico()), "precompile",
+                                    "aquecimento.jl"), String)
+        ativos = Set(b.id for b in FPSOSiz.catalogo() if b.ativo)
+        for m in eachmatch(r"/api/([a-z0-9-]+)", aquecimento)
+            @test m.captures[1] == "parar" || m.captures[1] in ativos
+        end
+        # e ele tem de bater em ao menos uma rota de box, senão o teste acima passa
+        # vazio e não prova nada
+        @test occursin(r"/api/[a-z0-9-]+-\d", aquecimento)
+    end
+
+    @testset "a tela não cita nenhuma grandeza pelo nome" begin
+        # O aceite do Sprint 7. A regra de src/interfaces.jl — a interface nunca cita um
+        # PARÂMETRO pelo nome — passou a valer também para as GRANDEZAS: `index.html`
+        # tinha oito `<dt>` ("Comprimento efetivo Leff", "Esbeltez SR", "Teto de
+        # decantação"), quatro `<th>` e uma legenda de fases escritos à mão, e `app.js`
+        # gravava em oito `id` fixos. Nada disso dava erro num equipamento que não fosse
+        # vaso — dava campo vazio e legenda mentirosa, que é pior.
+        #
+        # Prova de que era real: a legenda de fases prometia "água" também no vaso
+        # BIFÁSICO, que não tem fase aquosa. Estava errada desde o Sprint 5 e ninguém viu,
+        # porque quem a escrevia era o HTML e o HTML não sabia de qual vaso se tratava.
+        publico = A.dir_publico()
+
+        # Comentários são a documentação do arquivo e PODEM citar o que quiserem — é
+        # onde a decisão fica registrada. O que não pode citar é o que o usuário lê.
+        sem_comentario_html(t) = replace(t, r"<!--.*?-->"s => "")
+        sem_comentario_js(t)   = replace(replace(t, r"/\*.*?\*/"s => ""), r"//[^\n]*" => "")
+
+        html = sem_comentario_html(read(joinpath(publico, "index.html"), String))
+        js   = sem_comentario_js(read(joinpath(publico, "app.js"), String))
+
+        # A asserção devolve as palavras ENCONTRADAS, e não o arquivo inteiro: um
+        # `@test !occursin(…)` que falha imprime a página toda no terminal.
+        visivel = lowercase(html) * lowercase(js)
+        proibidas = ("leff", "lss", "sbeltez", "decanta", "óleo", "água",
+                     "gás", "vaso", "diâmetro")
+        @test filter(p -> occursin(p, visivel), proibidas) == ()
     end
 
     @testset "o app.js é JavaScript válido" begin
@@ -373,9 +458,13 @@ FPSOSiz._CASOS[] = ""
                        last(sort(filter(f -> endswith(f, "_varredura.csv"), arquivos))))
         linhas = readlines(csv)
         @test any(l -> startswith(l, "d (mm);"), linhas)
-        # uma coluna de Leff por caso, além das 7 fixas
+        # As colunas do CSV são as MESMAS que a tabela da tela declara, mais três
+        # fixas (governa, caso governante, admissível) e uma por caso.
         cab = only(filter(l -> startswith(l, "d (mm);"), linhas))
-        @test length(split(cab, ';')) == 7 + length(st.resultado.case_names)
+        n_cols = length(FPSOSiz.sweep_columns(st.metodo))
+        @test length(split(cab, ';')) == n_cols + 3 + length(st.resultado.case_names)
+        @test split(cab, ';')[1:n_cols] ==
+              [c.label for c in FPSOSiz.sweep_columns(st.metodo)]
 
         # o memorial traz o rastro de cálculo de cada caso
         memorial = read(joinpath(TEMP_SAIDA,
@@ -418,7 +507,8 @@ FPSOSiz._CASOS[] = ""
         end
 
         # os blocos saem na ordem do cálculo, não na ordem em que o Dict os guardou
-        ordem = [String(id) for (id, _) in A.BLOCOS_MEMORIAL]
+        ordem = [String(id) for (id, _) in
+                 A.blocos_memorial(st.metodo, first(st.resultado.per_case).trace)]
         for caso in m["casos"]
             vistos = [b["id"] for b in caso["blocos"]]
             @test vistos == filter(in(vistos), ordem)
@@ -482,7 +572,7 @@ FPSOSiz._CASOS[] = ""
         # corrente: gravá-los seria gravar o que a leitura descarta — um arquivo que
         # parece guardar mais do que guarda.
         texto = read(r.caminho, String)
-        for k in A.CHAVES_GLOBAIS
+        for k in FPSOSiz.global_keys(st.metodo)
             @test !occursin(string(k), texto)
         end
 
@@ -540,7 +630,7 @@ FPSOSiz._CASOS[] = ""
         @test st.arquivo == ""                       # nada aberto, então nada a salvar por cima
 
         A.dimensionar!(st)                           # e a tela segue operável
-        @test startswith(A.desenho(st)["vaso"], "<svg")
+        @test startswith(svg_figura(st, "vaso"), "<svg")
 
         # A listagem mostra o arquivo quebrado em vez de escondê-lo: sumir com ele
         # esconderia justamente o arquivo que a pessoa acabou de editar e quebrar.
@@ -566,8 +656,8 @@ FPSOSiz._CASOS[] = ""
         @test occursin("Não consegui abrir", st.status)    # a queixa sobrevive
         # e o resultado passou a ser o do caso em branco, não o dos dez cantos
         @test st.resultado === nothing || length(st.resultado.case_names) == 1
-        @test length(A.tabela(st)) == 9
-        @test startswith(A.desenho(st)["vaso"], "<svg")
+        @test length(A.tabela(st)["linhas"]) == 9
+        @test startswith(svg_figura(st, "vaso"), "<svg")
     end
 
     @testset "o vaso bifásico atravessa a interface inteira" begin
@@ -601,9 +691,9 @@ FPSOSiz._CASOS[] = ""
         @test st.status_ok
 
         # o livro escolhe 36 in (914 mm) por 10 ft (3,05 m), SR 3,2
-        @test abs(st.resultado.diameter_mm - 914.4) <= 150.0
-        @test 3.0 <= st.resultado.sr <= 4.0
-        @test A.cartao(st)["teto"] == "—"          # sem teto de decantação
+        @test abs(st.resultado.x - 914.4) <= 150.0
+        @test 3.0 <= FPSOSiz.der(st.resultado, :sr) <= 4.0
+        @test valor_cartao(st, "Teto") == "—"      # sem teto de decantação
 
         @testset "o desenho tem DUAS camadas, e nenhum NaN" begin
             # Com `beta = NaN`, deduzir três camadas de β daria `h_w = NaN·d` nas
@@ -718,7 +808,7 @@ FPSOSiz._CASOS[] = ""
 
         esq = JSON3.read(String(HTTP.get("$base/api/separador-3f/esquema").body))
         @test length(esq.campos) > 10
-        @test length(esq.ajustes) == length(A.CHAVES_GLOBAIS)
+        @test length(esq.ajustes) == length(FPSOSiz.global_keys(FPSOSiz.StewartArnold()))
         # nenhum descritor pode chegar à tela sem rótulo e unidade
         @test all(c -> !isempty(c.label) && !isempty(c.unit), esq.campos)
 
@@ -728,7 +818,7 @@ FPSOSiz._CASOS[] = ""
             vazio = JSON3.read(String(HTTP.get("$base/api/separador-3f/estado").body))
             @test vazio.arquivo == ""
             @test length(vazio.casos) == 1
-            @test vazio.cartao.d == "—"          # nada dimensionado
+            @test valor_cartao_json(vazio, "Diâmetro") == "—"   # nada dimensionado
         end
 
         # É abrir o arquivo que traz os quatro casos do artigo — e é por este caminho
@@ -742,10 +832,10 @@ FPSOSiz._CASOS[] = ""
         @test d.status_ok
         @test d.viavel
         # O caso de referência de config/cases/: quatro casos, dez cantos.
-        @test d.cartao.d == "6300 mm"
-        @test d.cartao.leff == "18,59 m"
-        @test d.cartao.caso == "Fim de vida"
-        @test startswith(d.desenho.vaso, "<svg")
+        @test valor_cartao_json(d, "Diâmetro") == "6300 mm"
+        @test valor_cartao_json(d, "Leff") == "18,59 m"
+        @test valor_cartao_json(d, "Caso governante") == "Fim de vida"
+        @test startswith(svg_figura_json(d.desenho, "vaso"), "<svg")
         @test !isempty(d.grade)
 
         # mover o cursor troca a seleção sem redimensionar. É POST porque a rota
@@ -753,8 +843,8 @@ FPSOSiz._CASOS[] = ""
         x = JSON3.read(String(HTTP.post("$base/api/separador-3f/desenho";
                                         body = """{"d":"5500"}""").body))
         @test x.d_sel == 5500
-        @test x.cartao.d != d.cartao.d
-        @test startswith(x.desenho.vaso, "<svg")
+        @test valor_cartao_json(x, "Diâmetro") != valor_cartao_json(d, "Diâmetro")
+        @test startswith(svg_figura_json(x.desenho, "vaso"), "<svg")
 
         # E o verbo antigo não pode continuar servindo por acidente: um GET que
         # respondesse 200 aqui seria a porta que este POST existe para fechar.
@@ -891,7 +981,7 @@ FPSOSiz._CASOS[] = ""
 
             # O bifásico, nunca tocado, continua em branco.
             e2 = JSON3.read(String(HTTP.get("$base/api/knockout-2f/estado").body))
-            @test e2.cartao.d == "—"
+            @test valor_cartao_json(e2, "Diâmetro") == "—"
             @test length(e2.casos) == 1
             # e o formulário dele é o dele: 8 de corrente + 2 do método
             esq2 = JSON3.read(String(HTTP.get("$base/api/knockout-2f/esquema").body))
@@ -904,13 +994,14 @@ FPSOSiz._CASOS[] = ""
             d2 = JSON3.read(String(HTTP.post("$base/api/knockout-2f/dimensionar";
                                              body = "{}").body))
             @test d2.status_ok
-            @test d2.cartao.d == "900 mm"        # Exemplo 3.2 do livro
-            @test d2.cartao.teto == "—"          # sem teto de decantação
+            @test valor_cartao_json(d2, "Diâmetro") == "900 mm"   # Exemplo 3.2 do livro
+            @test valor_cartao_json(d2, "Teto") == "—"            # sem teto de decantação
 
             # O invariante é "não mudou", e não "é tal arquivo": testsets anteriores
             # neste mesmo servidor já abriram e salvaram outros conjuntos no separador.
             depois = JSON3.read(String(HTTP.get("$base/api/separador-3f/estado").body))
-            @test depois.cartao.d == e3.cartao.d
+            @test valor_cartao_json(depois, "Diâmetro") ==
+                  valor_cartao_json(e3, "Diâmetro")
             @test depois.arquivo == e3.arquivo
             @test length(depois.casos) == length(e3.casos)
         end

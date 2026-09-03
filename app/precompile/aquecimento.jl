@@ -33,9 +33,12 @@ try
             g = A.geometry_from(st.resultado, st.d_sel, A.beta_atual(st))
             A.svg_elevacao(g)
             A.svg_corte(g)
-            A.svg_grafico_leff(st.resultado, st.d_sel)
-            A.svg_grafico_sr(st.resultado, st.d_sel, (3.0, 5.0), 4.0)
+            A.svg_grafico_envelope(st.resultado, st.d_sel)
+            A.svg_grafico_banda(st.resultado, st.d_sel, :sr, (3.0, 5.0), 4.0)
             A.html_legenda_casos(st.resultado)
+            # `figuras` e `figuras_grandes` despacham no método e chamam os quatro
+            # desenhos: aquecê-las cobre o caminho da tela e o da exportação.
+            A.figuras(st); A.figuras_grandes(st)
             A.esquema(st); A.estado(st); A.cartao(st); A.tabela(st); A.desenho(st)
             A.aplicar!(st, Dict{String,Any}("sel" => 1))
             A.exportar!(st)
@@ -55,14 +58,27 @@ try
                 end
             end
 
+            # As rotas com estado são prefixadas pelo box desde o Sprint 6
+            # (`/api/<box>/…`). Sem o prefixo elas respondiam 404, o `JSON3.read`
+            # lançava e o aquecimento HTTP inteiro — que é a parte cara de compilar —
+            # caía no `catch` lá embaixo, com um aviso que ninguém leu. O executável
+            # continuava correto e abria devagar, que é exatamente o problema que este
+            # arquivo existe para evitar.
+            api = "$base/api/separador-3f"
+
             HTTP.get(base; status_exception = false)
             HTTP.get("$base/app.css"; status_exception = false)
-            HTTP.get("$base/api/esquema"; status_exception = false)
-            r = HTTP.post("$base/api/dimensionar"; body = "{}", status_exception = false)
+            HTTP.get("$base/menu.js"; status_exception = false)
+            HTTP.get("$base/app/separador-3f"; status_exception = false)
+            HTTP.get("$api/esquema"; status_exception = false)
+            r = HTTP.post("$api/dimensionar"; body = "{}", status_exception = false)
+            r.status == 200 || error("aquecimento: /dimensionar devolveu $(r.status)")
             JSON3.read(String(r.body), Dict{String,Any})
-            HTTP.post("$base/api/desenho"; body = """{"d":"5500"}""",
+            HTTP.post("$api/desenho"; body = """{"d":"5500"}""",
                       status_exception = false)
-            HTTP.post("$base/api/exportar"; body = "{}", status_exception = false)
+            HTTP.get("$api/memorial"; status_exception = false)
+            HTTP.get("$api/casos/arquivos"; status_exception = false)
+            HTTP.post("$api/exportar"; body = "{}", status_exception = false)
 
             try
                 A.Genie.down()

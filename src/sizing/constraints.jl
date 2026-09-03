@@ -1,24 +1,18 @@
 """
-O contrato entre um método de dimensionamento e o motor de envelope.
+A família dos vasos: a implementação do contrato de `src/engine/contract.jl` para
+equipamentos que se dimensionam varrendo um diâmetro.
 
-Este arquivo existe porque o motor multi-caso — o diferencial do software — estava
-escrito sobre os tipos concretos do separador: `size_envelope(::Separator,
-::StewartArnold, …)`, com o corpo lendo o TOML do separador, montando um vetor de
-`SeparatorConstraints` e chamando `separator_constraints`. Um segundo equipamento
-registrado ganharia formulário e dimensionamento de caso único, e **perderia o
-multi-caso**, sem que nada denunciasse a perda.
-
-A generalização é pequena porque a costura já existia. Os blocos de Stewart & Arnold
-produzem **três números que não dependem de `d`**, e é só disso que o motor precisa:
+Os blocos de Stewart & Arnold produzem **três números que não dependem de `d`**, e é só
+disso que o motor precisa:
 
     Leff_exigido(d) = max( d·Leff/d , d²·Leff/d² )      # gás, líquido
     d admissível    ⟺ d ≤ d_max
 
-Qualquer método que consiga responder essas três coisas atravessa o motor inteiro —
-grade comum, envelope de `Leff(d)`, teto mais restritivo, escolha por `|SR − alvo|` —
-sem que o motor saiba de que equipamento se trata.
+Quem devolve um [`VesselConstraints`](@ref) ganha, sem declarar mais nada, a varredura em
+diâmetro, o `Lss`, a esbeltez, a banda, o teto e o critério de escolha. Foi assim que o
+vaso bifásico do Sprint 5 nasceu com nove linhas de física e nenhuma de geometria.
 
-# O que um método implementa
+# O que um método de vaso implementa
 
 | Função | Papel |
 |---|---|
@@ -33,13 +27,24 @@ delegando a [`size_vessel`](@ref).
 # Os seis descritores que o motor exige por nome
 
 A regra de `src/interfaces.jl` — *a interface nunca cita um parâmetro pelo nome* — é
-sobre a **tela**, não sobre o motor. O motor cita seis, e é melhor que estejam escritos
-aqui do que descobertos por `KeyError`: `d_min`, `d_max` e `d_step` definem a grade de
-varredura, e `sr_min`, `sr_max` e `sr_target` a banda de esbeltez e o alvo dentro dela.
-Todo método que atravesse este contrato tem de declará-los em `parameters(m)`. Quem usa
-o [`lss_from`](@ref) default precisa, além disso, de `lss_liquid_factor` nas constantes
-do seu TOML.
+sobre a **tela**, não sobre o motor. A família dos vasos cita seis, e é melhor que
+estejam escritos aqui do que descobertos por `KeyError`: `d_min`, `d_max` e `d_step`
+definem a grade de varredura, e `sr_min`, `sr_max` e `sr_target` a banda de esbeltez e o
+alvo dentro dela. Todo `AbstractVesselMethod` tem de declará-los em `parameters(m)`.
+Quem usa o [`lss_from`](@ref) default precisa, além disso, de `lss_liquid_factor` nas
+constantes do seu TOML.
 """
+
+"""
+Método que dimensiona um vaso: varre diâmetro, produz [`VesselConstraints`](@ref) e usa
+a esbeltez como critério.
+
+O tipo existe para que os hooks de apresentação — grade, banda, cartão, colunas, blocos
+do memorial — sejam declarados **uma vez** para a família inteira, em vez de repetidos em
+cada vaso. Um equipamento que não seja vaso (bomba, trocador) estende
+`AbstractSizingMethod` direto e escreve os seus.
+"""
+abstract type AbstractVesselMethod <: AbstractSizingMethod end
 
 """
 As restrições que não dependem do diâmetro — o que o motor de envelope consome.
@@ -74,11 +79,13 @@ VesselConstraints(d_leff_gas, d2_leff) =
     VesselConstraints(d_leff_gas, d2_leff, Inf, :none, NaN, NaN)
 
 """
-    sizing_constraints(m, s::StreamState, p, k) -> (ok::Bool, resultado, trace)
+    sizing_constraints(m, entrada, p, k) -> (ok::Bool, resultado, trace)
 
-Avalia os blocos do método `m` para a corrente `s`. Em caso de sucesso `resultado` é um
-[`VesselConstraints`](@ref); em caso de falha, a **mensagem diagnóstica** — nunca uma
-exceção, que é o contrato do projeto inteiro: inviabilidade é estado retornado.
+Avalia os blocos do método `m` para a `entrada` que [`case_input`](@ref) produziu. Em
+caso de sucesso `resultado` é o objeto de restrições do método (um
+[`VesselConstraints`](@ref), para a família dos vasos); em caso de falha, a **mensagem
+diagnóstica** — nunca uma exceção, que é o contrato do projeto inteiro: inviabilidade é
+estado retornado.
 
 `p` são os parâmetros já mesclados com os defaults e `k` as constantes do TOML.
 """
@@ -124,48 +131,110 @@ lss_from(::AbstractSizingMethod, d_mm::Real, leff::Real, gov::Symbol, k::Abstrac
     gov === :gas ? leff + d_mm / 1000.0 : float(k[:lss_liquid_factor]) * leff
 
 # ---------------------------------------------------------------------------
-# Geometria a partir das restrições — comum a qualquer método que as produza
+# O contrato de `engine/contract.jl`, preenchido para a família dos vasos
 # ---------------------------------------------------------------------------
 
 "Grade de diâmetros da varredura, em mm."
 diameter_grid(p::AbstractDict) = collect(p[:d_min]:p[:d_step]:p[:d_max])
 
-"""
-    sweep_row(m, d_mm, cons, k, sr_min, sr_max) -> SweepRow
+sweep_axis(::AbstractVesselMethod, p::AbstractDict) =
+    SweepAxis(:d, "diâmetro", "mm", diameter_grid(p))
 
-Geometria para um diâmetro: o `Leff` governante, o `Lss` pela relação do bloco que
-governa e a esbeltez `SR = Lss/d`.
+# Os seis do cabeçalho deste arquivo: três da grade, três da banda de esbeltez.
+global_keys(::AbstractVesselMethod) =
+    [:d_min, :d_max, :d_step, :sr_min, :sr_max, :sr_target]
+
+# Estes três despacham nas RESTRIÇÕES, não no método: quem produzir um
+# `VesselConstraints` recebe o comportamento de vaso mesmo sem ser da família.
+requirement(::AbstractSizingMethod, d_mm::Real, c::VesselConstraints) =
+    max(c.d_leff_gas / d_mm, c.d2_leff / d_mm^2)
+
+governing_of(::AbstractSizingMethod, d_mm::Real, c::VesselConstraints) =
+    c.d_leff_gas / d_mm > c.d2_leff / d_mm^2 ? :gas : :liquid
+
+ceiling_of(::AbstractSizingMethod, c::VesselConstraints) = c.d_max_mm
+
 """
-function sweep_row(m::AbstractSizingMethod, d_mm::Real, cons::VesselConstraints,
-                   k::AbstractDict, sr_min::Real, sr_max::Real)
-    leff_gas = cons.d_leff_gas / d_mm
-    leff_liq = cons.d2_leff / d_mm^2
-    gov      = leff_gas > leff_liq ? :gas : :liquid
-    leff     = max(leff_gas, leff_liq)
-    lss      = lss_from(m, d_mm, leff, gov, k)
-    sr       = lss / (d_mm / 1000.0)
-    return SweepRow(d_mm, leff_gas, leff_liq, leff, lss, sr, gov, sr_min <= sr <= sr_max)
+    derived(m::AbstractVesselMethod, d_mm, leff, gov, cons, k, p)
+
+`Lss` pela relação do bloco que governa, a esbeltez e o volume do casco entre tampos.
+
+"Entre tampos" não é preciosismo: `vessel_volume` é o cilindro sobre `Lss`, que é a
+medida costura a costura de Stewart & Arnold. Os tampos elípticos 2:1 que o desenho
+mostra somariam ~8,5 %, e quem comparasse os dois sem o rótulo concluiria que um dos
+dois está errado.
+"""
+function derived(m::AbstractVesselMethod, d_mm::Real, leff::Real, gov::Symbol,
+                 cons, k::AbstractDict, p::AbstractDict)
+    lss = lss_from(m, d_mm, leff, gov, k)
+    return Dict{Symbol,Float64}(
+        :lss    => lss,
+        :sr     => lss / (d_mm / 1000.0),
+        :volume => vessel_volume(d_mm, lss))
+end
+
+admissible(::AbstractVesselMethod, d_mm::Real, der::AbstractDict, p::AbstractDict) =
+    p[:sr_min] <= der[:sr] <= p[:sr_max]
+
+objective(::AbstractVesselMethod, d_mm::Real, der::AbstractDict, p::AbstractDict) =
+    abs(der[:sr] - p[:sr_target])
+
+"""
+    envelope_params(m::AbstractVesselMethod, params) -> (ok, p_ou_msg)
+
+Funde os parâmetros dos N casos num só conjunto, para que o motor tenha uma grade e uma
+banda — o vaso é um só.
+
+**A grade é união e a banda é interseção**, e a assimetria é deliberada. A grade é onde
+se PROCURA: uni-la (menor `d_min`, maior `d_max`, menor passo) só amplia a busca, e
+ampliar busca não perde solução. A banda é o que se ACEITA: uni-la afrouxaria a
+exigência. Com um caso pedindo SR ∈ [3, 5] e outro [3,5 , 4,5], a união aceitaria um vaso
+com SR = 3,2 — que viola o segundo caso. A interseção é a única leitura em que "atende a
+todos os casos" continua verdadeira.
+
+`sr_target` é PREFERÊNCIA, não restrição: é o desempate entre diâmetros já admissíveis.
+Por isso a média, e não um extremo — nenhum caso tem direito de veto sobre o gosto dos
+outros. Depois de fixado, é preso à banda, senão um alvo fora dela empurraria a escolha
+sempre para a mesma ponta.
+"""
+function envelope_params(::AbstractVesselMethod, params::Vector{<:AbstractDict})
+    sr_min = maximum(p[:sr_min] for p in params)
+    sr_max = minimum(p[:sr_max] for p in params)
+    sr_min <= sr_max || return (false,
+        "As bandas de esbeltez pedidas pelos casos não se cruzam: o mais exigente pede " *
+        "SR ≥ $(sr_min) e outro pede SR ≤ $(sr_max). Como o vaso é um só, não há " *
+        "esbeltez que atenda a todos.")
+
+    return (true, Dict{Symbol,Float64}(
+        :d_min  => minimum(p[:d_min]  for p in params),
+        :d_max  => maximum(p[:d_max]  for p in params),
+        :d_step => minimum(p[:d_step] for p in params),
+        :sr_min => sr_min,
+        :sr_max => sr_max,
+        :sr_target => clamp(sum(p[:sr_target] for p in params) / length(params),
+                            sr_min, sr_max)))
 end
 
 """
-    selection_diagnosis(rows, d_max, mechanism, sr_min, sr_max) -> String
+    selection_message(m::AbstractVesselMethod, rows, ceiling, p) -> String
 
 Explica **por que** o conjunto admissível ficou vazio: se foi o teto de diâmetro ou a
 banda de esbeltez. É o que a tela mostra no lugar do resultado.
 """
-function selection_diagnosis(rows, d_max_mm, mechanism, sr_min, sr_max)
-    under = filter(r -> r.d_mm <= d_max_mm, rows)
+function selection_message(m::AbstractVesselMethod, rows, ceiling::Real,
+                           p::AbstractDict; mechanism::Symbol = :none)
+    under = filter(r -> r.x <= ceiling, rows)
     if isempty(under)
         return "Nenhum diâmetro da grade respeita o teto de decantação " *
-               "d_max = $(round(d_max_mm, digits = 0)) mm " *
+               "d_max = $(round(ceiling, digits = 0)) mm " *
                "($(mechanism_label(mechanism))). Reduza d_min, ou reveja as " *
                "viscosidades e os tempos de retenção."
     end
-    lo, hi = extrema(r.sr for r in under)
-    return "Nenhum diâmetro admissível tem esbeltez na banda $(sr_min)–$(sr_max): " *
-           "abaixo do teto de decantação ($(round(d_max_mm, digits = 0)) mm) o SR " *
-           "varia de $(round(lo, digits = 2)) a $(round(hi, digits = 2)). " *
-           "Amplie a grade de diâmetros ou a banda de SR."
+    lo, hi = extrema(r.derivados[:sr] for r in under)
+    return "Nenhum diâmetro admissível tem esbeltez na banda " *
+           "$(p[:sr_min])–$(p[:sr_max]): abaixo do teto de decantação " *
+           "($(round(ceiling, digits = 0)) mm) o SR varia de $(round(lo, digits = 2)) " *
+           "a $(round(hi, digits = 2)). Amplie a grade de diâmetros ou a banda de SR."
 end
 
 "Rótulo PT-BR do mecanismo que impôs o teto de diâmetro."
@@ -173,58 +242,96 @@ mechanism_label(m::Symbol) = m === :water_in_oil ? "água em óleo" :
                              m === :oil_in_water ? "óleo em água" :
                              m === :none         ? "sem teto de decantação" : String(m)
 
+"Rótulo PT-BR da restrição que governa o `Leff`."
+governing_label(::AbstractVesselMethod, g::Symbol) =
+    g === :gas    ? "capacidade de gás" :
+    g === :liquid ? "capacidade de líquido" : String(g)
+
+"""
+    result_fields(m::AbstractVesselMethod, r) -> Vector{ResultField}
+
+O cartão de resultados de um vaso: os mesmos oito campos que `index.html` trazia
+escritos à mão até o Sprint 6, agora declarados por quem sabe que eles existem.
+"""
+function result_fields(m::AbstractVesselMethod, r)
+    tem = r.feasible && isfinite(r.x)
+    txt(v) = tem ? v : "—"
+    # O ✓/✗ da esbeltez: no ponto escolhido pelo motor ela está na banda por
+    # construção, mas o cartão segue o CURSOR, e o usuário pode arrastá-lo para fora.
+    na_banda = !tem ? :neutro : (hasproperty(r, :ok) ? r.ok : true) ? :ok : :erro
+    return ResultField[
+        ResultField("Diâmetro d", tem ? r.x : NaN; unit = "mm", digits = 0,
+                    highlight = true),
+        ResultField("Comprimento efetivo Leff", tem ? r.y : NaN; unit = "m"),
+        ResultField("Comprimento real Lss", der(r, :lss); unit = "m"),
+        ResultField("Esbeltez SR", der(r, :sr); status = na_banda),
+        ResultField("Volume (casco, entre tampos)", der(r, :volume);
+                    unit = "m³", digits = 0),
+        ResultField("Restrição governante", txt(governing_label(m, r.governing))),
+        ResultField("Caso governante", txt(_driver_case(r))),
+        ResultField("Teto de decantação",
+                    isfinite(r.ceiling) ? r.ceiling : NaN; unit = "mm", digits = 0),
+    ]
+end
+
+# Um `SizingResult` não tem caso governante — ele É um caso. O cartão é o mesmo nos dois,
+# então a diferença vira travessão em vez de dois cartões quase iguais.
+_driver_case(r) = hasproperty(r, :driver_case) ? r.driver_case : "—"
+
+sweep_columns(::AbstractVesselMethod) = [
+    SweepColumn("d (mm)",    :x;   digits = 0),
+    SweepColumn("Leff (m)",  :y),
+    SweepColumn("Lss (m)",   :lss),
+    SweepColumn("SR",        :sr),
+]
+
+"""
+Blocos do memorial, na ordem do cálculo, com o nome que a tela mostra.
+
+Os símbolos são os que os métodos carimbam em cada `TraceEntry`. A ordem é a em que o
+método os percorre, e não alfabética: um memorial só se lê de cima para baixo. As letras
+A/B/C são as de Stewart & Arnold — o vaso bifásico usa A e C sem o B, e o bloco vazio
+simplesmente não aparece.
+"""
+trace_blocks(::AbstractVesselMethod) = [
+    :gas       => "Bloco A — capacidade de gás",
+    :settling  => "Bloco B — decantação",
+    :liquid    => "Bloco C — capacidade de líquido",
+    :selection => "Seleção do diâmetro",
+]
+
 # ---------------------------------------------------------------------------
 # Dimensionamento de caso único, comum à família
 # ---------------------------------------------------------------------------
 
+per_constraint(::AbstractSizingMethod, d_mm::Real, c::VesselConstraints) =
+    Dict{Symbol,Float64}(:gas => c.d_leff_gas / d_mm, :liquid => c.d2_leff / d_mm^2)
+
+ceiling_mechanism_of(::AbstractSizingMethod, c::VesselConstraints) = c.mechanism
+
+grid_hint(::AbstractVesselMethod, p::AbstractDict) =
+    "Verifique d_min ($(p[:d_min])), d_max ($(p[:d_max])) e passo ($(p[:d_step]))."
+
+function trace_selection!(::AbstractVesselMethod, tr::CalcTrace, best, p::AbstractDict)
+    trace!(tr, :selection, "Eq. 24", "SR", "Lss/(d/1000)", best.derivados[:sr], "–")
+    trace!(tr, :selection, "—", "d escolhido",
+           "menor |SR − $(p[:sr_target])| com $(p[:sr_min]) ≤ SR ≤ $(p[:sr_max])",
+           best.x, "mm")
+    return nothing
+end
+
 """
-    size_vessel(eq, m, s::StreamState, params) -> SizingResult
+    size_vessel(eq, m, s, params) -> SizingResult
 
 Dimensiona um vaso de caso único a partir das restrições que `m` produz: varre a grade
 de diâmetros, descarta o que passa do teto ou sai da banda de esbeltez, e escolhe o de
 `SR` mais próximo do alvo.
 
-Nada aqui é do separador — é a mesma sequência para qualquer vaso cujas restrições
-caibam em [`VesselConstraints`](@ref). Um método a adota com uma linha:
+É [`size_single`](@ref) sob outro nome, e o nome é o ponto: a sequência não tem nada de
+vaso, mas os oito arquivos que a chamam falam de vasos, e `size_vessel(…)` lê melhor
+neles do que `size_single(…)`. Um método a adota com uma linha:
 
     size_equipment(eq::MeuVaso, m::MeuMetodo, s, params) = size_vessel(eq, m, s, params)
-
-Inviabilidade sai como `feasible = false` com a mensagem que
-[`selection_diagnosis`](@ref) escreve, nunca como exceção.
 """
-function size_vessel(eq::AbstractEquipment, m::AbstractSizingMethod,
-                     s::StreamState, params::AbstractDict)
-    p = with_defaults(parameters(m), params)
-    k = constants(method_config(m))
-
-    ok, cons, tr = sizing_constraints(m, s, p, k)
-    ok || return infeasible(method_id(m), cons; trace = tr)
-
-    grid = diameter_grid(p)
-
-    isempty(grid) && return infeasible(method_id(m),
-        "Grade de diâmetros vazia: verifique d_min ($(p[:d_min])), " *
-        "d_max ($(p[:d_max])) e passo ($(p[:d_step])).";
-        trace = tr, d_max_mm = cons.d_max_mm, d_max_mechanism = cons.mechanism)
-
-    sweep = [sweep_row(m, d, cons, k, p[:sr_min], p[:sr_max]) for d in grid]
-    admissible = filter(r -> r.d_mm <= cons.d_max_mm && r.sr_ok, sweep)
-
-    if isempty(admissible)
-        return infeasible(method_id(m),
-            selection_diagnosis(sweep, cons.d_max_mm, cons.mechanism,
-                                p[:sr_min], p[:sr_max]);
-            sweep, trace = tr, d_max_mm = cons.d_max_mm,
-            d_max_mechanism = cons.mechanism)
-    end
-
-    best = argmin(r -> abs(r.sr - p[:sr_target]), admissible)
-    trace!(tr, :selection, "Eq. 24", "SR", "Lss/(d/1000)", best.sr, "–")
-    trace!(tr, :selection, "—", "d escolhido",
-           "menor |SR − $(p[:sr_target])| com $(p[:sr_min]) ≤ SR ≤ $(p[:sr_max])",
-           best.d_mm, "mm")
-
-    return SizingResult(true, "", best.d_mm, best.leff_m, best.lss_m, best.sr,
-                        vessel_volume(best.d_mm, best.lss_m), best.governing,
-                        cons.d_max_mm, cons.mechanism, method_id(m), sweep, tr)
-end
+size_vessel(eq::AbstractEquipment, m::AbstractSizingMethod, s, params::AbstractDict) =
+    size_single(eq, m, s, params)

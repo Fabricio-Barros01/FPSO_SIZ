@@ -144,14 +144,18 @@ end
 
 Traduz um `EnvelopeResult` e um diâmetro selecionado na geometria que o desenho
 consome. `ok = false` faz a cena inteira desenhar vazia, sem exceção.
+
+É aqui que os nomes genéricos do motor (`x`, `y`, `derivados`) voltam a ser diâmetro,
+`Leff` e `Lss` — e é o lugar certo para isso: este arquivo desenha um vaso e sabe que
+está desenhando um vaso. O que não podia acontecer era o **motor** saber.
 """
 function geometry_from(res, d_mm::Real, beta::Real)
     (res === nothing || !res.feasible) &&
         return (; d_m = 0.0, leff_m = 0.0, lss_m = 0.0, beta = NaN,
                   camadas = Camada[], governing = :none, ok = false, sr = NaN)
-    linha = argmin(r -> abs(r.d_mm - d_mm), res.rows)
-    d_m = linha.d_mm / 1000
-    return (; d_m, leff_m = linha.leff_m, lss_m = linha.lss_m, beta,
+    linha = argmin(r -> abs(r.x - d_mm), res.rows)
+    d_m = linha.x / 1000
+    return (; d_m, leff_m = linha.y, lss_m = FPSOSiz.der(linha, :lss), beta,
               camadas = camadas(d_m, beta), governing = linha.governing,
-              ok = true, sr = linha.sr)
+              ok = true, sr = FPSOSiz.der(linha, :sr))
 end

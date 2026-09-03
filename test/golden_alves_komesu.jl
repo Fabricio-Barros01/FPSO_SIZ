@@ -50,10 +50,10 @@ const TABELA_3 = [
     @testset "Tabela 3 — varredura completa" begin
         @test length(res.sweep) == length(TABELA_3)
         for (row, (d, leff, lss, sr)) in zip(res.sweep, TABELA_3)
-            @test row.d_mm == d
-            @test row.leff_m ≈ leff rtol = 0.005      # 0,5 %
-            @test row.lss_m  ≈ lss  rtol = 0.005
-            @test row.sr     ≈ sr   rtol = 0.005
+            @test row.x == d
+            @test row.y ≈ leff rtol = 0.005      # 0,5 %
+            @test der(row, :lss)  ≈ lss  rtol = 0.005
+            @test der(row, :sr)     ≈ sr   rtol = 0.005
             @test row.governing === :liquid           # Eq. 23 vale, não a Eq. 15
         end
     end
@@ -63,8 +63,8 @@ const TABELA_3 = [
         # líquido/líquido é a principal. Reproduzimos a ordem de grandeza e,
         # sobretudo, a conclusão.
         for row in res.sweep
-            @test row.leff_gas_m < 0.1
-            @test row.leff_gas_m < row.leff_liquid_m / 100
+            @test row.per_constraint[:gas] < 0.1
+            @test row.per_constraint[:gas] < row.per_constraint[:liquid] / 100
         end
         @test res.governing === :liquid
     end
@@ -72,27 +72,27 @@ const TABELA_3 = [
     @testset "teto de decantação não é restritivo" begin
         # O artigo observa que, sendo a gotícula de água (500 µm) maior que a de óleo
         # (200 µm), a decantação da água rege — e que o teto resultante é folgado.
-        @test res.d_max_mechanism === :water_in_oil
-        @test res.d_max_mm > 10_000.0
-        @test all(r -> r.d_mm < res.d_max_mm, res.sweep)
+        @test res.ceiling_mechanism === :water_in_oil
+        @test res.ceiling > 10_000.0
+        @test all(r -> r.x < res.ceiling, res.sweep)
     end
 
     @testset "Tabela 4 — d = 5500 mm é admissível" begin
-        row = only(filter(r -> r.d_mm == 5500.0, res.sweep))
-        @test row.sr_ok
-        @test row.sr ≈ 4.18 rtol = 0.005
-        @test row.leff_m ≈ 17.24 rtol = 0.005
-        @test row.lss_m  ≈ 22.98 rtol = 0.005
+        row = only(filter(r -> r.x == 5500.0, res.sweep))
+        @test row.ok
+        @test der(row, :sr) ≈ 4.18 rtol = 0.005
+        @test row.y ≈ 17.24 rtol = 0.005
+        @test der(row, :lss)  ≈ 22.98 rtol = 0.005
         # a escolha automática fica a no máximo um passo de grade da do artigo
-        @test abs(res.diameter_mm - 5500.0) <= vals[:d_step]
+        @test abs(res.x - 5500.0) <= vals[:d_step]
     end
 
     @testset "desvio vs. vaso instalado (Martins, 2017) < 10 %" begin
         # Tabela 4: real d = 5,30 m, Leff = 19,00 m, Lss = 21,81 m.
-        row = only(filter(r -> r.d_mm == 5500.0, res.sweep))
-        @test abs(row.d_mm / 1000 - 5.30) / 5.30 < 0.10
-        @test abs(row.leff_m - 19.00) / 19.00 < 0.10
-        @test abs(row.lss_m - 21.81) / 21.81 < 0.10
+        row = only(filter(r -> r.x == 5500.0, res.sweep))
+        @test abs(row.x / 1000 - 5.30) / 5.30 < 0.10
+        @test abs(row.y - 19.00) / 19.00 < 0.10
+        @test abs(der(row, :lss) - 21.81) / 21.81 < 0.10
     end
 
     @testset "o coeficiente 4,12e4 impresso no artigo seria reprovado" begin
@@ -136,12 +136,12 @@ const TABELA_3 = [
         # E o que decide continua sendo a forma publicada: o teto é o da Eq. 19 e o
         # mecanismo é água em óleo, como o artigo conclui. Se algum dia a variante
         # passar a governar, este teste cai — que é o ponto.
-        @test res.d_max_mm ≈ entradas["Eq. 19"].value
-        @test res.d_max_mechanism === :water_in_oil
+        @test res.ceiling ≈ entradas["Eq. 19"].value
+        @test res.ceiling_mechanism === :water_in_oil
 
         # O tamanho do que se está deixando passar: sob a leitura geométrica o teto
         # seria 3810 mm e TODA a Tabela 3 (5200–5950 mm) seria recusada.
         @test geometrica < 4000.0
-        @test all(r -> r.d_mm > geometrica, res.sweep)
+        @test all(r -> r.x > geometrica, res.sweep)
     end
 end
