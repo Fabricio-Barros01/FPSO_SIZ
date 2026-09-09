@@ -59,11 +59,25 @@ diferentes:
 - `d_max_mm = Inf` — o método não impõe teto. Um vaso bifásico não tem decantação
   líquido-líquido, então não tem o que limitar o diâmetro por cima;
 - `mechanism = :none` — sem teto, não há mecanismo a nomear;
-- `beta` e `aw_over_a` = `NaN` — geometria de três camadas, que só o trifásico tem.
+- `beta` e `aw_over_a` = `NaN` — há uma interface líquido-líquido a repartir, que só o
+  trifásico e o tratador têm.
 
 `NaN` e não `0.0` de propósito: zero é um β possível (fase aquosa ocupando toda a
 metade inferior, que o trifásico recusa com mensagem própria), e usá-lo como "ausente"
 faria um desenho errado passar por desenho válido. `NaN` se propaga e aparece.
+
+# `beta` é a altura do óleo **dentro da fração líquida**, e não dentro do vaso
+
+`beta = h_o/d`, e o que muda entre os vasos é **até onde vai o líquido**. No trifásico e
+no bifásico o vaso é meio cheio, e `β ∈ [0 , 0,5]`: o que sobra abaixo da metade é água.
+Num tratador eletrostático o vaso é **cheio** (α = 1, §4.9.6), e `β ∈ [0 , 1]`: o que
+sobra é água, e não há metade de gás nenhuma.
+
+**Quem consome este campo não pode deduzir as camadas dele.** Deduzir "água = 0,5 − β,
+gás = 0,5" é correto para dois dos três vasos e produz, no terceiro, uma camada de água
+de altura NEGATIVA e uma fase gasosa que o equipamento não tem. Quem quiser as faixas
+pergunta a [`cross_section`](@ref), que é despachada pelo método e sabe quantas fases o
+vaso tem — o campo aqui é o coeficiente, não a geometria.
 """
 struct VesselConstraints
     d_leff_gas::Float64
@@ -143,6 +157,53 @@ sweep_axis(::AbstractVesselMethod, p::AbstractDict) =
 # Os seis do cabeçalho deste arquivo: três da grade, três da banda de esbeltez.
 global_keys(::AbstractVesselMethod) =
     [:d_min, :d_max, :d_step, :sr_min, :sr_max, :sr_target]
+
+requirement_spec(::AbstractVesselMethod) = ("comprimento efetivo Leff", "m")
+
+"""
+Uma faixa de fase na seção transversal, do fundo para o topo.
+
+`fase` é `:water`, `:oil` ou `:gas`; `fracao` é a **altura** fracionária que ela ocupa
+(as frações somam 1). Não carrega cor: cor é apresentação e vive em `app/`.
+"""
+struct PhaseLayer
+    fase::Symbol
+    fracao::Float64
+end
+
+"""
+    cross_section(m, cons) -> Vector{PhaseLayer}
+
+Como a seção transversal se reparte entre as fases, de baixo para cima.
+
+Substitui o β que o desenho recebia. β é a altura fracionária do óleo **num vaso meio
+cheio**, e o desenho deduzia dele as três camadas — o que embutia duas hipóteses que
+nem todo vaso satisfaz: que existe fase gasosa, e que o líquido para em `d/2`.
+
+Um tratador eletrostático é **cheio de líquido**: com β no lugar de camadas, ele saía
+desenhado com metade de gás em cima, mentindo sobre o equipamento na figura que o
+usuário confere antes de assinar. É a mesma classe de defeito que o Sprint 5 corrigiu
+quando `camadas(d, β)` nasceu — corrigida uma camada abaixo, agora no core, que é quem
+sabe quantas fases o vaso tem.
+
+Vazio (o default) significa "não sei repartir": o desenho mostra o casco sem fases, que
+é honesto, em vez de inventar duas.
+"""
+cross_section(::AbstractSizingMethod, cons) = PhaseLayer[]
+
+"""
+    cross_section(m, c::VesselConstraints)
+
+Os vasos meio cheios de Stewart & Arnold: três faixas quando há interface
+líquido-líquido (`β` finito), duas quando não há — e em ambos os casos a metade de cima
+é gás, porque é o que "meio cheio" quer dizer.
+"""
+function cross_section(::AbstractSizingMethod, c::VesselConstraints)
+    isnan(c.beta) && return [PhaseLayer(:oil, 0.5), PhaseLayer(:gas, 0.5)]
+    return [PhaseLayer(:water, 0.5 - c.beta),
+            PhaseLayer(:oil, c.beta),
+            PhaseLayer(:gas, 0.5)]
+end
 
 # Estes três despacham nas RESTRIÇÕES, não no método: quem produzir um
 # `VesselConstraints` recebe o comportamento de vaso mesmo sem ser da família.
@@ -312,8 +373,24 @@ ceiling_mechanism_of(::AbstractSizingMethod, c::VesselConstraints) = c.mechanism
 grid_hint(::AbstractVesselMethod, p::AbstractDict) =
     "Verifique d_min ($(p[:d_min])), d_max ($(p[:d_max])) e passo ($(p[:d_step]))."
 
-function trace_selection!(::AbstractVesselMethod, tr::CalcTrace, best, p::AbstractDict)
-    trace!(tr, :selection, "Eq. 24", "SR", "Lss/(d/1000)", best.derivados[:sr], "–")
+"""
+    slenderness_equation(m) -> String
+
+Onde a esbeltez está definida na fonte **deste** método, para o memorial citar.
+
+Era o literal `"Eq. 24"` dentro de [`trace_selection!`](@ref), que é a numeração de
+Alves & Komesu. O memorial do vaso bifásico — cuja referência declarada é o livro —
+mandava o leitor conferir a esbeltez numa equação que não existe lá; o mesmo defeito
+que `method_reference` corrigiu no cabeçalho no Sprint 5, sobrevivendo uma linha abaixo.
+
+O default é um travessão, e não um palpite: um vaso novo prefere não citar nada a citar
+a fonte errada.
+"""
+slenderness_equation(::AbstractVesselMethod) = "—"
+
+function trace_selection!(m::AbstractVesselMethod, tr::CalcTrace, best, p::AbstractDict)
+    trace!(tr, :selection, slenderness_equation(m), "SR", "Lss/(d/1000)",
+           best.derivados[:sr], "–")
     trace!(tr, :selection, "—", "d escolhido",
            "menor |SR − $(p[:sr_target])| com $(p[:sr_min]) ≤ SR ≤ $(p[:sr_max])",
            best.x, "mm")

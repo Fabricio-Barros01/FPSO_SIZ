@@ -38,25 +38,52 @@ function _segment_area(u::Float64)
 end
 
 """
+    segment_height_fraction(a) -> h/d
+
+Altura fracionária do segmento circular inferior que ocupa a fração `a` da **seção
+inteira**, para `a` ∈ [0, 1]. Truncada nos extremos físicos fora desse domínio.
+
+É a Eq. (4.17) de Stewart & Arnold §4.9.6 — lá escrita como uma relação a resolver "por
+tentativa e erro", com o arco-cosseno em graus (`1/180`) no lugar do `1/π`. Aqui é
+bisseção sobre a mesma equação, que é exata e não depende de ler uma figura.
+
+Existe separada de [`beta_coefficient`](@ref) porque a relação área↔altura não é do vaso
+meio cheio: é do círculo. O separador trifásico a usa com `a ≤ 0,5` porque só a metade
+inferior tem líquido; um tratador **cheio de líquido** a usa com `a` até 1.
+"""
+function segment_height_fraction(a::Real)
+    f = float(a)
+    f <= 0.0 && return 0.0
+    f >= 1.0 && return 1.0
+
+    target = f * π                      # A_seg/R² desejada
+    lo, hi = 0.0, 2.0                   # u = h/R ∈ [0,2] (seção inteira)
+    for _ in 1:80                       # bisseção: 80 passos ⇒ ~1e-24 em u
+        u = 0.5 * (lo + hi)
+        _segment_area(u) < target ? (lo = u) : (hi = u)
+    end
+    return 0.5 * (lo + hi) / 2.0        # h/d = u/2
+end
+
+"""
     beta_coefficient(aw_over_a) -> β
 
 Coeficiente β da Figura 3, para `aw_over_a` ∈ [0, 0.5]. Fora desse domínio o valor é
 truncado nos extremos físicos (β = 0,5 sem água; β = 0 com a metade inferior toda de
 água).
+
+`β = 0,5 − h_w/d` porque o vaso está meio cheio: o que sobra para o óleo é a metade
+inferior menos a camada de água. A altura da água é geometria de círculo, e vem de
+[`segment_height_fraction`](@ref).
 """
 function beta_coefficient(aw_over_a::Real)
     f = float(aw_over_a)
+    # Os dois extremos saem EXATOS, e não pela bisseção: `0,5 − h(0,5)` devolve 1,1e-16
+    # em vez de zero, e um β de 1e-16 é a diferença entre "sem óleo" e "com uma camada
+    # de óleo de espessura nula, dividindo `(h_o)max` por ela" — que é `Inf` no teto.
     f <= 0.0 && return 0.5
     f >= 0.5 && return 0.0
-
-    target = f * π                      # A_seg/R² desejada
-    lo, hi = 0.0, 1.0                   # u = h_w/R ∈ [0,1] (meia seção)
-    for _ in 1:80                       # bisseção: 80 passos ⇒ ~1e-24 em u
-        u = 0.5 * (lo + hi)
-        _segment_area(u) < target ? (lo = u) : (hi = u)
-    end
-    u = 0.5 * (lo + hi)
-    return 0.5 - u / 2.0                # β = 0,5 − h_w/d,  h_w/d = u/2
+    return 0.5 - segment_height_fraction(f)
 end
 
 """

@@ -138,6 +138,84 @@ end
     end
 end
 
+@testset "a seção transversal declarada é uma repartição de verdade" begin
+    # Iterado pelo REGISTRO, pelo mesmo motivo do testset acima: um vaso novo entra
+    # nesta guarda por registrar-se.
+    #
+    # O defeito que ela barra: `VesselConstraints.beta` é a altura do óleo dentro da
+    # FRAÇÃO LÍQUIDA, e vale até 0,5 num vaso meio cheio e até 1,0 num vaso cheio. Quem
+    # deduz as camadas dele — "água = 0,5 − β, gás = 0,5" — acerta os dois primeiros
+    # vasos e produz, no tratador, uma camada de altura NEGATIVA sob uma fase gasosa que
+    # o equipamento não tem. `cross_section` existe para que ninguém precise deduzir; o
+    # que se verifica aqui é que o que ela devolve é geometria possível.
+    for eq in equipments(), met in methods_for(eq)
+        met isa FPSOSiz.AbstractVesselMethod || continue
+
+        vals = merge(defaults(FPSOSiz.stream_parameters(met)), defaults(parameters(met)))
+        entrada = try
+            FPSOSiz.case_input(met, vals)
+        catch
+            continue                       # método cuja entrada default não monta
+        end
+        k = FPSOSiz.constants(FPSOSiz.method_config(met))
+        ok, cons, _ = FPSOSiz.sizing_constraints(met, entrada,
+                                                 with_defaults(parameters(met), vals), k)
+        ok || continue
+
+        faixas = FPSOSiz.cross_section(met, cons)
+        @test !isempty(faixas)                                    # todo vaso se reparte
+        @test all(l -> isfinite(l.fracao), faixas)                # nada de NaN
+        @test all(l -> l.fracao > 0, faixas)                      # nada de altura ≤ 0
+        @test isapprox(sum(l.fracao for l in faixas), 1.0; atol = 1e-9)
+        @test all(l -> l.fase in (:water, :oil, :gas), faixas)
+        # o gás, quando existe, é a faixa de CIMA — é o que "vaso meio cheio" quer dizer
+        gas = findall(l -> l.fase === :gas, faixas)
+        @test length(gas) <= 1
+        isempty(gas) || @test only(gas) == length(faixas)
+    end
+
+    @testset "o tratador é cheio de líquido: duas faixas, nenhuma de gás" begin
+        # É o caso que a guarda acima existe para pegar, com o número explícito para que
+        # uma regressão diga QUAL foi.
+        met = ArnoldElectrostatic()
+        vals = merge(defaults(FPSOSiz.stream_parameters(met)), defaults(parameters(met)))
+        k = FPSOSiz.constants(FPSOSiz.method_config(met))
+        ok, cons, _ = FPSOSiz.sizing_constraints(
+            met, FPSOSiz.case_input(met, vals), with_defaults(parameters(met), vals), k)
+        @test ok
+
+        faixas = FPSOSiz.cross_section(met, cons)
+        @test length(faixas) == 2
+        @test [l.fase for l in faixas] == [:water, :oil]
+        @test !any(l -> l.fase === :gas, faixas)
+        # β_w = 1 − β_o, e a água fica EMBAIXO
+        @test faixas[1].fracao ≈ 1 - cons.beta
+        @test faixas[2].fracao ≈ cons.beta
+        # com os defaults do TOML: água ~10,4 % da altura, óleo ~89,6 %
+        @test isapprox(faixas[1].fracao, 0.1035; atol = 5e-4)
+        @test isapprox(faixas[2].fracao, 0.8965; atol = 5e-4)
+        # e o default da FAMÍLIA (vaso meio cheio) daria altura negativa aqui — é o
+        # defeito, escrito, para que ninguém o reintroduza achando que simplifica.
+        @test 0.5 - cons.beta < 0
+    end
+
+    @testset "os vasos meio cheios continuam com metade de gás" begin
+        for (met, n) in ((StewartArnold(), 3), (StewartArnoldTwoPhase(), 2))
+            vals = merge(defaults(FPSOSiz.stream_parameters(met)),
+                         defaults(parameters(met)))
+            k = FPSOSiz.constants(FPSOSiz.method_config(met))
+            ok, cons, _ = FPSOSiz.sizing_constraints(
+                met, FPSOSiz.case_input(met, vals),
+                with_defaults(parameters(met), vals), k)
+            @test ok
+            faixas = FPSOSiz.cross_section(met, cons)
+            @test length(faixas) == n
+            @test last(faixas).fase === :gas
+            @test last(faixas).fracao ≈ 0.5          # meio cheio
+        end
+    end
+end
+
 @testset "config/ está onde o código espera" begin
     @test isfile(joinpath(ROOT, "config", "stream.toml"))
     @test isfile(joinpath(ROOT, "config", "equipment", "separator",

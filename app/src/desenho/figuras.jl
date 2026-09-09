@@ -6,11 +6,11 @@ mas os três precisam do mesmo enquadramento: uma figura grande, uma pequena ao 
 legenda de fases, e a faixa de gráficos embaixo. Então a tela declara **áreas**, e cada
 método declara o que põe em cada uma.
 
-| área | o vaso põe | a bomba porá |
-|---|---|---|
-| `principal` | elevação com as cotas | esquema hidráulico da linha |
-| `secundaria` | seção transversal | — |
-| `grafico` | `Leff × d` e `SR × d` | `H × Q` com a curva da bomba, `v × DN` |
+| área | o vaso põe | a bomba põe | o trocador põe |
+|---|---|---|---|
+| `principal` | elevação com as cotas | esquema hidráulico da linha | corte do casco |
+| `secundaria` | seção transversal | — | — |
+| `grafico` | `Leff × d` e `SR × d` | `H × DN` e `v × DN` | `L × N` e `v × N` |
 
 As figuras chegam à tela como uma **lista**, não como quatro `id` fixos: `index.html`
 trazia `fig-vaso`, `fig-corte`, `fig-leff` e `fig-sr` escritos à mão, o que fixava
@@ -68,12 +68,87 @@ de "equipamento" seria decoração, e decoração num relatório técnico é ru�
 """
 function figuras(m::FPSOSiz.AbstractSizingMethod, st::AppState)
     eixo = FPSOSiz.sweep_axis(m, st.globais)
+    # O rótulo do eixo y sai de `requirement_spec`, e não de uma string vazia: o gráfico
+    # sem ele mostra uma curva sem dizer de quê.
+    rot, un = FPSOSiz.requirement_spec(m)
     return [figura("envelope", "grafico", "Exigência por caso, e a envelope",
                    svg_grafico_envelope(st.resultado, st.d_sel;
                                         titulo = "Exigência por caso, e a envelope",
                                         xlabel = "$(eixo.label) ($(eixo.unit))",
-                                        ylabel = ""))]
+                                        ylabel = isempty(un) ? rot : "$rot ($un)"))]
 end
+
+"""
+    _linha_cursor(st) -> (derivados, x, y)
+
+O ponto que o cursor aponta, ou vazio quando não há varredura. Existe porque as três
+famílias de figura precisam do mesmo recorte, e cada uma o obteria de um jeito.
+"""
+function _linha_cursor(st::AppState)
+    r = st.resultado
+    l = linha_sel(r, st.d_sel)
+    l === nothing && return (Dict{Symbol,Float64}(), NaN, NaN)
+    return (l.derivados, l.x, l.y)
+end
+
+"""
+    figuras(m::MoranPumpSizing, st) -> Vector{Dict}
+
+As três da bomba: o esquema da linha com as cotas, a envelope de carga e a banda de
+velocidade.
+
+O segundo gráfico é `svg_grafico_banda` com `:v` no lugar de `:sr` — a mesma função que
+o vaso usa para a esbeltez, que é o que o Sprint 7 a soltou da grandeza para permitir.
+"""
+function figuras(m::FPSOSiz.MoranPumpSizing, st::AppState; larg_principal = 900.0)
+    d, x, y = _linha_cursor(st)
+    banda = (st.globais[:v_min], st.globais[:v_max])
+    alvo = (banda[1] + banda[2]) / 2
+    return [
+        figura("linha", "principal", _titulo_bomba(x, y),
+               svg_linha_bomba(d, x, y; larg = larg_principal)),
+        figura("envelope", "grafico", "", svg_grafico_envelope(
+            st.resultado, st.d_sel;
+            titulo = "Carga do sistema exigida por caso, e a envelope",
+            xlabel = "diâmetro nominal DN (mm)", ylabel = "H (m)")),
+        figura("banda", "grafico", "", svg_grafico_banda(
+            st.resultado, st.d_sel, :v, banda, alvo;
+            titulo = "Velocidade na linha e a banda recomendada",
+            xlabel = "diâmetro nominal DN (mm)", ylabel = "v (m/s)")),
+    ]
+end
+
+_titulo_bomba(x, y) = isfinite(x) ?
+    "Linha de recalque — DN = $(Formato.inteiro(x)) mm · H = $(Formato.num(y)) m" :
+    "Linha de recalque — sem resultado"
+
+"""
+    figuras(m::SaariLMTD, st) -> Vector{Dict}
+
+As três do trocador: o corte do casco, a envelope de comprimento de tubo e a banda de
+velocidade no tubo.
+"""
+function figuras(m::FPSOSiz.SaariLMTD, st::AppState; larg_principal = 900.0)
+    d, x, y = _linha_cursor(st)
+    banda = (st.globais[:v_min], st.globais[:v_max])
+    passes = clamp(round(Int, get(d, :passes, 1.0)), 1, 2)
+    return [
+        figura("trocador", "principal", _titulo_trocador(x, y),
+               svg_trocador(d, y, passes; larg = larg_principal)),
+        figura("envelope", "grafico", "", svg_grafico_envelope(
+            st.resultado, st.d_sel;
+            titulo = "Comprimento de tubo exigido por caso, e a envelope",
+            xlabel = "tubos por passe", ylabel = "L (m)")),
+        figura("banda", "grafico", "", svg_grafico_banda(
+            st.resultado, st.d_sel, :v, banda, (banda[1] + banda[2]) / 2;
+            titulo = "Velocidade no tubo e a banda da Tabela 3.1",
+            xlabel = "tubos por passe", ylabel = "v (m/s)")),
+    ]
+end
+
+_titulo_trocador(x, y) = isfinite(x) ?
+    "Casco-e-tubos — $(Formato.inteiro(x)) tubos/passe · L = $(Formato.num(y)) m" :
+    "Casco-e-tubos — sem resultado"
 
 """
     figuras(m::AbstractVesselMethod, st) -> Vector{Dict}
@@ -84,7 +159,7 @@ A banda do segundo gráfico vem de `st.globais`, que são os ajustes que o usuá
 controla — e não de constantes daqui. Se ele apertar a banda, o sombreado acompanha.
 """
 function figuras(m::FPSOSiz.AbstractVesselMethod, st::AppState)
-    g = geometry_from(st.resultado, st.d_sel, beta_atual(st))
+    g = geometry_from(st.resultado, st.d_sel, camadas_atual(st), beta_atual(st))
     banda = (st.globais[:sr_min], st.globais[:sr_max])
     return [
         figura("vaso", "principal", titulo_elevacao(g), svg_elevacao(g)),
@@ -123,8 +198,15 @@ figuras_grandes(st::AppState) = figuras_grandes(st.metodo, st)
 
 figuras_grandes(m::FPSOSiz.AbstractSizingMethod, st::AppState) = figuras(m, st)
 
+# Os dois esquemas nascem em largura de tela; para o relatório eles só crescem — a
+# geometria é fixa e a escala é do `viewBox`, então não há o que redesenhar.
+figuras_grandes(m::FPSOSiz.MoranPumpSizing, st::AppState) =
+    figuras(m, st; larg_principal = 1100.0)
+figuras_grandes(m::FPSOSiz.SaariLMTD, st::AppState) =
+    figuras(m, st; larg_principal = 1100.0)
+
 function figuras_grandes(m::FPSOSiz.AbstractVesselMethod, st::AppState)
-    g = geometry_from(st.resultado, st.d_sel, beta_atual(st))
+    g = geometry_from(st.resultado, st.d_sel, camadas_atual(st), beta_atual(st))
     banda = (st.globais[:sr_min], st.globais[:sr_max])
     return [
         figura("vaso", "principal", titulo_elevacao(g), svg_elevacao(g; larg = 1100)),

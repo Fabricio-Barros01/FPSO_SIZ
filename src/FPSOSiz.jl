@@ -58,6 +58,18 @@ include("sizing/separator/drag.jl")
 include("sizing/gas_capacity.jl")
 include("sizing/separator/stewart_arnold.jl")
 include("sizing/knockout/two_phase.jl")
+# Terceiro vaso da família: sem fase gasosa, e com a generalização de §4.9.4-4.9.6.
+include("sizing/treater/electrostatic.jl")
+
+# Os dois que NÃO são vasos. Nenhum dos dois produz `VesselConstraints`, nenhum dos dois
+# tem esbeltez, e é por isso que estão aqui: o contrato de `engine/contract.jl` só vale o
+# que promete se alguém de fora da família dos vasos o preencher.
+include("sizing/pump/hydraulics.jl")
+include("sizing/pump/moran.jl")
+# Coeficiente do lado do casco: física de feixe, e por isso fora do método — do mesmo
+# jeito que `hydraulics.jl` está fora de `moran.jl`.
+include("sizing/exchanger/bell_delaware.jl")
+include("sizing/exchanger/shell_and_tube.jl")
 
 include("engine/single.jl")
 include("engine/envelope.jl")
@@ -81,15 +93,37 @@ export EnvelopeResult, EnvelopeRow, trace_block_order
 # --- o contrato genérico (src/engine/contract.jl)
 export SweepAxis, ResultField, SweepColumn, column_value, der
 export case_input, sweep_axis, requirement, governing_of, ceiling_of, derived
-export admissible, objective, envelope_params, selection_message, per_constraint
+export admissible, case_admissible, objective, envelope_params, selection_message
+export per_constraint, requirement_spec
 export result_fields, sweep_columns, trace_blocks, governing_label, global_keys
+export PhaseLayer, cross_section
 export size_single, sweep_row, ceiling_mechanism_of, grid_hint, trace_selection!
 
 # --- vasos registrados
 export AbstractVesselMethod, Separator, StewartArnold, VesselConstraints
 export KnockoutDrum, StewartArnoldTwoPhase, gas_capacity_dleff
 export sizing_constraints, method_config, method_reference, lss_from, size_vessel
-export beta_coefficient, water_area_fraction
+export beta_coefficient, water_area_fraction, segment_height_fraction
+export slenderness_equation
+
+# --- os equipamentos que não são vasos
+export CentrifugalPump, MoranPumpSizing, PumpConstraints
+export reynolds_pipe, colebrook_white, darcy_friction
+export straight_run_head, fittings_head, antoine_pressure
+export ShellTubeExchanger, SaariLMTD, ExchangerDuty, ExchangerConstraints
+export lmtd, f_correction_1_2, nusselt_dittus_boelter, overall_u
+export effectiveness_ntu_counterflow
+export ShellGeometry, bell_delaware, crossflow_area, shell_reynolds, colburn_ideal
+export h_ideal, j_baffle_cut, j_leakage, j_bypass, j_spacing, j_laminar
+export leakage_areas, baffle_clearance, layout_pitches
+# O tratador NÃO exporta um tipo de restrições próprio nem função de campo elétrico:
+# ele produz `VesselConstraints` como os outros vasos, e o campo elétrico entra pelo
+# `dm_water` e por mais nada — ver a nota de limitação em `config/equipment/treater/`.
+# Havia aqui `TreaterConstraints`, `dipole_force`, `coalescence_time` e
+# `taylor_field_limit`, nenhum dos quatro definido em lugar nenhum: resto de um modelo
+# de campo que a referência disponível não sustenta. Exportar nome que não existe
+# promete uma API na saída de `names(FPSOSiz)` e entrega `UndefVarError` a quem a usar.
+export ElectrostaticTreater, ArnoldElectrostatic
 export converge_drag, terminal_velocity, reynolds, drag_coefficient, souders_brown
 export size_envelope, governing_summary, mechanism_label
 
@@ -118,6 +152,12 @@ function __init__()
     register!(StewartArnold())
     register!(KnockoutDrum())
     register!(StewartArnoldTwoPhase())
+    register!(ElectrostaticTreater())
+    register!(ArnoldElectrostatic())
+    register!(CentrifugalPump())
+    register!(MoranPumpSizing())
+    register!(ShellTubeExchanger())
+    register!(SaariLMTD())
     return nothing
 end
 

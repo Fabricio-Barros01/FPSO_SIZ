@@ -95,7 +95,7 @@ pode precisar.
 """
 function rotulos_zona!(p, t, g)
     x_rot = g.lss_m * 0.30
-    nivel = g.d_m / 2
+    nivel = nivel_liquido(g)
 
     for c in g.camadas
         if altura(c) > g.d_m * 0.055
@@ -150,12 +150,18 @@ end
     internos!(p, t, g)
 
 Internos esquemáticos: defletor de entrada, extrator de névoa e a **placa vertedora**
-(weir) do óleo, posicionada em `Leff` — que é justamente a distância que a Eq. 22
-dimensiona. O modelo assume o vaso meio cheio e sem controladores de nível, então os
-internos são representativos, não dimensionados.
+(weir), posicionada em `Leff` — que é justamente a distância que a Eq. 22 dimensiona. O
+modelo não dimensiona internos nem controladores de nível, então eles são
+representativos.
+
+**O que só existe no céu de gás não se desenha num vaso que não tem um.** O extrator de
+névoa e o defletor de entrada separam gotícula arrastada PELO GÁS; num tratador
+eletrostático, cheio de líquido, eles não existem — desenhá-los seria prometer na figura
+um interno que o equipamento não tem e que o método não dimensionou. A placa vertedora
+sobe até o nível de verdade, e não até `d/2`.
 """
 function internos!(p, t, g)
-    nivel = g.d_m / 2
+    nivel = nivel_liquido(g)
 
     e = g.d_m * 0.012
     push!(p, poligono(t, [(g.leff_m - e, 0.0), (g.leff_m + e, 0.0),
@@ -163,6 +169,8 @@ function internos!(p, t, g)
                       preenche = Formato.INTERNO))
     push!(p, texto(t, (g.leff_m, nivel), "placa vertedora";
                    tam = 10, cor = Formato.INTERNO, base = "auto", dy = -5))
+
+    tem_gas(g) || return p
 
     x, e2 = g.lss_m * 0.07, g.d_m * 0.010
     push!(p, poligono(t, [(x - e2, g.d_m * 0.50), (x + e2, g.d_m * 0.50),
@@ -179,14 +187,37 @@ function internos!(p, t, g)
     return p
 end
 
-"Bocais de entrada e saída, esquemáticos."
+"""
+    bocais!(p, t, g)
+
+Bocais de entrada e saída, esquemáticos — **nomeados pelas fases que o vaso tem**.
+
+Eram quatro literais: entrada, gás, óleo e água. Num knockout bifásico isso desenhava um
+bocal de óleo e outro de água em cima de um vaso que não tem nem um nem outro, e num
+tratador cheio de líquido desenhava uma saída de gás. Agora o nome sai das camadas: a
+saída de topo é a fase de cima, a de fundo é a de baixo, e a saída intermediária só
+aparece quando há de fato uma terceira fase a tirar do vaso.
+"""
 function bocais!(p, t, g)
     d, L = g.d_m, g.lss_m
     w, h = d * 0.035, d * 0.07
-    caixas = ((L * 0.03, d, "entrada", d * 1.10),        # topo esquerdo
-              (L * 0.97, d, "gás", d * 1.10),            # topo direito
-              (L * 0.99, -h, "óleo", -d * 0.12),         # fundo direito (após a placa)
-              (L * 0.05, -h, "água", -d * 0.12))         # fundo esquerdo
+    isempty(g.camadas) && return p
+
+    baixo = lowercase(first(g.camadas).nome)
+    topo  = lowercase(last(g.camadas).nome)
+    # A fase líquida mais alta: num trifásico é o óleo, que sai depois da placa vertedora.
+    i_liq = findlast(c -> c.nome != "GÁS", g.camadas)
+    meio_ = i_liq === nothing ? "" : lowercase(g.camadas[i_liq].nome)
+
+    caixas = Tuple{Float64,Float64,String,Float64}[
+        (L * 0.03, d, "entrada", d * 1.10),               # topo esquerdo
+        (L * 0.97, d, topo, d * 1.10),                    # topo direito
+        (L * 0.05, -h, baixo, -d * 0.12),                 # fundo esquerdo
+    ]
+    # Só quando ela não repete uma das outras duas: num bifásico o líquido já sai pelo
+    # fundo, e num tratador o óleo já sai pelo topo.
+    meio_ in ("", baixo, topo) ||
+        push!(caixas, (L * 0.99, -h, meio_, -d * 0.12))   # fundo direito
 
     for (x, y, nome, y_rot) in caixas
         push!(p, poligono(t, [(x - w, y), (x + w, y), (x + w, y + h), (x - w, y + h)];
@@ -214,7 +245,10 @@ function svg_corte(g; larg::Real = 460.0)
     # A folga à direita (até 2,6 R) é a coluna das cotas — dimensionada para o rótulo
     # mais largo, "nível = 3,15 m (50 %)".
     t = tela_proporcional(-R * 1.12, -R * 0.10, R * 2.60, g.d_m * 1.06; larg)
-    nivel = g.d_m / 2
+    # O nível sai das CAMADAS, e não de `d/2`. O literal valia para os dois vasos meio
+    # cheios e mentia no tratador eletrostático, que é cheio de líquido: a figura
+    # anunciava "50 %" de um vaso 100 % cheio.
+    nivel = nivel_liquido(g)
 
     p = String[]
     for c in g.camadas
@@ -244,7 +278,8 @@ function svg_corte(g; larg::Real = 460.0)
         c.nome == "GÁS" && continue          # o gás ocupa o que sobra; não se cota
         push!(cotas, (meio(c), "$(c.nome) = $(Formato.num(altura(c))) m", c.cor))
     end
-    push!(cotas, (nivel, "nível = $(Formato.num(nivel)) m  (50 %)", Formato.INTERNO))
+    pct = g.d_m > 0 ? round(Int, 100 * nivel / g.d_m) : 0
+    push!(cotas, (nivel, "nível = $(Formato.num(nivel)) m  ($(pct) %)", Formato.INTERNO))
     ys_px = espalhar([paray(t, c[1]) for c in cotas], 15.0)
 
     for ((y, rotulo, cor), y_px) in zip(cotas, ys_px)

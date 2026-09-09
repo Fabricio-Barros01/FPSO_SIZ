@@ -7,7 +7,7 @@ pediria sozinha. O segundo é o que o memorial mostra caso a caso (a linha "→ 
 no fim de cada bloco) e o que torna visível a folga que o envelope impôs.
 
 O corpo não cita nenhuma grandeza: é `sweep_axis` → `requirement` → `derived` →
-`admissible` → `objective`, os hooks de `contract.jl`. Até o Sprint 6 ele se chamava
+`case_admissible`/`admissible` → `objective`, os hooks de `contract.jl`. Até o Sprint 6 ele se chamava
 `size_vessel` e vivia em `sizing/constraints.jl`, com o `Lss` e a esbeltez escritos no
 corpo. Continua existindo com esse nome — [`size_vessel`](@ref) é hoje um apelido da
 família dos vasos —, mas quem não é vaso adota o mesmo caminho com uma linha.
@@ -64,8 +64,9 @@ function sweep_row(m::AbstractSizingMethod, x::Real, cons, k::AbstractDict,
     y   = requirement(m, x, cons)
     gov = governing_of(m, x, cons)
     d   = derived(m, x, y, gov, cons, k, p)
-    return SweepRow(x, y, per_constraint(m, x, cons), d, gov,
-                    x <= ceiling_of(m, cons) && admissible(m, x, d, p))
+    ok  = x <= ceiling_of(m, cons) && case_admissible(m, x, cons, p) &&
+          admissible(m, x, d, p)
+    return SweepRow(x, y, per_constraint(m, x, cons), d, gov, ok)
 end
 
 """

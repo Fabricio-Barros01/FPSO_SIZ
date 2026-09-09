@@ -20,6 +20,11 @@
 
 # ---------------------------------------------------------------------------
 # Prontos
+#
+# Cada um destes declara a fonte no subtítulo, e é ela que o memorial exportado cita
+# (`method_reference`). Onde a fonte não cobre tudo, o limite está escrito no TOML do
+# método e chega ao usuário pelo `note` do campo que carrega a premissa — o `h_casco` do
+# trocador e o `dm_water` do tratador são os dois casos.
 # ---------------------------------------------------------------------------
 
 [[box]]
@@ -40,34 +45,37 @@ estado    = "ativo"
 equipment = "knockout"
 method    = "stewart_arnold_2f"
 
+[[box]]
+id        = "vaso-eletrostatico"
+titulo    = "Tratador eletrostático"
+subtitulo = "Emulsão água-óleo, vaso cheio de líquido — Stewart & Arnold (2008), §4.7-4.9"
+icone     = "eletrostatico"
+estado    = "ativo"
+equipment = "treater"
+method    = "arnold_electrostatic"
+
+[[box]]
+id        = "bomba-centrifuga"
+titulo    = "Bomba centrífuga"
+subtitulo = "Carga do sistema, NPSH e potência — Moran (CEP, 2016)"
+icone     = "bomba"
+estado    = "ativo"
+equipment = "pump"
+method    = "moran"
+
+[[box]]
+id        = "trocador-calor"
+titulo    = "Trocador casco-e-tubos"
+subtitulo = "LMTD com fator F, U das resistências — Saari (LUT). Sem análise pinch"
+icone     = "trocador"
+estado    = "ativo"
+equipment = "exchanger"
+method    = "saari_lmtd"
+
 # ---------------------------------------------------------------------------
 # Planejados. `motivo` é o que o cartão diz em vez de simplesmente não responder ao
 # clique — um botão morto sem explicação é pior que um botão ausente.
 # ---------------------------------------------------------------------------
-
-[[box]]
-id        = "bomba-centrifuga"
-titulo    = "Bombas centrífugas"
-subtitulo = "Carga do sistema, ponto de operação e NPSH"
-icone     = "bomba"
-estado    = "em_breve"
-motivo    = "Fonte disponível (Moran, CEP 2016), mas o resultado tem outra forma: não há varredura em diâmetro nem esbeltez. Precisa de tela própria."
-
-[[box]]
-id        = "trocador-calor"
-titulo    = "Trocadores de calor"
-subtitulo = "LMTD e ε-NTU, coeficiente global e incrustação"
-icone     = "trocador"
-estado    = "em_breve"
-motivo    = "Fonte disponível (Saari, LUT). A análise pinch é outra disciplina — síntese de rede — e ainda não tem fonte em References/."
-
-[[box]]
-id        = "vaso-eletrostatico"
-titulo    = "Vaso eletrostático"
-subtitulo = "Tratamento de emulsão água-óleo por campo elétrico"
-icone     = "eletrostatico"
-estado    = "em_breve"
-motivo    = "Falta referência de dimensionamento: o volume de separadores só cita tratadores eletrostáticos de passagem. Precisa do volume de Emulsions and Oil Treating da mesma série."
 
 [[box]]
 id        = "controle-separador"

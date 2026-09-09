@@ -45,6 +45,8 @@ include("formato.jl")
 include("desenho/svg.jl")
 include("desenho/geometria.jl")
 include("desenho/vaso.jl")
+# Os esquemas dos dois equipamentos que não são vasos — diagramas, não desenhos de escala.
+include("desenho/linha.jl")
 include("desenho/graficos.jl")
 
 include("state.jl")

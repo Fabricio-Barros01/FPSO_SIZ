@@ -108,14 +108,20 @@ function size_envelope(eq::AbstractEquipment, m::AbstractSizingMethod, cases::Ca
         y, idx = findmax(per_case_y)
         gov = governing_of(m, x, conss[idx])
         d   = derived(m, x, y, gov, conss[idx], k, p_env)
-        push!(rows, EnvelopeRow(x, y, d, gov, names[idx], per_case_y,
-                                x <= teto && admissible(m, x, d, p_env)))
+        # A admissibilidade tem três camadas, e as três são necessárias: o teto (o
+        # menor entre os casos, já resolvido acima), o que CADA caso aceita em `x` — a
+        # banda de velocidade de uma linha é por vazão, e a vazão é do caso — e o que o
+        # conjunto aceita, que só o governante sabe dizer. Ver `case_admissible`.
+        ok = x <= teto && all(c -> case_admissible(m, x, c, p_env), conss) &&
+             admissible(m, x, d, p_env)
+        push!(rows, EnvelopeRow(x, y, d, gov, names[idx], per_case_y, ok))
     end
 
     admissivel = filter(r -> r.ok, rows)
 
     if isempty(admissivel)
-        msg = selection_message(m, rows, teto, p_env; mechanism = mecan)
+        msg = selection_message(m, rows, teto, p_env; mechanism = mecan) *
+              _sem_intersecao(m, eixo, conss, names, p_env)
         return infeasible_envelope(
             "Não há equipamento que atenda simultaneamente aos $(length(names)) " *
             "casos. " * msg;
@@ -130,6 +136,44 @@ function size_envelope(eq::AbstractEquipment, m::AbstractSizingMethod, cases::Ca
                           best.driver_case, teto, names[i_teto], mecan, names, rows,
                           slack, per_case)
 end
+
+"""
+    _sem_intersecao(m, eixo, conss, names, p) -> String
+
+A frase que só o motor pode escrever: **cada caso, sozinho, tem solução, e elas não se
+cruzam.**
+
+Existe porque [`selection_message`](@ref) não alcança esse diagnóstico. Ela recebe as
+linhas da varredura, e os derivados de cada linha vêm do caso **governante** — o de maior
+exigência naquele ponto. Quando a recusa vem de outro caso (uma vazão menor que deixa a
+velocidade cair abaixo do piso, um teto de decantação mais baixo), o método olha para os
+números do governante, não vê nada de errado com eles, e escreve uma frase que não
+corresponde ao que houve. Foi exatamente o que aconteceu com a primeira versão do exemplo
+de bomba: a mensagem acusava cavitação com folga de NPSH de +26 m.
+
+O motor tem a informação que falta — as restrições de todos os casos — e a pergunta é
+genérica: as duas camadas que variam por caso são o teto e [`case_admissible`](@ref).
+Devolve string vazia quando não é esse o problema, para não acrescentar ruído ao
+diagnóstico que o método já deu.
+"""
+function _sem_intersecao(m::AbstractSizingMethod, eixo::SweepAxis, conss, names,
+                         p::AbstractDict)
+    length(conss) >= 2 || return ""
+    aceitos = [[x for x in eixo.values
+                if x <= ceiling_of(m, c) && case_admissible(m, x, c, p)] for c in conss]
+    any(isempty, aceitos) && return ""          # há caso sem solução: outro problema
+    isempty(intersect(aceitos...)) || return ""  # cruzam-se: outro problema
+
+    faixas = [string("'", n, "' aceita ", _faixa_texto(s), " ", eixo.unit)
+              for (n, s) in zip(names, aceitos)]
+    return " Isolado, cada caso tem $(eixo.label) admissível, mas as faixas não se " *
+           "cruzam: " * join(faixas, "; ") * ". Como o equipamento é um só, amplie a " *
+           "banda, ou trate os casos em equipamentos separados."
+end
+
+_faixa_texto(s) = length(s) == 1 ? string(round(only(s), digits = 2)) :
+                  string(round(minimum(s), digits = 2), "–",
+                         round(maximum(s), digits = 2))
 
 "O menor teto entre os casos, e o índice do caso que o impôs."
 function _menor_teto(m::AbstractSizingMethod, conss)

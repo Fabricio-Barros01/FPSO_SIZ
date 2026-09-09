@@ -11,6 +11,9 @@ using FPSOSiz
     @testset "casos"         begin include("cases.jl")        end
     @testset "caso-ouro 3φ"  begin include("golden_alves_komesu.jl") end
     @testset "caso-ouro 2φ"  begin include("golden_knockout.jl")     end
+    @testset "caso-ouro bomba"    begin include("golden_moran.jl")  end
+    @testset "caso-ouro trocador" begin include("golden_saari.jl")  end
+    @testset "tratador"      begin include("treater.jl")      end
     @testset "envelope"      begin include("envelope.jl")     end
     @testset "registro"      begin include("registry.jl")     end
     @testset "arquitetura"   begin include("architecture.jl") end

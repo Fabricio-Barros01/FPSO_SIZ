@@ -216,5 +216,8 @@ tipo abstrato — porque `size_equipment` é o ponto de extensão declarado em
 `src/interfaces.jl`: um equipamento que não seja um vaso (uma bomba, um trocador) tem
 de poder escrever o seu do zero.
 """
+# A esbeltez é a Eq. 24 do artigo — a numeração deste método, e não a de todo vaso.
+slenderness_equation(::StewartArnold) = "Eq. 24"
+
 size_equipment(eq::Separator, m::StewartArnold, s::StreamState, params::AbstractDict) =
     size_vessel(eq, m, s, params)

@@ -102,7 +102,7 @@ end
         @test st.status_ok
         @test st.d_sel == st.resultado.x
 
-        g = A.geometry_from(st.resultado, st.d_sel, A.beta_atual(st))
+        g = A.geometry_from(st.resultado, st.d_sel, A.camadas_atual(st), A.beta_atual(st))
         for svg in (A.svg_elevacao(g), A.svg_corte(g),
                     A.svg_grafico_envelope(st.resultado, st.d_sel),
                     A.svg_grafico_banda(st.resultado, st.d_sel, :sr, (3.0, 5.0), 4.0))
@@ -117,17 +117,22 @@ end
     @testset "geometria do desenho acompanha o resultado" begin
         st = A.AppState(); A.dimensionar!(st)
         r = st.resultado
-        g = A.geometry_from(r, st.d_sel, A.beta_atual(st))
+        g = A.geometry_from(r, st.d_sel, A.camadas_atual(st), A.beta_atual(st))
         @test g.ok
         @test g.d_m ≈ r.x / 1000
         @test g.lss_m ≈ FPSOSiz.der(r, :lss)
         @test g.sr ≈ FPSOSiz.der(r, :sr)
 
-        # as camadas fecham no vaso meio cheio
-        hw, ho, nivel = A.layer_heights(g.d_m, g.beta)
-        @test hw + ho ≈ nivel
-        @test nivel ≈ g.d_m / 2
-        @test hw >= 0 && ho >= 0
+        # as camadas fecham no vaso meio cheio — conferido nas CAMADAS, e não numa
+        # dedução a partir de β. `layer_heights(d, β)` fazia essa dedução e valia só
+        # para vaso meio cheio; ver `camadas` em `geometria.jl`.
+        agua, oleo = g.camadas[1], g.camadas[2]
+        @test agua.y0 ≈ 0.0
+        @test agua.y1 ≈ oleo.y0                     # empilhadas sem vão nem sobreposição
+        @test A.altura(agua) >= 0 && A.altura(oleo) >= 0
+        @test A.nivel_liquido(g) ≈ g.d_m / 2        # meio cheio
+        @test A.altura(oleo) ≈ g.beta * g.d_m       # β É a altura do óleo
+        @test last(g.camadas).y1 ≈ g.d_m            # o topo fecha no casco
 
         # o casco é fechado e simétrico nos tampos
         l0, r0 = A.hull_profile(g.d_m, g.lss_m, g.d_m / 2)
@@ -141,7 +146,7 @@ end
         st = A.AppState(); A.dimensionar!(st)
         for row in st.resultado.rows
             st.d_sel = row.x
-            g = A.geometry_from(st.resultado, st.d_sel, A.beta_atual(st))
+            g = A.geometry_from(st.resultado, st.d_sel, A.camadas_atual(st), A.beta_atual(st))
             @test g.ok
             @test isfinite(g.lss_m) && g.lss_m > 0
             @test startswith(A.svg_elevacao(g), "<svg")
@@ -168,7 +173,7 @@ end
         @test !st.status_ok
         @test occursin("ΔSG", st.status)
 
-        g = A.geometry_from(st.resultado, st.d_sel, A.beta_atual(st))
+        g = A.geometry_from(st.resultado, st.d_sel, A.camadas_atual(st), A.beta_atual(st))
         @test !g.ok                                  # desenha vazio, sem exceção
         @test startswith(A.svg_elevacao(g), "<svg")  # e ainda produz documento válido
         @test valor_cartao(st, "Diâmetro") == "—"
@@ -639,20 +644,41 @@ end
         # sai com uma linha ilegível no meio de trinta legíveis. Foi o que aconteceu ao
         # acrescentar a variante geométrica da Eq. 21 ("d_max (óleo em água, geom.)",
         # 27 caracteres numa coluna de 24).
-        st = A.AppState(); A.dimensionar!(st)
         larguras = ("block" => 10, "eq" => 10, "var" => 24, "unit" => 8)
 
-        for res in st.resultado.per_case, e in res.trace.entries
-            for (campo, largura) in larguras
-                texto = string(getfield(e, Symbol(campo)))
-                @test textwidth(texto) < largura     # `<`, não `<=`: sobra o separador
-            end
-            # e o valor formatado também tem de caber
-            @test textwidth(A.Formato.num(e.value, 5)) < 16
+        # Iterado pelo REGISTRO, e não só no separador default. A versão anterior
+        # rodava com `A.AppState()` — o trifásico — e por isso não via os rastros da
+        # bomba, do trocador nem do tratador. Foi o que deixou passar o `"Branan 2-18"`
+        # do bloco de Bell-Delaware: onze caracteres numa coluna de dez, colando no nome
+        # da variável em todas as oito linhas do bloco. É a mesma lacuna de cobertura
+        # que deixou passar o desenho do tratador.
+        for (arquivo, eq, met) in (
+                ("exemplo_alves_komesu.toml", FPSOSiz.Separator(), FPSOSiz.StewartArnold()),
+                ("exemplo_knockout.toml", FPSOSiz.KnockoutDrum(),
+                 FPSOSiz.StewartArnoldTwoPhase()),
+                ("exemplo_tratador.toml", FPSOSiz.ElectrostaticTreater(),
+                 FPSOSiz.ArnoldElectrostatic()),
+                ("exemplo_bomba.toml", FPSOSiz.CentrifugalPump(),
+                 FPSOSiz.MoranPumpSizing()),
+                ("exemplo_trocador.toml", FPSOSiz.ShellTubeExchanger(),
+                 FPSOSiz.SaariLMTD()))
 
-            # a conferência de fato: nenhuma coluna encosta na seguinte
-            linha = A.linha_memorial(e)
-            @test !occursin(r"\S{25,}", linha[1:min(end, 60)])
+            st = A.AppState(; case_file = arquivo, equipamento = eq, metodo = met)
+            A.dimensionar!(st)
+            @test st.status_ok
+
+            for res in st.resultado.per_case, e in res.trace.entries
+                for (campo, largura) in larguras
+                    texto = string(getfield(e, Symbol(campo)))
+                    @test textwidth(texto) < largura   # `<`, não `<=`: sobra o separador
+                end
+                # e o valor formatado também tem de caber
+                @test textwidth(A.Formato.num(e.value, 5)) < 16
+
+                # a conferência de fato: nenhuma coluna encosta na seguinte
+                linha = A.linha_memorial(e)
+                @test !occursin(r"\S{25,}", linha[1:min(end, 60)])
+            end
         end
     end
 
@@ -817,7 +843,7 @@ end
             # coordenadas — e um SVG com NaN num atributo é descartado pelo navegador
             # em silêncio: a figura some, com status 200 e sem erro em lugar nenhum.
             @test isnan(A.beta_atual(st))
-            g = A.geometry_from(st.resultado, st.d_sel, A.beta_atual(st))
+            g = A.geometry_from(st.resultado, st.d_sel, A.camadas_atual(st), A.beta_atual(st))
             @test [cam.nome for cam in g.camadas] == ["LÍQUIDO", "GÁS"]
             @test g.camadas[1].y1 ≈ g.d_m / 2      # meio cheio, como o trifásico
 
@@ -875,7 +901,7 @@ end
 
     @testset "o trifásico continua com três camadas e com β" begin
         st = A.AppState(); A.dimensionar!(st)
-        g = A.geometry_from(st.resultado, st.d_sel, A.beta_atual(st))
+        g = A.geometry_from(st.resultado, st.d_sel, A.camadas_atual(st), A.beta_atual(st))
         @test [cam.nome for cam in g.camadas] == ["ÁGUA", "ÓLEO", "GÁS"]
         @test isfinite(A.beta_atual(st))
         @test occursin("β = hₒ/d", A.svg_corte(g))
@@ -891,12 +917,147 @@ end
         st = A.AppState()
         @test st.cons_gov === nothing
         @test isnan(A.beta_atual(st))
+        @test isempty(A.camadas_atual(st))       # sem repartição também é resposta
         for c in st.casos
             c.enabled = false
         end
         A.dimensionar!(st)
         @test st.cons_gov === nothing
         @test isnan(A.beta_atual(st))
+        @test isempty(A.camadas_atual(st))
+    end
+
+    @testset "o tratador é desenhado como vaso CHEIO, e não meio cheio" begin
+        # O defeito que este testset fixa, e que passou por todos os outros: o desenho
+        # deduzia três camadas de β (`h_w = (0,5 − β)·d`, gás na metade de cima), o que é
+        # a geometria do vaso MEIO CHEIO. O tratador é cheio de líquido, e lá β vale
+        # 0,8965 — a dedução dava água com altura −0,3965·d e um céu de gás inventado.
+        #
+        # Nada disso aparecia como erro: um SVG com coordenada negativa desenha, só que
+        # errado. Só um teste que olhe a GEOMETRIA pega isto.
+        st = A.AppState(; case_file = "exemplo_tratador.toml",
+                          equipamento = FPSOSiz.ElectrostaticTreater(),
+                          metodo = FPSOSiz.ArnoldElectrostatic())
+        A.dimensionar!(st)
+        @test st.status_ok
+
+        g = A.geometry_from(st.resultado, st.d_sel, A.camadas_atual(st), A.beta_atual(st))
+
+        @testset "duas faixas, nenhuma de gás, nenhuma altura negativa" begin
+            @test [cam.nome for cam in g.camadas] == ["ÁGUA", "ÓLEO"]
+            @test !any(c -> c.nome == "GÁS", g.camadas)
+            @test !A.tem_gas(g)
+            for c in g.camadas
+                @test c.y0 >= 0.0
+                @test A.altura(c) > 0.0             # ← a asserção que faltava
+            end
+            @test g.camadas[1].y0 ≈ 0.0
+            @test g.camadas[1].y1 ≈ g.camadas[2].y0
+            @test last(g.camadas).y1 ≈ g.d_m        # o líquido vai até o topo
+        end
+
+        @testset "o nível é o topo do vaso, e a figura não diz 50 %" begin
+            @test A.nivel_liquido(g) ≈ g.d_m
+            corte = A.svg_corte(g)
+            @test occursin("100 %", corte)
+            @test !occursin("(50 %)", corte)
+        end
+
+        @testset "os SVGs saem íntegros" begin
+            for svg in (A.svg_elevacao(g), A.svg_corte(g))
+                @test startswith(svg, "<svg")
+                @test count("<", svg) == count(">", svg)
+                @test !occursin("NaN", svg)
+                @test !occursin("Sem resultado", svg)
+                # nem no desenho, nem na cota, nem no bocal
+                @test !occursin("GÁS", svg)
+                @test !occursin("gás", svg)
+                @test !occursin("extrator de névoa", svg)
+            end
+        end
+
+        @testset "a legenda promete só as fases que a figura mostra" begin
+            leg = A.legenda_fases(g)
+            @test occursin("água", leg)
+            @test occursin("óleo", leg)
+            @test !occursin("gás", leg)
+        end
+
+        @testset "e as figuras inteiras atravessam" begin
+            for f in A.figuras(st)
+                @test startswith(f["svg"], "<svg")
+                @test !occursin("NaN", f["svg"])
+                @test !occursin("aria-label=\"\"", f["svg"])
+                @test !occursin("separador", lowercase(f["titulo"]))
+            end
+        end
+    end
+
+    @testset "a bomba atravessa a interface inteira" begin
+        st = A.AppState(; case_file = "exemplo_bomba.toml",
+                          equipamento = FPSOSiz.CentrifugalPump(),
+                          metodo = FPSOSiz.MoranPumpSizing())
+        A.dimensionar!(st)
+        @test st.status_ok
+
+        # Uma bomba não é vaso: não tem camadas, não tem β, e não pode ganhar um corte.
+        @test isnan(A.beta_atual(st))
+        @test isempty(A.camadas_atual(st))
+
+        figs = A.figuras(st)
+        ids = [f["id"] for f in figs]
+        @test ids == ["linha", "envelope", "banda"]
+        @test !("corte" in ids)                 # nada de seção transversal numa linha
+        for f in figs
+            @test startswith(f["svg"], "<svg")
+            @test count("<", f["svg"]) == count(">", f["svg"])
+            @test !occursin("NaN", f["svg"])
+            @test !occursin("aria-label=\"\"", f["svg"])
+            for palavra in ("separador", "esbeltez", "decantação")
+                @test !occursin(palavra, lowercase(f["svg"]))
+            end
+        end
+
+        @testset "exportar carrega a fonte da bomba" begin
+            r = A.exportar!(st)
+            @test r.ok
+            txt = read(only(filter(f -> endswith(f, "_memorial.txt"), r.arquivos)),
+                       String)
+            @test occursin("Moran", txt)
+            @test !occursin("Alves & Komesu", txt)
+        end
+    end
+
+    @testset "o trocador atravessa a interface inteira" begin
+        st = A.AppState(; case_file = "exemplo_trocador.toml",
+                          equipamento = FPSOSiz.ShellTubeExchanger(),
+                          metodo = FPSOSiz.SaariLMTD())
+        A.dimensionar!(st)
+        @test st.status_ok
+
+        @test isnan(A.beta_atual(st))
+        @test isempty(A.camadas_atual(st))
+
+        figs = A.figuras(st)
+        ids = [f["id"] for f in figs]
+        @test ids == ["trocador", "envelope", "banda"]
+        @test !("corte" in ids)
+        for f in figs
+            @test startswith(f["svg"], "<svg")
+            @test count("<", f["svg"]) == count(">", f["svg"])
+            @test !occursin("NaN", f["svg"])
+            @test !occursin("aria-label=\"\"", f["svg"])
+            @test !occursin("separador", lowercase(f["svg"]))
+        end
+
+        @testset "exportar carrega a fonte do trocador" begin
+            r = A.exportar!(st)
+            @test r.ok
+            txt = read(only(filter(f -> endswith(f, "_memorial.txt"), r.arquivos)),
+                       String)
+            @test occursin("Saari", txt)
+            @test !occursin("Alves & Komesu", txt)
+        end
     end
 
     # -----------------------------------------------------------------------
@@ -1106,7 +1267,14 @@ end
         @testset "id de box que não serve não é servido" begin
             # O id vem da URL. Um inventado, um pendente e um caminho relativo têm de
             # morrer antes de tocar no estado.
-            for id in ("nao-existe", "bomba-centrifuga", "..")
+            #
+            # O box pendente sai do CATÁLOGO, e não escrito aqui: este teste citava
+            # "bomba-centrifuga" e passou a falhar no dia em que a bomba ficou pronta —
+            # um teste que envelhece junto com o produto que ele vigia. Quando não
+            # houver mais nenhum box pendente, a lista fica com os outros dois e o
+            # teste continua valendo.
+            pendente = [b.id for b in FPSOSiz.catalogo() if !b.ativo]
+            for id in vcat(["nao-existe"], pendente, [".."])
                 @test HTTP.get("$base/app/$id"; status_exception = false).status == 404
                 @test HTTP.get("$base/api/$id/estado";
                                status_exception = false).status == 404

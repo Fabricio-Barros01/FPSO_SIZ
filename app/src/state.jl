@@ -181,6 +181,13 @@ function carregar_casos!(st::AppState, nome::AbstractString)
     for a in FPSOSiz.list_case_sets()
         a.nome == nome || continue
         (isempty(a.equipamento) || a.equipamento == meu) && break
+        # A recusa tem de deixar a tela USÁVEL. Sem isto, `st.casos` fica vazio — e
+        # ficava: o construtor cria a lista vazia e só `carregar_casos!` a preenche.
+        # Uma tela sem caso nenhum não é um estado que o resto do programa preveja
+        # (`caso_atual` indexa `st.casos[1]`), e chegar nela era um `--caso` apontando
+        # para o arquivo de outro equipamento. Um caso em branco é o mesmo desfecho do
+        # arquivo ilegível logo abaixo, e pelo mesmo motivo.
+        isempty(st.casos) && (st.casos = [CaseUI("Caso 1", st.campos)]; st.sel = 1)
         st.status = "'$nome' é um conjunto de casos de outro equipamento " *
                     "($(a.equipamento)); esta tela é de $meu. Abra-o na aplicação dele."
         st.status_ok = false
@@ -400,3 +407,22 @@ está" — e é o mesmo valor que um vaso bifásico produz de direito.
 """
 beta_atual(st::AppState) =
     st.cons_gov isa FPSOSiz.VesselConstraints ? st.cons_gov.beta : NaN
+
+"""
+    camadas_atual(st) -> Vector{PhaseLayer}
+
+Como o **método** reparte a seção transversal do caso governante — as faixas que o
+desenho empilha.
+
+É o par de [`beta_atual`](@ref) e substitui o papel que β tinha aqui. β é um
+coeficiente: sozinho ele não diz quantas fases o vaso tem, e deduzir três de um número
+era o que punha metade de gás num tratador cheio de líquido e uma camada de água de
+altura negativa embaixo dela. Quem sabe quantas fases há é `cross_section`, despachada
+pelo método.
+
+Vazio significa "não sei repartir" — sem resultado, ou método que não declarou
+repartição. O desenho mostra o casco sem fases, que é honesto.
+"""
+camadas_atual(st::AppState) =
+    st.cons_gov === nothing ? FPSOSiz.PhaseLayer[] :
+    FPSOSiz.cross_section(st.metodo, st.cons_gov)

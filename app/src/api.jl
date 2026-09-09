@@ -190,7 +190,8 @@ uma no fallback genérico, e o que a bomba do Sprint 8 declarar.
 """
 desenho(st::AppState) = Dict{String,Any}(
     "figuras" => figuras(st),
-    "legenda" => html_legenda_casos(st.resultado))
+    "legenda" => html_legenda_casos(
+        st.resultado; unidade = FPSOSiz.requirement_spec(st.metodo)[2]))
 
 """
     memorial(st) -> Dict

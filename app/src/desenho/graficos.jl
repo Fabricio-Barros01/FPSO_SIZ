@@ -231,16 +231,24 @@ end
     html_legenda_casos(res; max_itens) -> String
 
 Legenda das curvas por caso, com a cor de cada uma, a folga em relação à envelope e a
-marca do caso governante. Sai em HTML, não em SVG: o número de casos muda a cada
+marca do caso governante.
+
+`unidade` é a da grandeza envelopada, e vem de [`FPSOSiz.requirement_spec`](@ref) — era
+um `" m"` escrito aqui, que estava certo enquanto todo equipamento envelopava um
+comprimento. A folga de um trocador podia ser área e a de um compressor, potência: o
+último lugar em que a interface ainda sabia o nome de uma grandeza.
+
+Sai em HTML, não em SVG: o número de casos muda a cada
 dimensionamento, os nomes de caso de canto são longos (`"Faixa [q_oil↑ q_water↓]"`) e
 o HTML quebra linha e deixa o texto selecionável.
 """
-function html_legenda_casos(res; max_itens::Int = 12)
+function html_legenda_casos(res; max_itens::Int = 12, unidade::AbstractString = "")
     res === nothing && return ""
+    sufixo = isempty(unidade) ? "" : " " * unidade
     itens = String[]
     for (i, nome) in enumerate(res.case_names)
         i > max_itens && break
-        folga = isempty(res.slack) ? "" : "  (+$(Formato.num(res.slack[i])) m)"
+        folga = isempty(res.slack) ? "" : "  (+$(Formato.num(res.slack[i]))$sufixo)"
         governa = nome == res.driver_case
         push!(itens, string(
             "<li", governa ? " class=\"governa\"" : "", ">",

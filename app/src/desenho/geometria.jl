@@ -68,21 +68,6 @@ function circle_band(d_m, y1, y2; n::Int = 60)
 end
 
 """
-    layer_heights(d_m, beta) -> (h_agua, h_oleo, nivel)
-
-Alturas das camadas num vaso **trifásico** preenchido pela metade: `h_o = β·d`,
-`h_w = (0,5 − β)·d`, e o nível de líquido em `d/2`. Ver `beta.jl` no core.
-
-Só serve a três fases. Quem desenha usa [`camadas`](@ref), que também sabe responder
-por um vaso de duas.
-"""
-function layer_heights(d_m, beta)
-    h_oleo = beta * d_m
-    nivel  = d_m / 2
-    return (nivel - h_oleo, h_oleo, nivel)
-end
-
-"""
 Uma faixa de fase dentro do vaso, do fundo (`y0`) ao topo (`y1`), em metros.
 
 `interface` é a cor da linha que fecha a faixa **por cima**; vazia quando não há linha
@@ -105,42 +90,74 @@ end
 altura(c::Camada) = c.y1 - c.y0
 meio(c::Camada)   = (c.y0 + c.y1) / 2
 
+"Aparência de cada fase: preenchimento, opacidade, cor da cota e cor do rótulo interno."
+const _TINTA_FASE = Dict(
+    :water => (Formato.AGUA_ZONA, Formato.AGUA_ZONA_OP, Formato.AGUA,        "#ffffff"),
+    :oil   => (Formato.OLEO_ZONA, Formato.OLEO_ZONA_OP, Formato.OLEO,        "#ffffff"),
+    :gas   => (Formato.GAS_ZONA,  Formato.GAS_ZONA_OP,  Formato.TINTA_FRACA, Formato.TINTA_FRACA),
+)
+
+"Cor da linha que fecha a faixa por cima, e se ela é tracejada."
+const _INTERFACE_FASE = Dict(
+    :water => (Formato.AGUA, true),      # tracejada: é interface líquido-líquido
+    :oil   => (Formato.INTERNO, false),  # o nível de líquido
+    :gas   => ("", false),
+)
+
 """
-    camadas(d_m, beta) -> Vector{Camada}
+    camadas(d_m, layers::Vector{PhaseLayer}) -> Vector{Camada}
 
-As faixas de fase do vaso, de baixo para cima.
+As faixas de fase do vaso, de baixo para cima, a partir do que o **método** declarou em
+`cross_section`.
 
-Com `beta` finito são **três** — água, óleo e gás, com `h_o = β·d` e `h_w = (0,5 − β)·d`.
-Com `beta` igual a `NaN` são **duas**: água e líquido, porque um vaso bifásico não tem
-interface líquido-líquido e β não existe nele (ver `VesselConstraints` no core, que usa
-`NaN` para "não se aplica").
+O desenho não deduz mais nada: recebe as frações de altura já repartidas e só as
+empilha. A versão anterior recebia `β` e deduzia três faixas dele (`h_w = (0,5 − β)·d`,
+gás na metade de cima), o que é a geometria de um vaso **meio cheio** — correta para o
+separador trifásico e para o knockout, e errada para o tratador eletrostático, que é
+cheio de líquido. Lá `β` passa de 0,5 (0,896 com os defaults) e a dedução dava camada de
+água com altura **negativa** mais uma faixa de gás num vaso sem fase gasosa.
 
-Esta função existe para que o desenho **pergunte quantas faixas há** em vez de deduzir
-três de um número. Era essa dedução que fazia o vaso bifásico sair com `h_w = NaN·d` nas
-coordenadas do SVG — e um SVG com `NaN` num atributo é descartado pelo navegador em
-silêncio: a figura simplesmente não aparece, com status 200 e sem erro em lugar nenhum.
+Duas regras de rotulagem, que são do desenho e não do modelo:
+
+* fase líquida única chama-se **LÍQUIDO**, e não "ÓLEO": num knockout de linha de gás o
+  líquido é condensado, e o desenho não deve batizá-lo de óleo;
+* a faixa **de cima não recebe linha de interface** — o topo dela é o próprio casco.
 """
-function camadas(d_m, beta)
-    nivel = d_m / 2
-    gas = Camada("GÁS", nivel, d_m, Formato.GAS_ZONA, Formato.GAS_ZONA_OP,
-                 Formato.TINTA_FRACA, Formato.TINTA_FRACA, "", false)
+function camadas(d_m, layers::Vector{FPSOSiz.PhaseLayer})
+    isempty(layers) && return Camada[]
 
-    isnan(beta) && return [
-        Camada("LÍQUIDO", 0.0, nivel, Formato.OLEO_ZONA, Formato.OLEO_ZONA_OP,
-               Formato.OLEO, "#ffffff", Formato.INTERNO, false),
-        gas]
+    # "LÍQUIDO" quando não há uma segunda fase líquida da qual distinguir o óleo.
+    tem_agua = any(l -> l.fase === :water, layers)
+    nome(f) = f === :water ? "ÁGUA" :
+              f === :gas   ? "GÁS"  :
+              tem_agua     ? "ÓLEO" : "LÍQUIDO"
 
-    hw, _, _ = layer_heights(d_m, beta)
-    return [
-        Camada("ÁGUA", 0.0, hw, Formato.AGUA_ZONA, Formato.AGUA_ZONA_OP,
-               Formato.AGUA, "#ffffff", Formato.AGUA, true),
-        Camada("ÓLEO", hw, nivel, Formato.OLEO_ZONA, Formato.OLEO_ZONA_OP,
-               Formato.OLEO, "#ffffff", Formato.INTERNO, false),
-        gas]
+    out = Camada[]
+    y = 0.0
+    for (i, l) in enumerate(layers)
+        zona, op, cor, rotulo = get(_TINTA_FASE, l.fase,
+                                    (Formato.GAS_ZONA, Formato.GAS_ZONA_OP,
+                                     Formato.TINTA_FRACA, Formato.TINTA_FRACA))
+        traco, tracejada = get(_INTERFACE_FASE, l.fase, ("", false))
+        i == length(layers) && (traco = "")          # a de cima fecha no casco
+        y1 = y + l.fracao * d_m
+        push!(out, Camada(nome(l.fase), y, y1, zona, op, cor, rotulo, traco, tracejada))
+        y = y1
+    end
+    return out
 end
 
+"Altura do topo da fase líquida mais alta, em m — o nível. `d_m` num vaso cheio."
+nivel_liquido(g) =
+    isempty(g.camadas) ? g.d_m / 2 :
+    (i = findlast(c -> c.nome != "GÁS", g.camadas);
+     i === nothing ? 0.0 : g.camadas[i].y1)
+
+"Há fase gasosa neste vaso? O que só existe no céu de gás pergunta antes de se desenhar."
+tem_gas(g) = any(c -> c.nome == "GÁS", g.camadas)
+
 """
-    geometry_from(result, d_mm, beta) -> NamedTuple
+    geometry_from(result, d_mm, layers, beta) -> NamedTuple
 
 Traduz um `EnvelopeResult` e um diâmetro selecionado na geometria que o desenho
 consome. `ok = false` faz a cena inteira desenhar vazia, sem exceção.
@@ -148,14 +165,19 @@ consome. `ok = false` faz a cena inteira desenhar vazia, sem exceção.
 É aqui que os nomes genéricos do motor (`x`, `y`, `derivados`) voltam a ser diâmetro,
 `Leff` e `Lss` — e é o lugar certo para isso: este arquivo desenha um vaso e sabe que
 está desenhando um vaso. O que não podia acontecer era o **motor** saber.
+
+`layers` é a geometria (de `cross_section`); `beta` é só a **cota** que o corte escreve,
+e vale `NaN` onde o modelo não tem uma. São dois papéis, e misturá-los foi o defeito que
+esta assinatura desfaz: quem desenha as faixas usa `layers`, quem anota usa `beta`.
 """
-function geometry_from(res, d_mm::Real, beta::Real)
+function geometry_from(res, d_mm::Real, layers::Vector{FPSOSiz.PhaseLayer},
+                       beta::Real = NaN)
     (res === nothing || !res.feasible) &&
         return (; d_m = 0.0, leff_m = 0.0, lss_m = 0.0, beta = NaN,
                   camadas = Camada[], governing = :none, ok = false, sr = NaN)
     linha = argmin(r -> abs(r.x - d_mm), res.rows)
     d_m = linha.x / 1000
     return (; d_m, leff_m = linha.y, lss_m = FPSOSiz.der(linha, :lss), beta,
-              camadas = camadas(d_m, beta), governing = linha.governing,
+              camadas = camadas(d_m, layers), governing = linha.governing,
               ok = true, sr = FPSOSiz.der(linha, :sr))
 end

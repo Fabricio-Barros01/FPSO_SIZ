@@ -154,5 +154,9 @@ lss_from(::StewartArnoldTwoPhase, d_mm::Real, leff::Real, gov::Symbol,
          k::AbstractDict) =
     max(leff + d_mm / 1000.0, float(k[:lss_liquid_factor]) * leff)
 
+# No livro a esbeltez do bifásico é §3.8.5, e não a "Eq. 24" do artigo sobre trifásicos
+# que o memorial deste vaso citava por herdar o default da família.
+slenderness_equation(::StewartArnoldTwoPhase) = "§3.8.5"
+
 size_equipment(eq::KnockoutDrum, m::StewartArnoldTwoPhase, s::StreamState,
                params::AbstractDict) = size_vessel(eq, m, s, params)

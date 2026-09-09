@@ -13,6 +13,7 @@ export m3s_to_m3h, m3h_to_m3s, pas_to_cp, cp_to_pas, pa_to_kpa, kpa_to_pa
 export celsius_to_kelvin, kelvin_to_celsius, mm_to_m, m_to_mm
 export api_to_density, density_to_api, specific_gravity
 export liquid_capacity_coefficient, RHO_WATER_REF
+export G_STANDARD, EPS0, hydraulic_power_kw
 
 # ---------------------------------------------------------------------------
 # Constantes de conversão (exatas por definição, salvo nota)
@@ -23,6 +24,25 @@ const BARREL_M3 = 0.158987294928      # m³/bbl         (exato: 42 gal US)
 const PSI_KPA   = 6.894757293168361   # kPa/psi
 const LB_KG     = 0.45359237          # kg/lb          (exato)
 const CUFT_M3   = 0.028316846592      # m³/ft³         (exato)
+
+"""
+Aceleração da gravidade padrão (ISO 80000-3), em m/s².
+
+Não é o valor que a bomba usa: Moran (*Pump Sizing*, CEP 2016) declara `g = 9,81` ao
+definir a perda localizada, e o método segue a fonte — a diferença de 0,03 % não move
+nenhum diâmetro nominal. Fica aqui porque é a referência contra a qual esse `9,81` se
+justifica, e porque um método futuro que não tenha fonte própria deve usar este.
+"""
+const G_STANDARD = 9.80665            # m/s²
+
+"""
+Permissividade elétrica do vácuo, em F/m (CODATA 2018).
+
+Constante física, e não coeficiente de correlação: por isso mora aqui e não no TOML de
+nenhum método. Entra na atração de dipolo entre gotículas de água num campo elétrico —
+ver `src/sizing/treater/electrostatic.jl`.
+"""
+const EPS0 = 8.8541878128e-12         # F/m
 
 "Densidade da água usada como referência na Eq. 12 (água doce, condição padrão)."
 const RHO_WATER_REF = 1000.0          # kg/m³
@@ -56,6 +76,24 @@ density_to_api(rho; rho_water = RHO_WATER_REF) = 141.5 * rho_water / rho - 131.5
 
 "Densidade relativa (adimensional) em relação à água de referência."
 specific_gravity(rho; rho_water = RHO_WATER_REF) = rho / rho_water
+
+"""
+    hydraulic_power_kw(rho, q_m3h, h_m, eta; g) -> kW
+
+Potência de eixo de uma bomba centrífuga: `P = ρ·g·Q·H/(3,6×10⁶·η)`, com `Q` em m³/h e
+`H` em metros de coluna do próprio fluido — a forma que Moran publica.
+
+O `3,6×10⁶` é conversão de unidade, não coeficiente empírico: são os 3600 s/h que
+levam `Q` a m³/s e os 1000 W/kW que levam o resultado a quilowatt. Por isso mora aqui,
+e não no TOML do método junto das constantes das correlações — a regra do projeto é que
+TOML guarda premissa revisável, e esta não é.
+
+`eta` é o rendimento; o artigo recomenda 0,7 quando ele não for conhecido, e adverte
+que se deve **arredondar para cima**, porque o elétrico prefere ouvir depois que a
+potência caiu do que que subiu.
+"""
+hydraulic_power_kw(rho, q_m3h, h_m, eta; g = G_STANDARD) =
+    rho * g * q_m3h * h_m / (3.6e6 * eta)
 
 # ---------------------------------------------------------------------------
 # Coeficiente da capacidade de líquido (Eq. 22)

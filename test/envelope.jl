@@ -537,3 +537,87 @@ FPSOSiz.size_equipment(eq::LinhaFake, m::MetodoLinhaFake, e, params::AbstractDic
         @test occursin("h_est", env.message)
     end
 end
+
+# ---------------------------------------------------------------------------
+# `case_admissible` — a camada que o Sprint 8 acrescentou ao contrato
+# ---------------------------------------------------------------------------
+#
+# `admissible` recebe os derivados do caso GOVERNANTE, o de maior exigência. Isso basta
+# para a esbeltez de um vaso, que sai de `(d, Lss)` e é do conjunto. Não basta para uma
+# banda de velocidade, que sai de `Q/A` e é de cada caso: com dois casos, o de maior
+# vazão pode estourar o teto de velocidade enquanto o governante passa folgado, e ninguém
+# perguntaria a ele.
+#
+# O teste usa a bomba de verdade, e não um método fictício, porque o que se quer provar
+# não é que o hook é chamado — é que ele muda a resposta num caso que a engenharia
+# reconhece.
+
+@testset "a admissibilidade é perguntada a TODOS os casos" begin
+    eq, m = CentrifugalPump(), MoranPumpSizing()
+    base = merge(defaults(FPSOSiz.stream_parameters(m)), defaults(parameters(m)))
+
+    @testset "um caso fora da banda derruba o ponto, mesmo sem governar" begin
+        # O caso B tem vazão muito maior (velocidade alta) e carga MENOR (linha curta,
+        # sem desnível): ele nunca governa a carga, e é ele que recusa os diâmetros.
+        a = Case("nominal", Dict{Symbol,Any}(base))
+        b = Case("pico", merge(Dict{Symbol,Any}(base),
+                               Dict{Symbol,Any}(:q_oil => 400.0,
+                                                :h_geometrica => 0.0,
+                                                :p_recalque => 110.0,
+                                                :l_recalque => 5.0)))
+
+        so = size_envelope(eq, m, CaseSet([a]))
+        @test so.feasible                       # sozinho, o nominal fecha
+
+        env = size_envelope(eq, m, CaseSet([a, b]))
+        if env.feasible
+            # Se fechar, o DN escolhido tem de servir aos DOIS — que é o ponto.
+            for c in (a, b)
+                r = size_equipment(eq, m, FPSOSiz.case_input(m, c.values), c.values)
+                linha = argmin(x -> abs(x.x - env.x), r.sweep)
+                @test linha.ok
+            end
+            @test env.x != so.x                 # e não pode ser o mesmo de antes
+        else
+            # Se não fechar, a mensagem tem de dizer que as faixas não se cruzam.
+            @test occursin("não se cruzam", env.message)
+        end
+    end
+
+    @testset "o motor diz quais faixas cada caso aceita" begin
+        # Duas vazões que diferem por mais que a razão de diâmetros que a banda permite
+        # (√1,5 ≈ 1,22, contra o passo ~1,25 da série comercial): não há DN comum.
+        a = Case("alta", merge(Dict{Symbol,Any}(base), Dict{Symbol,Any}(:q_oil => 215.8)))
+        b = Case("baixa", merge(Dict{Symbol,Any}(base), Dict{Symbol,Any}(:q_oil => 60.0)))
+        env = size_envelope(eq, m, CaseSet([a, b]))
+        @test !env.feasible
+        @test occursin("não se cruzam", env.message)
+        @test occursin("'alta' aceita", env.message)
+        @test occursin("'baixa' aceita", env.message)
+        # e a frase NÃO aparece quando o problema é outro
+        @test !occursin("não se cruzam", size_envelope(eq, m, CaseSet([a])).message)
+    end
+
+    @testset "o default é `true`, e os vasos não mudaram" begin
+        # Nenhum dos três vasos declara `case_admissible`; o default tem de deixá-los
+        # exatamente como estavam — é o que os casos-ouro provam número a número, e o
+        # que esta linha afirma de forma direta.
+        for met in (StewartArnold(), StewartArnoldTwoPhase(), ArnoldElectrostatic())
+            @test FPSOSiz.case_admissible(met, 1234.0, nothing,
+                                          Dict{Symbol,Float64}())
+        end
+    end
+end
+
+@testset "requirement_spec dá nome e unidade à grandeza envelopada" begin
+    # O último lugar em que a interface sabia o nome de uma grandeza era a unidade da
+    # folga na legenda de casos, escrita como " m". Agora ela vem daqui.
+    for eq in equipments(), met in methods_for(eq)
+        rot, un = FPSOSiz.requirement_spec(met)
+        @test rot isa String && !isempty(rot)
+        @test un isa String
+    end
+    @test FPSOSiz.requirement_spec(StewartArnold())[2] == "m"
+    @test FPSOSiz.requirement_spec(MoranPumpSizing()) == ("carga do sistema", "m")
+    @test FPSOSiz.requirement_spec(SaariLMTD()) == ("comprimento de tubo", "m")
+end

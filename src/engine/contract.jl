@@ -19,13 +19,14 @@ Então generaliza-se o eixo, e a regra que o projeto já tinha para os parâmetr
     para cada x da grade:
         y(x) = max sobre os casos de  requirement(m, x, restrições_do_caso)
         d(x) = derived(m, x, y, ...)          # o que se deriva de (x, y)
-        admissível se x ≤ ceiling e admissible(m, ...)
+        admissível se x ≤ ceiling, case_admissible em TODO caso, e admissible(m, ...)
     escolhe-se o x admissível que minimiza objective(m, ...)
 
 Preenchida com vaso: `x` é o diâmetro, `y` é o `Leff` exigido, `derived` dá `Lss`, `SR` e
 volume, `ceiling` é o teto de decantação e `objective` é `|SR − alvo|`. Preenchida com
 bomba: `x` é o diâmetro nominal da tubulação, `y` é a carga do sistema, `derived` dá
-velocidade, Reynolds, NPSH e potência, não há teto e `objective` é o menor DN.
+velocidade, Reynolds, NPSH e potência, o teto e o piso saem da banda de velocidade de
+cada caso, e `objective` é o menor DN.
 
 # Os hooks
 
@@ -38,10 +39,12 @@ velocidade, Reynolds, NPSH e potência, não há teto e `objective` é o menor D
 | [`ceiling_of`](@ref) | as restrições | sim — `Inf` |
 | [`derived`](@ref) | o método | não |
 | [`admissible`](@ref) | o método | não |
+| [`case_admissible`](@ref) | as restrições **de cada caso** | sim — `true` |
 | [`objective`](@ref) | o método | não |
 | [`result_fields`](@ref) | o método | não |
 | [`sweep_columns`](@ref) | o método | não |
 | [`trace_blocks`](@ref) | o método | sim — ordem de aparição |
+| [`requirement_spec`](@ref) | o método | sim — genérico |
 
 `requirement`, `governing_of` e `ceiling_of` despacham no **tipo das restrições**, e não
 no do método. É de propósito: quem produz um [`VesselConstraints`](@ref) ganha o
@@ -179,10 +182,38 @@ function derived end
 Se o ponto `x`, com os derivados `der`, é aceitável. O teto de
 [`ceiling_of`](@ref) já foi aplicado antes e não precisa ser reconferido aqui.
 
-Num vaso é a banda de esbeltez; numa bomba, a banda de velocidade superficial mais a
-margem de NPSH.
+Recebe os derivados do caso **governante**, então só serve a critérios que sejam do
+conjunto: a esbeltez de um vaso (que sai de `d` e `Lss`), o diâmetro de casco de um
+trocador (que sai do número de tubos). Critério que dependa da vazão de cada caso —
+a velocidade numa linha, a margem de NPSH — vai em [`case_admissible`](@ref), que o
+motor avalia caso a caso.
 """
 function admissible end
+
+"""
+    case_admissible(m, x, cons, p) -> Bool
+
+Se o ponto `x` é aceitável **para este caso**, olhando só as restrições dele.
+
+Existe porque [`admissible`](@ref) não alcança essa pergunta. O motor de envelope
+calcula `derived` a partir do caso **governante** — o que maximiza a exigência — e é
+esse dicionário que `admissible` recebe. Num vaso isso basta: a esbeltez sai de `(d,
+Lss)`, que são do conjunto, e não de nenhum caso em particular. Numa bomba não basta: a
+velocidade na linha é `Q/A`, e `Q` é de cada caso. Com dois casos no envelope, o de
+maior vazão pode estourar a velocidade máxima enquanto o governante (o de maior carga)
+passa folgado — e o ponto seria aceito, porque ninguém perguntou ao outro caso.
+
+O teto de [`ceiling_of`](@ref) já resolve **um** lado dessa família (o motor toma o
+menor entre os casos), e resolve só um: ele é `x ≤ teto`. Uma banda de velocidade tem
+dois lados — `v ≥ v_min` limita `x` por cima, `v ≤ v_max` por baixo — e o segundo não
+tem como virar teto. Daí o hook, que o motor avalia para **todos** os casos:
+
+    ok(x) = x ≤ min_c ceiling_of(c)  ∧  ∀c: case_admissible(x, c)  ∧  admissible(x, derivados)
+
+O default é `true`: quem não tem restrição por caso não escreve nada, e os dois vasos
+continuam exatamente como estavam.
+"""
+case_admissible(::AbstractSizingMethod, x::Real, cons, p::AbstractDict) = true
 
 """
     objective(m, x, der, p) -> Float64
@@ -231,6 +262,22 @@ método novo ganha memorial legível sem escrever nada — e que se substitui as
 títulos merecerem português.
 """
 trace_blocks(::AbstractSizingMethod) = Pair{Symbol,String}[]
+
+"""
+    requirement_spec(m) -> (label::String, unit::String)
+
+Como se chama, e em que unidade, a grandeza que o envelope maximiza — o eixo y dos
+gráficos e a unidade da folga que a legenda de casos mostra.
+
+Existe porque `html_legenda_casos` escrevia `"(+0,42 m)"` com o `m` no código: a folga
+de um vaso é comprimento, mas a de um trocador podia ser área e a de um compressor,
+potência. É a mesma regra do Sprint 7 aplicada ao último lugar em que a interface ainda
+sabia o nome de uma grandeza.
+
+O default é genérico de propósito: um método novo ganha uma legenda correta (sem
+unidade) em vez de uma legenda errada (com a unidade do vaso).
+"""
+requirement_spec(::AbstractSizingMethod) = ("exigência", "")
 
 """
     global_keys(m) -> Vector{Symbol}

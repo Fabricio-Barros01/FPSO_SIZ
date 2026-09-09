@@ -155,11 +155,27 @@ function parameter_specs(cfg::AbstractDict)
     return specs
 end
 
-"Lê o bloco `[constants]` como `Symbol => Float64`."
+"""
+Lê o bloco `[constants]` como `Symbol => valor`, **descendo nas sub-tabelas**.
+
+Um `[constants.bell_delaware]` no TOML chega como `k[:bell_delaware][:ativo]`, e não
+como um `Dict` de chaves `String` no meio de um dicionário de chaves `Symbol`. A
+recursão existe porque o método que consome o sub-bloco não tem como saber que aquele
+nível em particular não foi simbolizado — e descobriria por `KeyError` em runtime, que é
+a forma mais cara de descobrir.
+
+Sub-bloco é o que permite um método agrupar as constantes de uma correlação inteira sem
+prefixar cada chave: as trinta e três de Bell-Delaware ficam sob um nome só, em vez de
+`bd_a1_30`, `bd_a2_30`, e assim por diante.
+"""
 function constants(cfg::AbstractDict)
     raw = get(cfg, "constants", Dict{String,Any}())
-    return Dict{Symbol,Any}(Symbol(k) => v for (k, v) in raw)
+    return _simbolizar(raw)
 end
+
+_simbolizar(d::AbstractDict) =
+    Dict{Symbol,Any}(Symbol(k) => (v isa AbstractDict ? _simbolizar(v) : v)
+                     for (k, v) in d)
 
 "Rótulo declarado no TOML, com fallback."
 config_label(cfg::AbstractDict, fallback::AbstractString) = String(get(cfg, "label", fallback))
