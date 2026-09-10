@@ -25,9 +25,12 @@ para permitir.
 
 ## A banda tem dois lados, e um deles não cabia no motor
 
-A faixa de velocidade que o artigo recomenda para líquido bombeado é `< 1,5 m/s`, e a
-literatura de processo põe um piso em ~1 m/s (abaixo disso sólidos decantam e a linha
-incrusta). Os dois lados amarram o DN em sentidos opostos:
+A faixa de velocidade que o artigo recomenda (p. 39) tem os dois lados, e os dois são
+dele: `< 1,5 m/s` para "pumped water-like fluids", e `> 1, < 1,5 m/s` para "water-like
+fluids with settleable solids" — que é o caso de uma linha de água produzida, e é de onde
+vem o piso. Para líquido limpo o artigo só impõe o teto; `v_min = 0` no formulário
+recupera essa regra, e o `note` do TOML o diz. Os dois lados amarram o DN em sentidos
+opostos:
 
     v ≤ v_max  ⟹  DN ≥ DN_min      (linha estreita demais eroderia)
     v ≥ v_min  ⟹  DN ≤ DN_max      (linha larga demais deixaria decantar)
@@ -278,6 +281,12 @@ A potência usa a vazão do **caso governante** e a carga da envelope. É a leit
 conservadora e não é a única possível: com casos de vazões muito diferentes, o de maior
 vazão pode pedir mais potência a uma carga menor. O rastro do caso único de cada corrente
 mostra a potência dela isolada — é onde essa diferença fica visível.
+
+`:confiavel` sai como `0.0`/`1.0` porque o dicionário é de `Float64`, e sai **junto** com
+a fronteira que o julgou (`:re_min_correlacao`): um flag sem o número contra o qual ele
+foi decidido obriga quem lê o CSV a ir buscar a fronteira no TOML. Os dois são o que faz
+[`selection_message`](@ref) poder distinguir "fora da faixa da correlação" de "fora da
+banda de velocidade" — que pedem ações opostas ao usuário.
 """
 function derived(m::MoranPumpSizing, dn::Real, h::Real, gov::Symbol,
                  c::PumpConstraints, k::AbstractDict, p::AbstractDict)
@@ -290,21 +299,44 @@ function derived(m::MoranPumpSizing, dn::Real, h::Real, gov::Symbol,
         :h_atrito => hid.h_atrito,
         :npsh     => hid.npsh,
         :folga_npsh => hid.npsh - c.npsh_exigido,
+        :confiavel  => hid.confiavel ? 1.0 : 0.0,
+        :re_min_correlacao => float(k[:reynolds_turbulent_min]),
+        :re_max_laminar    => float(k[:reynolds_laminar_max]),
         :potencia => Units.hydraulic_power_kw(c.rho, c.q_m3h, h, c.rendimento; g = c.g))
 end
 
 """
     case_admissible(m::MoranPumpSizing, dn, c, p)
 
-A banda de velocidade e a margem de NPSH, **deste** caso.
+A banda de velocidade, a margem de NPSH e a **faixa de validade da correlação de
+atrito**, deste caso.
 
-As três condições dependem da vazão, que é do caso, e por isso não podem viver em
+As condições dependem da vazão, que é do caso, e por isso não podem viver em
 [`admissible`](@ref), que só enxerga o caso governante. Ver a nota no topo do arquivo.
+
+# Por que a faixa da correlação recusa o ponto
+
+A Eq. (2) do artigo (p. 41) é declarada para `Re > 4.000`, e é a única correlação de
+atrito turbulento que este método implementa. Entre `Re` 2.300 e 4.000 não há correlação
+nenhuma que valha — a zona é instável por natureza, e o próprio TOML o diz. Colebrook-
+White avaliada ali devolve número como qualquer outro, e o número não avisa.
+
+Um ponto fora do domínio de validade não é necessariamente impossível: é um ponto que o
+modelo implementado **não está autorizado a avaliar**. Aceitá-lo seria escolher um
+diâmetro a partir de uma perda de carga que nenhuma equação desta implementação sustenta
+— e a escolha sai com a mesma aparência de todas as outras. Daí a recusa, com o motivo
+dito em [`selection_message`](@ref).
+
+O regime **laminar** passa: `f = 64/Re` é exata para escoamento plenamente desenvolvido
+em duto circular, e `flow_regime` já a marca `confiavel = true`. A recusa é da zona de
+transição e da não-convergência, não de "fora de Colebrook-White" — as duas coisas são
+diferentes, e confundi-las recusaria todo óleo pesado sem motivo.
 """
 function case_admissible(::MoranPumpSizing, dn::Real, c::PumpConstraints,
                          p::AbstractDict)
     hid = _hidraulica(c, dn)
-    return p[:v_min] <= hid.v <= p[:v_max] && hid.npsh >= c.npsh_exigido
+    return p[:v_min] <= hid.v <= p[:v_max] && hid.npsh >= c.npsh_exigido &&
+           hid.confiavel
 end
 
 # Não há critério de conjunto: velocidade e NPSH são de cada caso e já foram checados em
@@ -343,10 +375,17 @@ end
 """
     selection_message(m::MoranPumpSizing, rows, teto, p)
 
-Por que nenhum DN serviu — e qual das três condições o recusou.
+Por que nenhum DN serviu — e qual das **quatro** condições o recusou.
 
-Distinguir importa: "amplie a grade" e "eleve o nível do reservatório de sucção" são
-ações opostas, e a segunda é a única que resolve cavitação.
+Distinguir importa porque as ações são opostas: "amplie a grade de DN" resolve a banda de
+velocidade, "eleve o nível do reservatório de sucção" resolve cavitação, e "reveja a
+viscosidade ou a temperatura" é a única que tira a linha da zona de transição. Dar o
+diagnóstico errado manda o usuário mexer no que não é o problema.
+
+A ordem das perguntas é a ordem em que uma condição torna a seguinte irrelevante: fora da
+banda de velocidade não faz sentido discutir a faixa da correlação, e fora da faixa da
+correlação não faz sentido discutir o NPSH — o `hf` que entra no NPSH é justamente o que
+não vale ali.
 """
 function selection_message(m::MoranPumpSizing, rows, teto::Real, p::AbstractDict;
                            mechanism::Symbol = :none)
@@ -362,12 +401,33 @@ function selection_message(m::MoranPumpSizing, rows, teto::Real, p::AbstractDict
                "$(round(lo, digits = 2)) a $(round(hi, digits = 2)) m/s. Amplie a " *
                "grade de DN, ou reveja a banda."
     end
-    # A maior folga entre os DN que a velocidade admite. Se ela é negativa, todos
-    # cavitam e a causa é essa; se é positiva, a recusa veio de outro caso — e quem
-    # sabe disso é o motor, que acrescenta a frase da interseção vazia. Afirmar
-    # cavitação aqui sem conferir o sinal foi um defeito real: a primeira versão deste
-    # texto acusava cavitação com folga de +26 m.
-    melhor = maximum(folgas[i] for i in na_banda)
+
+    # Fora da faixa em que a fonte declara a correlação de atrito. Vem ANTES do NPSH
+    # porque o NPSH desconta `hf_suc`, que é justamente a perda que não vale ali:
+    # acusar cavitação com base nela seria diagnosticar a partir do número recusado.
+    validos = filter(i -> get(rows[i].derivados, :confiavel, 1.0) != 0.0, na_banda)
+    if isempty(validos)
+        res = [get(rows[i].derivados, :re, NaN) for i in na_banda]
+        re_lo, re_hi = extrema(filter(isfinite, res))
+        lam = get(rows[first(na_banda)].derivados, :re_max_laminar, 2300.0)
+        turb = get(rows[first(na_banda)].derivados, :re_min_correlacao, 4000.0)
+        return "Na banda de velocidade $(p[:v_min])–$(p[:v_max]) m/s todos os " *
+               "diâmetros caem na zona de transição do escoamento (Re de " *
+               "$(round(re_lo, digits = 0)) a $(round(re_hi, digits = 0)), entre " *
+               "$(round(lam, digits = 0)) e $(round(turb, digits = 0))), onde nenhuma " *
+               "correlação de atrito desta implementação vale: o artigo declara " *
+               "Colebrook-White para Re > $(round(turb, digits = 0)) e f = 64/Re " *
+               "só até Re $(round(lam, digits = 0)). O programa não extrapola. " *
+               "Reveja a viscosidade ou a temperatura do líquido, ou mude a banda de " *
+               "velocidade para deslocar o Reynolds."
+    end
+
+    # A maior folga entre os DN que a velocidade admite E cuja correlação vale. Se ela é
+    # negativa, todos cavitam e a causa é essa; se é positiva, a recusa veio de outro
+    # caso — e quem sabe disso é o motor, que acrescenta a frase da interseção vazia.
+    # Afirmar cavitação aqui sem conferir o sinal foi um defeito real: a primeira versão
+    # deste texto acusava cavitação com folga de +26 m.
+    melhor = maximum(folgas[i] for i in validos)
     if !(isfinite(melhor) && melhor < 0)
         return "Há diâmetros na banda de velocidade $(p[:v_min])–$(p[:v_max]) m/s, e " *
                "neles o NPSH tem folga (a maior é $(round(melhor, digits = 2)) m). " *
@@ -442,16 +502,35 @@ regime, fator de atrito, as duas perdas e a potência.
 Este bloco é o que torna o memorial da bomba conferível à mão, e é a única via por onde
 o regime de escoamento chega ao leitor — Colebrook-White fora da faixa em que o artigo a
 declara (`Re > 4000`) devolve número como qualquer outro, e o número não avisa.
+
+**Duas linhas saem daqui e não de uma constante:** o `regime`, e a equação citada ao lado
+do `f`. A citação vem de [`friction_equation`](@ref), que despacha no regime — carimbar
+"Colebrook" sobre um `f` que veio de `64/Re` manda o leitor conferir a conta na equação
+errada, e era o que este bloco fazia até a fase de validação física. Ver
+`docs/validacao/01-bomba-moran.md`, defeito 2.
 """
 function trace_selection!(m::MoranPumpSizing, tr::CalcTrace, best, p::AbstractDict)
     d = best.derivados
+    re = get(d, :re, NaN)
+    k  = constants(method_config(m))
+    regime, confiavel = flow_regime(re, k)
+    fonte_f, forma_f = friction_equation(regime)
+
     trace!(tr, :selection, "—", "DN escolhido",
-           "menor DN com $(p[:v_min]) ≤ v ≤ $(p[:v_max]) m/s e NPSH folgado",
+           "menor DN com $(p[:v_min]) ≤ v ≤ $(p[:v_max]) m/s, NPSH folgado e " *
+           "correlação de atrito válida",
            best.x, "mm")
     trace!(tr, :selection, "—", "v", "Q/(πD²/4)", get(d, :v, NaN), "m/s")
-    trace!(tr, :selection, "—", "Re", "ρvD/µ", get(d, :re, NaN), "–")
-    trace!(tr, :selection, "Colebrook", "f", "1/√f = −2log₁₀(ε/3,7D + 2,51/(Re√f))",
-           get(d, :f, NaN), "–")
+    trace!(tr, :selection, "—", "Re", "ρvD/µ", re, "–")
+    # O regime como GRANDEZA do memorial, e não como adjetivo numa frase: é ele que diz
+    # qual das duas relações de atrito vale, e é a única linha do bloco cujo valor não é
+    # um número. `1`/`0` em "válida?" é o mesmo 0/1 que `derived` expõe no CSV.
+    trace!(tr, :selection, "§ regime", "regime",
+           "laminar até Re $(round(float(k[:reynolds_laminar_max]), digits = 0)); " *
+           "turbulento a partir de $(round(float(k[:reynolds_turbulent_min]), digits = 0)) " *
+           "— aqui: $(regime)",
+           confiavel ? 1.0 : 0.0, "válida?")
+    trace!(tr, :selection, fonte_f, "f", forma_f, get(d, :f, NaN), "–")
     trace!(tr, :selection, "Darcy", "h_atrito", "f·(L/D)·v²/2g + Σk·v²/2g",
            get(d, :h_atrito, NaN), "m")
     trace!(tr, :selection, "—", "H", "h_est + h_atrito", best.y, "m")

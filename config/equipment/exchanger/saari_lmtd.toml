@@ -141,7 +141,7 @@ default  = 500.0
 min      = 5.0
 max      = 50000.0
 advanced = true
-note     = "SÓ é usado com `bell_delaware.ativo = false`. Com Bell-Delaware ligado (o padrão) h_o é CALCULADO pela Eq. 2-18 de Branan a partir da geometria de chicana, e este campo é ignorado. Deixou de ser a maior aproximação do box por isso. Ordem de grandeza pela Tabela 4.1 de Saari, para comparar com o calculado: 100-400 líquido viscoso, 400-1700 líquido pouco viscoso, 500-2000 com mudança de fase."
+note     = "SÓ é usado com `bell_delaware.ativo = false`. Com Bell-Delaware ligado (o padrão) h_o é CALCULADO pela Eq. 2-18 de Branan a partir da geometria de chicana, e este campo é ignorado. Deixou de ser a maior aproximação do box por isso. ATENÇÃO ao arbitrar um valor aqui: as Tabelas 4.1 e 4.2 de Saari tabelam o COEFICIENTE GLOBAL U, não o coeficiente de película h_o, e as duas grandezas não são intercambiáveis — como 1/U = 1/h_o + (resistências de parede, incrustação e lado do tubo), h_o é sempre MAIOR que U, tipicamente por um fator de 2 a 4. Pôr aqui um U tabelado subestima h_o e infla a área. Saari não publica tabela de h por serviço; use um h_o de handbook (Perry, TEMA) ou deixe Bell-Delaware calcular."
 
 # --- geometria de chicana: o que Bell-Delaware precisa saber -----------------
 # Nenhum destes existia antes, porque h_casco era digitado. São o preço de calcular o
@@ -363,6 +363,33 @@ dittus_boelter_pr_heating = 0.4
 dittus_boelter_cooling    = 0.026
 dittus_boelter_pr_cooling = 0.3
 
+# FAIXA DE VALIDADE, e o que o programa faz com ela.
+#
+# Saari (p. 68) declara, logo abaixo da Eq. (6.23): "Equation (6.23) is valid within
+# 10^4 < Re < 1.2*10^5 and 0.7 < Pr < 120", e o período seguinte é explícito sobre o que
+# há fora: "Below Re = 10^4 the results are much worse."
+#
+# Fora dessas quatro fronteiras o feixe é RECUSADO, não extrapolado. Um ponto fora do
+# domínio de validade não é necessariamente impossível — é um ponto que o modelo
+# implementado não está autorizado a avaliar, e h_i atravessa U -> A -> L, de modo que
+# aceitá-lo devolveria um comprimento de tubo que nenhuma correlação daqui sustenta.
+# Ver `case_admissible` em src/sizing/exchanger/shell_and_tube.jl.
+#
+# Estão aqui, e não no código, porque são PREMISSA REVISÁVEL declarada pela fonte — a
+# mesma regra que põe as fronteiras de regime da bomba no TOML dela. O teto (1,2e5) é a
+# metade mais discutível das quatro: a literatura usa Dittus-Boelter bem acima dele, e
+# 1,2e5 é o limite que ESTA fonte declara, não um limite físico. Quem tiver base para
+# outro valor troca a linha.
+#
+# Erro DENTRO da faixa, pela própria fonte: -26...+7 % para água, +10...+33 % para ar
+# (Pr = 0,7) e -39...+21 % para óleos (Pr = 120). Daí o §6.3.1 concluir que a correlação
+# serve "only for rough initial estimates but not accurate sizing calculations" — que é
+# exatamente o estágio deste programa.
+dittus_boelter_re_min = 1.0e4
+dittus_boelter_re_max = 1.2e5
+dittus_boelter_pr_min = 0.7
+dittus_boelter_pr_max = 120.0
+
 # ---------------------------------------------------------------------------
 # BELL-DELAWARE — o coeficiente do lado do casco, calculado
 # ---------------------------------------------------------------------------
@@ -396,6 +423,17 @@ dittus_boelter_pr_cooling = 0.3
 #    MEIO ângulo de propósito, e ½(π - θ1)·Ds·d_sb reproduz o (2π - θ_janela)/4·Ds·d_sb
 #    da forma padrão. As duas usam o mesmo símbolo com convenções diferentes, que é
 #    provavelmente o que produziu o item 3.
+#
+# 5. Eq. 2-23 imprime  Jl = 0,44(1 - ra) + [1 - 0,044(1 - ra)]·exp(-2,2·rb) — com
+#    0,044 no SEGUNDO colchete e 0,44 no primeiro. Encontrada na fase de validação
+#    física; checável por dentro, como as três primeiras.
+#
+#    Jl é um fator que DESCONTA: com vazamento nulo (rb -> 0) ele tem de valer 1,
+#    porque não há o que descontar. Com 0,44 nos dois lugares e ra -> 1 dá
+#    0,44 + (1 - 0,44) = 1,000 exato. Com o 0,044 impresso daria 0,44 + 0,956 = 1,396 —
+#    um "fator de correção" que AUMENTA h_o em 40 % justamente no caso em que a
+#    construção é perfeita. É impossível, e 0,44 nos dois lugares é também a forma de
+#    Taborek e de Shah & Sekulic. Usa-se 0,44; o `jl_a` abaixo entra nos dois pontos.
 
 [constants.bell_delaware]
 
@@ -424,9 +462,31 @@ layouts    = [30, 45, 60, 90]
 pn_sobre_pt = [1.0, 1.4142135623730951, 1.7320508075688772, 1.0]
 pp_sobre_pt = [0.8660254037844386, 0.7071067811865475, 0.5, 1.0]
 
+# Eq. (2-13) e (2-14) — área da célula que cada tubo ocupa no campo tubular, em
+# múltiplos de p_t². É o que fixa o diâmetro do feixe: D_otl = √(4·N·A_célula/π).
+#
+#     Area_1tubo,triangular = (√3/2)·(PR·d_o)²      (2-13)   -> 30° e 60°
+#     Area_1tubo,quadrada   = (PR·d_o)²             (2-14)   -> 45° e 90°
+#
+# Branan publica as duas lado a lado e explica cada uma em prosa: "For triangular pitch,
+# draw the equilateral triangle with vertices at the center of three tubes. The area of
+# the triangle is one-half of the area required to accommodate one tube. Similarly, for
+# square pitch draw the square with corners at the center of four tubes. The area of the
+# square is equal to the area required to accommodate one tube." A Tabela 2-6 nomeia os
+# quatro layouts, e são ELAS que dizem quem é triangular e quem é quadrado: "30°
+# Triangular Staggered", "60° Rotated Triangular Staggered", "90° Square Inline",
+# "45° Rotated Square Staggered".
+#
+# Até a fase de validação física o código usava a (2-13) nos QUATRO layouts, o que
+# subestimava o feixe de um passo quadrado em 7,5 % (= √(2/√3) − 1) e propagava para D_s,
+# a área de escoamento cruzado, o Reynolds do casco e os cinco fatores J. O default
+# (30°) não é afetado. Ver test/golden_saari.jl e docs/validacao/02-*.md, defeito 4.
+area_celula_sobre_pt2 = [0.8660254037844386, 1.0, 0.8660254037844386, 1.0]
+
 # Limiar de p_t/d_o abaixo do qual a área de escoamento cruzado (A_s) usa a diagonal em
 # vez da transversal — Eq. 2-19, as duas variantes. 1,707 = 1 + 1/√2 (45°);
-# 3,732 = 2 + √3 (60°). Para 30° e 90° não há troca: `Inf` desliga a variante.
+# 3,732 = 2 + √3 (60°). Para 30° e 90° Branan não dá variante nenhuma, e `0.0` é o que a
+# desliga: `crossflow_area` só troca de garganta quando `limiar > 0`.
 limiar_diagonal = [0.0, 1.7071067811865475, 3.7320508075688772, 0.0]
 
 # Tabela 2-5 — coeficientes de J_ideal, por layout e faixa de Reynolds do casco.

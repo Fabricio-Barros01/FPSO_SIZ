@@ -19,11 +19,18 @@ quatro vezes o de Fanning, a perda crescendo com o quadrado da velocidade, e o p
 
 ## Por que não há um terceiro número
 
-Porque as equações do artigo são **imagem** dentro do PDF: o texto extraível traz a
-prosa e as tabelas, não as fórmulas. As formas foram recuperadas da prosa — que nomeia
-cada símbolo, sua unidade e a faixa de validade — e é justamente por isso que os dois
-números publicados são importantes: são a única amarra externa que a implementação tem.
-Ver o cabeçalho de `src/sizing/pump/hydraulics.jl`.
+Porque o artigo é didático: ele publica as sete equações e dois valores resolvidos, e
+nenhum caso de linha inteira. As **formas** das sete foram conferidas símbolo por símbolo
+na fase de validação física (ver `docs/validacao/01-bomba-moran.md`) e fecham todas; o
+que não existe é um `(Q, H)` publicado contra o qual comparar a cadeia montada. Daí os
+dois números serem a única amarra externa que a implementação tem.
+
+## Faixa de validade
+
+Os testsets do fim do arquivo são da fase de validação física e cobrem o que a linha de
+base não cobria: o que o método **faz** quando o Reynolds cai fora do `Re > 4000` em que
+a Eq. (2) é declarada. A resposta passou a ser "recusa o ponto e diz por quê" — ver
+`case_admissible` em `src/sizing/pump/moran.jl`.
 """
 
 const K_BOMBA = FPSOSiz.constants(FPSOSiz.method_config(MoranPumpSizing()))
@@ -267,4 +274,127 @@ end
     # A varredura continua existindo: é dela que a tela desenha o diagnóstico.
     @test !isempty(res.sweep)
     @test all(r -> !r.ok, res.sweep)
+end
+
+# ---------------------------------------------------------------------------
+# Faixa de validade de Colebrook-White — fase de validação física
+# ---------------------------------------------------------------------------
+
+# A Eq. (2) do artigo é declarada para `Re > 4.000` (p. 41: "can be used to estimate the
+# Darcy friction factor from Reynolds numbers greater than 4,000"), e é a única
+# correlação de atrito que este método implementa. Entre 2.300 e 4.000 não há correlação
+# nenhuma que valha — a zona de transição é instável por natureza —, e `darcy_friction`
+# já devolve `confiavel = false` ali desde o Sprint 8.
+#
+# O que faltava era CONSUMIR o flag. Um ponto fora do domínio de validade não é
+# necessariamente impossível: é um ponto que o modelo implementado não está autorizado a
+# avaliar, e por isso tem de ser recusado como candidato com o motivo dito, em vez de
+# virar um número de aparência válida.
+#
+# O regime laminar NÃO é recusado: `f = 64/Re` é exata para escoamento plenamente
+# desenvolvido em duto circular, e `darcy_friction` a marca `confiavel = true`. A
+# distinção entre "fora da faixa da fonte" e "dentro de outra faixa exata" já estava
+# codificada no flag; estes testes a amarram ao comportamento do método.
+@testset "fora da faixa de Colebrook-White o ponto é recusado" begin
+    # Óleo de 45 cP: em DN 125 a velocidade (1,36 m/s) cai DENTRO da banda 1,0-1,5 do
+    # artigo, e o Reynolds (3.395) cai FORA do Re > 4.000 da Eq. (2).
+    vals = bomba_defaults()
+    vals[:rho_oil], vals[:mu_oil] = 900.0, 45.0
+    p = with_defaults(parameters(MoranPumpSizing()), vals)
+    ok, cons, _ = FPSOSiz.sizing_constraints(
+        MoranPumpSizing(), FPSOSiz.case_input(MoranPumpSizing(), vals), p, K_BOMBA)
+    @test ok
+
+    @testset "o retrato do defeito: transição dentro da banda de velocidade" begin
+        hid = FPSOSiz._hidraulica(cons, 125.0)
+        @test p[:v_min] <= hid.v <= p[:v_max]      # a banda aceita
+        @test hid.regime === :transicao            # e a correlação não vale
+        @test !hid.confiavel
+    end
+
+    @testset "case_admissible recusa a transição" begin
+        @test !case_admissible(MoranPumpSizing(), 125.0, cons, p)
+    end
+
+    @testset "e recusa por ISSO, não pela banda nem pelo NPSH" begin
+        # Se fosse a banda ou o NPSH, o diagnóstico mandaria o usuário para o lado
+        # errado: "amplie a grade" e "reveja a viscosidade" são ações opostas.
+        hid = FPSOSiz._hidraulica(cons, 125.0)
+        @test hid.npsh >= cons.npsh_exigido        # o NPSH está folgado
+    end
+
+    @testset "o regime chega ao usuário — em derived e no memorial" begin
+        hid = FPSOSiz._hidraulica(cons, 125.0)
+        d = derived(MoranPumpSizing(), 125.0, hid.h_total, :atrito, cons, K_BOMBA, p)
+        @test haskey(d, :confiavel)
+        @test d[:confiavel] == 0.0                 # 0/1 porque o Dict é de Float64
+        @test haskey(d, :re_min_correlacao)
+        @test d[:re_min_correlacao] == K_BOMBA[:reynolds_turbulent_min]
+    end
+end
+
+@testset "laminar continua admissível: Hagen-Poiseuille é exata" begin
+    # Óleo de 200 cP: Re = 764 em DN 125. Fora da faixa de Colebrook-White, mas DENTRO
+    # da faixa de uma relação exata — e o método não pode confundir as duas coisas.
+    vals = bomba_defaults()
+    vals[:rho_oil], vals[:mu_oil] = 900.0, 200.0
+    p = with_defaults(parameters(MoranPumpSizing()), vals)
+    ok, cons, _ = FPSOSiz.sizing_constraints(
+        MoranPumpSizing(), FPSOSiz.case_input(MoranPumpSizing(), vals), p, K_BOMBA)
+    @test ok
+
+    hid = FPSOSiz._hidraulica(cons, 125.0)
+    @test hid.regime === :laminar
+    @test hid.confiavel
+    @test hid.f ≈ 64 / hid.re
+    @test p[:v_min] <= hid.v <= p[:v_max]
+    @test case_admissible(MoranPumpSizing(), 125.0, cons, p)
+
+    @testset "e o memorial credita a equação que de fato produziu f" begin
+        # Carimbar "Colebrook" sobre um f que veio de Hagen-Poiseuille manda o leitor
+        # conferir a conta na equação errada. É defeito de atribuição, não de número.
+        tr = CalcTrace()
+        d = derived(MoranPumpSizing(), 125.0, hid.h_total, :atrito, cons, K_BOMBA, p)
+        trace_selection!(MoranPumpSizing(), tr, (; x = 125.0, y = hid.h_total,
+                                                 derivados = d), p)
+        linha_f = only(filter(e -> e.var == "f", tr.entries))
+        @test occursin("Hagen", linha_f.eq)
+        @test !occursin("Colebrook", linha_f.eq)
+        # e o regime é uma linha do memorial, não um campo perdido no NamedTuple
+        @test any(e -> occursin("regime", lowercase(e.var)), tr.entries)
+    end
+end
+
+@testset "turbulento: a citação é Colebrook-White, e o ponto passa" begin
+    vals = bomba_defaults()                        # água, 1,0 cP — Re ~ 10⁵
+    p = with_defaults(parameters(MoranPumpSizing()), vals)
+    ok, cons, _ = FPSOSiz.sizing_constraints(
+        MoranPumpSizing(), FPSOSiz.case_input(MoranPumpSizing(), vals), p, K_BOMBA)
+    @test ok
+    hid = FPSOSiz._hidraulica(cons, 125.0)
+    @test hid.regime === :turbulento
+    @test case_admissible(MoranPumpSizing(), 125.0, cons, p)
+
+    tr = CalcTrace()
+    d = derived(MoranPumpSizing(), 125.0, hid.h_total, :atrito, cons, K_BOMBA, p)
+    trace_selection!(MoranPumpSizing(), tr, (; x = 125.0, y = hid.h_total,
+                                             derivados = d), p)
+    linha_f = only(filter(e -> e.var == "f", tr.entries))
+    @test occursin("Colebrook", linha_f.eq)
+end
+
+@testset "quando a transição recusa TUDO, a mensagem diz isso" begin
+    # Grade recortada em torno do único DN que a banda de velocidade aceitaria: o que
+    # sobra é recusado só pela faixa da correlação, e o diagnóstico tem de nomeá-la.
+    # "Amplie a grade" seria a orientação errada — a grade não é o problema.
+    vals = bomba_defaults()
+    vals[:rho_oil], vals[:mu_oil] = 900.0, 45.0
+    vals[:dn_min], vals[:dn_max] = 125.0, 125.0
+    res = size_equipment(CentrifugalPump(), MoranPumpSizing(),
+                         FPSOSiz.case_input(MoranPumpSizing(), vals), vals)
+    @test !res.feasible
+    msg = lowercase(res.message)
+    @test occursin("transi", msg)                  # nomeia a zona de transição
+    @test occursin("4000", replace(msg, r"[ .,]" => ""))  # e a fronteira da fonte
+    @test !occursin("cavita", msg)                 # e NÃO acusa cavitação
 end

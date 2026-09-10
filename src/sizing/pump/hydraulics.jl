@@ -8,31 +8,41 @@ Darcy-Weisbach servirão a qualquer linha que o programa venha a dimensionar, e
 mantê-las aqui deixa o método do Sprint 8 com o que é dele — a sequência de cálculo e
 o critério de escolha.
 
-# Uma limitação da fonte, declarada
+# Como as equações foram lidas
 
-As equações do artigo são **imagem** dentro do PDF: o texto extraível traz a prosa e as
-tabelas, não as fórmulas. As formas abaixo foram recuperadas da prosa, que as descreve
-sem ambiguidade (nomeia cada símbolo, a unidade e a faixa de validade), e conferidas
-contra os dois números que o artigo publica: a Antoine da Tabela 3 (água a 30 °C) e a
-leitura do nomograma da Figura 3. O que **não** foi possível recuperar são os
-coeficientes da Tabela 2 (Zigrang-Sylvester e Haaland), que também são imagem e não têm
-número conferível no texto — por isso só Colebrook-White está implementada, que é a que
-o autor declara preferir.
+As fórmulas do artigo são **imagem** dentro do PDF, e o PDF é cifrado com `copy:no`: o
+texto extraível traz a prosa e as tabelas, nunca as equações. Até o Sprint 8 as formas
+abaixo foram recuperadas da prosa — que as descreve sem ambiguidade, nomeando cada
+símbolo, a unidade e a faixa de validade — e conferidas contra os dois números que o
+artigo publica.
+
+Na fase de validação física as sete equações foram **lidas diretamente**, rasterizando as
+páginas (`pdftoppm`, que usa a permissão `print:yes` que o documento concede) e
+conferindo símbolo por símbolo. Todas as sete fecham com o que estava implementado; o
+registro linha a linha está em `docs/validacao/01-bomba-moran.md`.
+
+Isso derrubou uma limitação que este cabeçalho declarava: os coeficientes da Tabela 2
+(Zigrang-Sylvester e Haaland) **são** legíveis, e as duas formas estão impressas por
+extenso com as faixas de rugosidade de cada uma. Continuam fora do programa, mas agora
+por escolha e não por indisponibilidade — Colebrook-White é a que o autor declara
+preferir, e acrescentar correlação alternativa não melhora a validação de nenhuma.
 
 # O que é do artigo e o que não é
 
 | relação | fonte |
 |---|---|
-| perda localizada `hf = k·v²/(2g)` | Moran, "Determining frictional losses through fittings" |
-| Reynolds `Re = ρvD/µ` | Moran, junto de Colebrook-White |
-| Colebrook-White (fator de Darcy) | Moran, declarada para `Re > 4000` |
-| Darcy-Weisbach `Δp = f·(L/D)·(ρv²/2)` | Moran |
-| Antoine `log₁₀ Pv[bar] = A − B/(T[K]+C)` | Moran, Tabela 3 |
+| perda localizada `hf = k·v²/(2g)` | Moran, **Eq. (1)**, p. 40 |
+| Colebrook-White (fator de Darcy) | Moran, **Eq. (2)**, p. 41 — declarada para `Re > 4000` |
+| Reynolds `Re = ρvD/µ` | Moran, **Eq. (3)**, p. 41 |
+| Darcy-Weisbach `Δp/L = f·ρv²/(2D)` | Moran, **Eq. (4)**, p. 41 |
+| Antoine `log₁₀ Pv[bar] = A − B/(C+T[K])` | Moran, **Eq. (5)** e Tabela 3, p. 41 |
+| NPSH `= P₀/(ρg) + h₀ − h_Sf − Pv/(ρg)` | Moran, **Eq. (6)**, p. 41 |
+| potência `P = QρgH/(3,6×10⁶η)` | Moran, **Eq. (7)**, p. 42 |
 | `f = 64/Re` no regime laminar | **não é do artigo** — ver [`darcy_friction`](@ref) |
 
-O `g = 9,81 m/s²` é o valor que o artigo declara ao definir a perda localizada, e é o
-que se usa; o padrão internacional é 9,80665, e a diferença de 0,03 % não muda nenhuma
-decisão de diâmetro.
+O `g = 9,81 m/s²` é o valor que o artigo declara ao definir a Eq. (1) ("g is the
+acceleration due to gravity (9.81 m/sec²)"), e é o que se usa; o padrão internacional é
+9,80665, e a diferença de 0,03 % não muda nenhuma decisão de diâmetro.
 """
 
 """
@@ -89,6 +99,50 @@ function _colebrook_loop(re::Float64, rel::Float64, f0::Float64, tol::Float64,
 end
 
 """
+    flow_regime(re, k) -> (regime::Symbol, confiavel::Bool)
+
+Em que regime o escoamento está, e se a correlação daquele regime **vale** ali.
+
+Existe separada de [`darcy_friction`](@ref) porque a classificação é consultada em dois
+lugares — o cálculo do `f` e o memorial, que tem de citar a equação que de fato produziu
+o número. Duas classificações independentes divergiriam no dia em que uma das duas
+fronteiras mudasse de valor no TOML, e a divergência apareceria como um memorial citando
+Colebrook-White sobre um `f` de Hagen-Poiseuille — que foi exatamente o defeito que a
+fase de validação encontrou aqui.
+
+`confiavel = false` na zona de transição não é falha de convergência: é a afirmação de
+que **nenhuma** das duas correlações implementadas vale naquele `Re`.
+"""
+function flow_regime(re::Real, k::AbstractDict)
+    (isfinite(re) && re > 0) || return (:indefinido, false)
+    re <= float(k[:reynolds_laminar_max])   && return (:laminar, true)
+    re >= float(k[:reynolds_turbulent_min]) && return (:turbulento, true)
+    return (:transicao, false)
+end
+
+"""
+    friction_equation(regime) -> (fonte, forma)
+
+A citação que o memorial tem de imprimir ao lado do `f` **daquele** regime: o par
+(equação, forma algébrica) da relação que produziu o número.
+
+Carimbar "Colebrook" sobre um `f` que veio de `64/Re` manda o leitor conferir a conta na
+equação errada. Não muda nenhum número e por isso não aparece em teste de valor — é
+defeito de atribuição, e é o `test/golden_moran.jl` que o fixa.
+
+**A `fonte` é curta de propósito.** `linha_memorial` (em `app/src/report.jl`) alinha esse
+campo em 10 colunas, e o rótulo mais longo que o core emite hoje tem 9 caracteres
+(`Eq. 4.15b`). "Hagen-Poiseuille" tem 16 e colaria no nome da variável — daí o sobrenome
+só, como em "Colebrook" e "Darcy". O nome inteiro vai na `forma`, que é a última coluna e
+não tem largura fixa.
+"""
+friction_equation(regime::Symbol) =
+    regime === :laminar    ? ("Hagen",
+                              "f = 64/Re — Hagen-Poiseuille, exata no laminar") :
+    regime === :indefinido ? ("—", "regime indefinido: Re não é número positivo") :
+    ("Colebrook", "1/√f = −2log₁₀(ε/3,7D + 2,51/(Re√f))")
+
+"""
     darcy_friction(re, rel_rough, k) -> (f, regime, confiavel)
 
 O fator de Darcy no regime em que o escoamento de fato está, e o nome do regime.
@@ -109,18 +163,16 @@ que valha: a zona de transição é instável por natureza. Ali usa-se Colebrook
 `confiavel = false`, e é o memorial que avisa.
 """
 function darcy_friction(re::Real, rel_rough::Real, k::AbstractDict)
-    re_lam  = float(k[:reynolds_laminar_max])
-    re_turb = float(k[:reynolds_turbulent_min])
-    (isfinite(re) && re > 0) || return (NaN, :indefinido, false)
+    regime, confiavel = flow_regime(re, k)
+    regime === :indefinido && return (NaN, regime, false)
+    regime === :laminar &&
+        return (float(k[:laminar_coefficient]) / re, regime, confiavel)
 
-    if re <= re_lam
-        return (float(k[:laminar_coefficient]) / re, :laminar, true)
-    end
     f, ok = colebrook_white(re, rel_rough; f0 = float(k[:colebrook_initial]),
                             tol = float(k[:colebrook_tolerance]),
                             maxiter = Int(k[:colebrook_max_iter]))
     ok || return (f, :nao_convergiu, false)
-    return re >= re_turb ? (f, :turbulento, true) : (f, :transicao, false)
+    return (f, regime, confiavel)
 end
 
 """

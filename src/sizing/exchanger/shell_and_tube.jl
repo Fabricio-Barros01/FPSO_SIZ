@@ -161,13 +161,40 @@ Fator de correção do arranjo 1 passe no casco / 2 passes nos tubos, Figura 4.3
 
     F = √(1+R²)·ln[(1−RP)/(1−P)] / { (1−R)·ln[(2 − P(1+R−√(1+R²)))/(2 − P(1+R+√(1+R²)))] }
 
-com `P = (T₁ᵢ − T₁ₒ)/(T₁ᵢ − T₂ᵢ)` e `R = (T₁ᵢ − T₁ₒ)/(T₂ᵢ − T₂ₒ)`. O arranjo é
-*stream symmetric* — Saari o registra citando Shah & Sekulić —, então tanto faz calcular
-com o fluido do tubo ou com o do casco, desde que os dois parâmetros venham do mesmo.
+com
+
+    P = (T₁ₒ − T₁ᵢ)/(T₂ᵢ − T₁ᵢ)     efetividade térmica do fluido 1
+    R = (T₂ᵢ − T₂ₒ)/(T₁ₒ − T₁ᵢ)     = Ċ₁/Ċ₂ — o ΔT do OUTRO fluido sobre o próprio
+
+O arranjo é *stream symmetric* — Saari o registra citando Shah & Sekulić —, então tanto
+faz calcular com o fluido do tubo ou com o do casco, desde que os dois parâmetros venham
+do mesmo.
+
+# A Figura 4.3 imprime `R` invertido
+
+A anotação sob a Figura 4.3 traz `R₁ = (T₁ᵢ − T₁ₒ)/(T₂ᵢ − T₂ₒ)`, ou seja `ΔT₁/ΔT₂`. Isso
+contradiz a **Eq. (4.11) do próprio texto**, que define `R_h = Ċ_h/Ċ_c`, e a Eq. (4.12),
+que a reescreve como `R_h = (T_c,o − T_c,i)/(T_h,i − T_h,o)` = `ΔT_c/ΔT_h` — o ΔT do
+outro fluido sobre o próprio, que é também a convenção de Shah & Sekulić, a fonte que a
+própria Figura 4.3 cita.
+
+A forma implementada é a da Eq. (4.11)/(4.12). Conferida por rota independente: a relação
+P-NTU do TEMA E 1-2 de Shah & Sekulić,
+
+    P₁ = 2 / [1 + R₁ + √(1+R₁²)·coth(NTU₁·√(1+R₁²)/2)]
+
+com `F = ln[(1−R₁P₁)/(1−P₁)] / [NTU₁(1−R₁)]`, reproduz esta função à precisão de máquina
+(≤ 8×10⁻¹⁵) para `R` de 0,4 a 2,0 e `NTU` de 0,5 a 3,0 — e as duas rotas não compartilham
+uma linha de código. Ver `test/golden_saari.jl` e `docs/validacao/02-*.md`, divergência 3.
 
 `R = 1` é removível: numerador e denominador zeram juntos, e o limite é finito. Sem o
 tratamento, o caso mais comum de todos (capacidades térmicas iguais) devolveria `NaN` —
 que o desenho propagaria em silêncio, como o β do Sprint 5.
+
+`NaN` fora do domínio **não** é falha: para cada `R` existe um `P` máximo que o arranjo
+1-2 alcança com área infinita, `P_max = 2/(1 + R + √(1+R²))`. Pedir mais que isso é pedir
+um trocador que não existe, e o `den_log ≤ 0` é o sinal — em `R = 2` o teto é 0,382, e
+`P = 0,4` sai `NaN` por essa via.
 """
 function f_correction_1_2(p::Real, r::Real)
     (isfinite(p) && isfinite(r)) || return NaN
@@ -185,23 +212,39 @@ function f_correction_1_2(p::Real, r::Real)
 end
 
 """
-    nusselt_dittus_boelter(re, pr, aquecendo, k) -> Nu
+    nusselt_dittus_boelter(re, pr, aquecendo, k) -> (Nu, valida)
 
 Eq. (6.23): `Nu = 0,024·Re^0,8·Pr^0,4` aquecendo, `0,026·Re^0,8·Pr^0,3` resfriando.
 
-Os coeficientes são os que **Saari publica**, e não o `0,023 / Pr^0,4 ou 0,3` que a
-maioria dos textos traz: o §6.3.1 distingue os dois casos com coeficientes distintos, e
+Os coeficientes são os que **Saari publica** (p. 68), e não o `0,023 / Pr^0,4 ou 0,3` que
+a maioria dos textos traz: o §6.3.1 distingue os dois casos com coeficientes distintos, e
 o critério do projeto é seguir a fonte. A diferença sobre o `0,023` clássico é de 4 % em
 `h_i`, bem dentro dos "-26…+7 % para água" que o próprio §6.3.1 declara como erro da
 correlação.
 
 `aquecendo` é do ponto de vista do fluido **do tubo**: `true` quando ele recebe calor.
+
+# `valida` — a faixa que a fonte declara
+
+Logo abaixo da Eq. (6.23): *"Equation (6.23) is valid within 10⁴ < Re < 1,2·10⁵ and
+0,7 < Pr < 120"*, e o período seguinte não deixa dúvida sobre o que há fora: *"Below
+Re = 10⁴ the results are much worse."*
+
+`valida = false` **não** é erro de cálculo: `Nu` sai, e sai plausível. É o ponto — a
+correlação devolve número em qualquer `Re`, e o número não avisa. Devolver o par é o
+mesmo idioma de `colebrook_white`, `converge_drag` e `darcy_friction`, e é o que permite
+a [`case_admissible`](@ref) recusar o feixe em vez de dimensionar por extrapolação.
+
+As quatro fronteiras vêm do TOML porque são premissa revisável **declarada pela fonte**.
 """
 function nusselt_dittus_boelter(re::Real, pr::Real, aquecendo::Bool, k::AbstractDict)
-    (isfinite(re) && re > 0 && isfinite(pr) && pr > 0) && return aquecendo ?
+    (isfinite(re) && re > 0 && isfinite(pr) && pr > 0) || return (NaN, false)
+    nu = aquecendo ?
         float(k[:dittus_boelter_heating]) * re^0.8 * pr^float(k[:dittus_boelter_pr_heating]) :
         float(k[:dittus_boelter_cooling]) * re^0.8 * pr^float(k[:dittus_boelter_pr_cooling])
-    return NaN
+    valida = float(k[:dittus_boelter_re_min]) <= re <= float(k[:dittus_boelter_re_max]) &&
+             float(k[:dittus_boelter_pr_min]) <= pr <= float(k[:dittus_boelter_pr_max])
+    return (nu, valida)
 end
 
 """
@@ -268,6 +311,12 @@ struct ExchangerConstraints
     k_parede::Float64
     area_tubo::Float64    # m² por tubo, seção livre
     passo_m::Float64      # espaçamento entre centros de tubo, m
+    # Área que cada tubo ocupa no campo tubular, em múltiplos de passo² — Eq. (2-13) para
+    # os layouts triangulares (30°, 60°) e Eq. (2-14) para os quadrados (45°, 90°).
+    # Resolvida aqui, e não em `_tubo`, porque `_tubo` roda também com Bell-Delaware
+    # desligado, quando `kbd` está vazio: fixá-la na construção evita um `get` com valor
+    # default espalhado pelo caminho quente.
+    area_celula::Float64
     # --- lado do casco (Bell-Delaware) -------------------------------------
     m_casco::Float64      # kg/s
     cp_casco::Float64     # J/kg·K
@@ -393,11 +442,22 @@ function sizing_constraints(m::SaariLMTD, e::ExchangerDuty,
         l in (30, 45, 60, 90) ? l : 30
     end
 
+    # Eq. (2-13)/(2-14): triangular ocupa (√3/2)·passo² por tubo, quadrado ocupa passo².
+    # A Tabela 2-6 é quem diz qual é qual — 30° e 60° são triangulares, 45° e 90° são
+    # quadrados. O default de `√3/2` cobre o caminho com Bell-Delaware desligado, em que
+    # o bloco de constantes pode nem existir.
+    area_celula = let lays = Int.(get(kbd, :layouts, [30, 45, 60, 90])),
+                      raz = Float64.(get(kbd, :area_celula_sobre_pt2,
+                                         [sqrt(3)/2, 1.0, sqrt(3)/2, 1.0])),
+                      i = findfirst(==(layout), lays)
+        i === nothing ? sqrt(3)/2 : raz[i]
+    end
+
     cons = ExchangerConstraints(
         abs(q), dtlm, fator, ua, t_casco_out, aquecendo,
         e.m_tubo, e.rho_tubo, e.mu_tubo, pr, e.k_tubo, d_i, d_o, passes,
         p[:h_casco], p[:rf_tubo], p[:rf_casco], p[:k_parede],
-        π * d_i^2 / 4, p[:razao_passo] * d_o,
+        π * d_i^2 / 4, p[:razao_passo] * d_o, area_celula,
         e.m_casco, e.cp_casco, e.mu_casco, e.k_casco, layout,
         p[:corte_chicana], p[:espacamento_chicana], p[:pares_veda],
         Units.mm_to_m(p[:folga_furo_chicana]), p[:faixas_divisoras],
@@ -419,33 +479,40 @@ e é o total que preenche a área e o casco.
 """
 function _tubo(c::ExchangerConstraints, n::Real)
     vazio = (; v = Inf, re = NaN, h_i = NaN, h_o = NaN, u = NaN, area = Inf, l = Inf,
-             n_total = 0.0, d_casco = Inf, re_casco = NaN, jc = NaN, jl = NaN,
-             jb = NaN, js = NaN, jr = NaN, j_produto = NaN, h_ideal = NaN,
-             n_chicanas = NaN, ok = false)
+             n_total = 0.0, d_casco = Inf, d_shell = Inf, re_casco = NaN, jc = NaN,
+             jl = NaN, jb = NaN, js = NaN, jr = NaN, j_produto = NaN, h_ideal = NaN,
+             n_chicanas = NaN, nu_valido = false, ok = false)
     n >= 1 || return vazio
     n_total = n * c.passes
 
     v  = c.m_tubo / (c.rho_tubo * n * c.area_tubo)
     re = reynolds_pipe(c.rho_tubo, v, c.d_i, c.mu_tubo)
-    nu = nusselt_dittus_boelter(re, c.pr_tubo, c.aquecendo, c.k)
+    nu, nu_valido = nusselt_dittus_boelter(re, c.pr_tubo, c.aquecendo, c.k)
     h_i = nu * c.k_tubo / c.d_i
 
-    # Feixe de passo triangular: cada tubo ocupa (√3/2)·passo² do campo tubular. É
-    # geometria de empacotamento, não correlação — daí não vir do TOML. Branan a
-    # publica como Eq. (2-13), o que a confirma por uma fonte independente.
-    d_feixe = sqrt(4 * n_total * (sqrt(3) / 2) * c.passo_m^2 / π)
+    # Campo tubular: cada tubo ocupa `area_celula·passo²`, com `area_celula` = √3/2 nos
+    # layouts triangulares (30°, 60°) e 1 nos quadrados (45°, 90°). É geometria de
+    # empacotamento, e Branan a publica nas duas formas — Eq. (2-13) e (2-14) —, com a
+    # Tabela 2-6 dizendo qual layout é qual. O fator vem resolvido de
+    # `sizing_constraints`; usar o triangular nos quatro subestimava o feixe quadrado em
+    # 7,5 %, e o erro atravessava D_s, A_s, Re do casco e os cinco fatores J.
+    d_feixe = sqrt(4 * n_total * c.area_celula * c.passo_m^2 / π)
 
     if !c.bd_ativo
         u = overall_u(h_i, c.h_casco, c.rf_tubo, c.rf_casco, c.d_i, c.d_o, c.k_parede)
         area = c.ua_exigido / u
         l = area / (n_total * π * c.d_o)
+        # Mesmo sem Bell-Delaware o casco existe e é ele que `admissible` limita: a
+        # Eq. (2-17) é geometria de montagem, não parte do método de coeficiente.
         return (; v, re, h_i, h_o = c.h_casco, u, area, l,
-                n_total = float(n_total), d_casco = d_feixe, re_casco = NaN,
+                n_total = float(n_total), d_casco = d_feixe,
+                d_shell = d_feixe + 2 * c.d_o, re_casco = NaN,
                 jc = NaN, jl = NaN, jb = NaN, js = NaN, jr = NaN, j_produto = NaN,
-                h_ideal = NaN, n_chicanas = NaN, ok = isfinite(u) && u > 0)
+                h_ideal = NaN, n_chicanas = NaN, nu_valido,
+                ok = isfinite(u) && u > 0)
     end
 
-    return _tubo_bell_delaware(c, n, n_total, v, re, h_i, d_feixe, vazio)
+    return _tubo_bell_delaware(c, n, n_total, v, re, h_i, d_feixe, nu_valido, vazio)
 end
 
 """
@@ -471,16 +538,35 @@ O laço mora **aqui dentro** de propósito. `_tubo` é a única função que o c
 construção. Espalhá-lo seria abrir a porta para a varredura e o cartão discordarem.
 """
 function _tubo_bell_delaware(c::ExchangerConstraints, n::Real, n_total::Real,
-                             v::Real, re::Real, h_i::Real, d_feixe::Real, vazio)
+                             v::Real, re::Real, h_i::Real, d_feixe::Real,
+                             nu_valido::Bool, vazio)
     kbd = c.kbd
     tol   = float(get(kbd, :tolerancia, 1e-9))
     maxit = Int(get(kbd, :max_iter, 60))
 
-    # O casco envolve o feixe: o limite externo de tubos é o feixe, e o casco lhe dá a
-    # folga de montagem da própria Tabela 2-7 (que é diametral, casco − chicana).
+    # O casco envolve o feixe, e a folga entre os dois é a Eq. (2-17):
+    #
+    #     D_s,min = 2·√(A_corrigida/π) + 2·d_o
+    #
+    # O primeiro termo é o diâmetro do círculo que o feixe ocupa, isto é `D_otl` — logo
+    # `D_s = D_otl + 2·d_o`.
+    #
+    # NÃO é a folga da Tabela 2-7. Aquela é, pelo título da própria tabela, "Diametric
+    # shell-to-BAFFLE clearance", e Branan a define como `d_sb = D_s − D_b`, com `D_b` o
+    # diâmetro da chicana: é tolerância de fabricação, de 2,5 a 7,6 mm, e o seu lugar é a
+    # área de vazamento `A_sb` da Eq. (2-24) — onde ela continua entrando, logo abaixo.
+    #
+    # Usar `d_sb` como vão feixe-casco subestimava `D_s − D_otl` em 12× (3,2 mm contra
+    # 38,1 mm), o que subestimava a área de desvio `A_bp` na mesma proporção e levava
+    # `Jb` a 0,98 quando o valor é ~0,83 — ou seja, concluía que quase nada desviava pelo
+    # vão. O erro era NÃO CONSERVADOR: inflava `h_o` em 23-28 % e encolhia o trocador.
+    # Ver docs/validacao/02-trocador-saari-bell-delaware.md, defeito 5.
     d_otl = d_feixe
-    folga_mm = baffle_clearance(Units.m_to_mm(d_otl), kbd)
-    d_s = d_otl + Units.mm_to_m(folga_mm)
+    d_s = d_otl + 2 * c.d_o
+
+    # A Tabela 2-7 é indexada pelo DN do CASCO, então a consulta usa `d_s` — e não o
+    # feixe, como fazia quando os dois eram quase o mesmo número.
+    folga_mm = baffle_clearance(Units.m_to_mm(d_s), kbd)
 
     p_n, p_p, _ = layout_pitches(c.layout, c.passo_m, kbd)
     l_bc = c.espac_chicana * d_s
@@ -498,13 +584,15 @@ function _tubo_bell_delaware(c::ExchangerConstraints, n::Real, n_total::Real,
         h_o, fat, bd_ok = bell_delaware(geo, c.m_casco, c.cp_casco, c.mu_casco,
                                         c.k_casco, n_b, l_bc, l_bc, kbd)
         bd_ok || return merge(vazio, (; v, re, h_i, n_total = float(n_total),
-                                      d_casco = d_feixe, re_casco = fat.re,
-                                      h_ideal = fat.h_ideal))
+                                      d_casco = d_feixe, d_shell = d_s,
+                                      re_casco = fat.re,
+                                      h_ideal = fat.h_ideal, nu_valido))
 
         u = overall_u(h_i, h_o, c.rf_tubo, c.rf_casco, c.d_i, c.d_o, c.k_parede)
         (isfinite(u) && u > 0) || return merge(vazio, (; v, re, h_i, h_o,
                                               n_total = float(n_total),
-                                              d_casco = d_feixe))
+                                              d_casco = d_feixe, d_shell = d_s,
+                                              nu_valido))
         area = c.ua_exigido / u
         novo = area / (n_total * π * c.d_o)
         if isfinite(l) && abs(novo - l) <= tol * max(1.0, abs(novo))
@@ -515,9 +603,10 @@ function _tubo_bell_delaware(c::ExchangerConstraints, n::Real, n_total::Real,
     end
 
     return (; v, re, h_i, h_o, u, area, l, n_total = float(n_total),
-            d_casco = d_feixe, re_casco = fat.re, jc = fat.jc, jl = fat.jl,
+            d_casco = d_feixe, d_shell = d_s,
+            re_casco = fat.re, jc = fat.jc, jl = fat.jl,
             jb = fat.jb, js = fat.js, jr = fat.jr, j_produto = fat.produto,
-            h_ideal = fat.h_ideal, n_chicanas = n_b, ok)
+            h_ideal = fat.h_ideal, n_chicanas = n_b, nu_valido, ok)
 end
 
 # ---------------------------------------------------------------------------
@@ -554,10 +643,22 @@ function derived(m::SaariLMTD, n::Real, l::Real, gov::Symbol,
         :jr       => t.jr,
         :j_produto => t.j_produto,
         :n_chicanas => t.n_chicanas,
+        # A faixa da Eq. (6.23) e os dois números que a decidem. Saem como 0/1 e como
+        # valor porque `selection_message` precisa dizer POR QUE recusou, e o CSV precisa
+        # deixar o leitor conferir a margem sem reabrir o TOML.
+        :nu_valido => t.nu_valido ? 1.0 : 0.0,
+        :pr       => c.pr_tubo,
+        :re_min_correlacao => float(get(k, :dittus_boelter_re_min, NaN)),
+        :re_max_correlacao => float(get(k, :dittus_boelter_re_max, NaN)),
         :u        => t.u,
         :area     => t.area,
         :n_total  => t.n_total,
         :d_casco  => Units.m_to_mm(t.d_casco),
+        # O feixe e o CASCO são números diferentes desde a correção da Eq. (2-17):
+        # o feixe é o que o cartão mostra, o casco é o que `admissible` limita contra a
+        # Tabela 3.1 ("Shell inside diameter"). Enquanto o vão valia 3 mm a distinção não
+        # pagava; com os 38 mm da fonte, paga.
+        :d_shell  => Units.m_to_mm(t.d_shell),
         # O comprimento que a ENVELOPE exigiu, e não o que este caso pediria sozinho:
         # é ele que `admissible` compara com o tubo comercial mais longo, e é ele que
         # será cortado na oficina. Coincidem quando há um caso só.
@@ -576,11 +677,25 @@ end
 """
     case_admissible(m::SaariLMTD, n, c, p)
 
-A banda de velocidade no tubo, **deste** caso — Tabela 3.1 de Saari.
+A banda de velocidade no tubo (Tabela 3.1 de Saari) e a **faixa de validade de
+Dittus-Boelter** (Eq. 6.23), deste caso.
 
-É por caso porque a velocidade é `ṁ/(ρ·n·A)`, e a vazão mássica é do caso: com dois
-casos no envelope, o de maior vazão pode erodir o tubo enquanto o governante (o de maior
-comprimento exigido) passa folgado.
+É por caso porque a velocidade é `ṁ/(ρ·n·A)` e o Reynolds sai dela, e a vazão mássica é
+do caso: com dois casos no envelope, o de maior vazão pode erodir o tubo enquanto o
+governante (o de maior comprimento exigido) passa folgado.
+
+# Por que a faixa da correlação recusa o feixe
+
+Saari declara a Eq. (6.23) válida em `10⁴ < Re < 1,2×10⁵` e `0,7 < Pr < 120`, e é
+explícito sobre o que há abaixo: *"Below Re = 10⁴ the results are much worse."* Fora
+disso o programa não tem correlação de convecção interna — não há um segundo ramo, como
+`f = 64/Re` é para a bomba no laminar.
+
+E `h_i` não é um número de canto: ele atravessa `U → A → L`, e `L` é o que a varredura
+devolve. Aceitar o ponto seria devolver um comprimento de tubo que nenhuma equação desta
+implementação sustenta, com a mesma aparência de todos os outros. Um ponto fora do
+domínio de validade não é necessariamente impossível — é um ponto que o modelo
+implementado **não está autorizado a avaliar**.
 """
 function case_admissible(::SaariLMTD, n::Real, c::ExchangerConstraints,
                          p::AbstractDict)
@@ -588,7 +703,7 @@ function case_admissible(::SaariLMTD, n::Real, c::ExchangerConstraints,
     # `ok = false` é feixe cujo laço de Bell-Delaware não fechou, ou cujo `U` não é
     # número. Aceitá-lo seria escolher um trocador a partir de um `L` que ninguém
     # calculou — o mesmo defeito que o `convergiu` de `colebrook_white` evita na bomba.
-    return t.ok && p[:v_min] <= t.v <= p[:v_max]
+    return t.ok && t.nu_valido && p[:v_min] <= t.v <= p[:v_max]
 end
 
 """
@@ -598,8 +713,15 @@ As duas medidas do casco — diâmetro do feixe e comprimento de tubo — que s�
 **conjunto**: saem do número de tubos e do comprimento que a envelope exigiu, não da
 vazão de nenhum caso.
 
-O teto de diâmetro é a Tabela 3.1 de Saari (casco de chapa enrolada vai a 2500 mm);
-acima disso o serviço deixa de caber num casco e vira dois em paralelo.
+O teto de diâmetro é a Tabela 3.1 de Saari — cuja linha se chama **"Shell inside
+diameter"**, casco de chapa enrolada até 2500 mm. Acima disso o serviço deixa de caber
+num casco e vira dois em paralelo.
+
+Por isso a comparação é com `:d_shell`, e não com `:d_casco`, que é o **feixe**. Os dois
+eram quase o mesmo número enquanto o vão feixe-casco valia 3 mm; com os 38 mm da
+Eq. (2-17) de Branan a distinção passou a valer 38 mm de casco, e comparar o feixe com um
+limite de casco deixaria passar um trocador que não cabe. Ver o defeito 5 em
+`docs/validacao/02-trocador-saari-bell-delaware.md`.
 
 **O teto de comprimento não é de Saari** — ele não trata do assunto. É limite de
 fabricação: tubo de trocador vem em comprimento de estoque, e o mais longo comum é
@@ -609,7 +731,7 @@ justamente porque é limite comercial e não física: quem tiver tubo de 12 m mu
 número.
 """
 admissible(::SaariLMTD, n::Real, der::AbstractDict, p::AbstractDict) =
-    get(der, :d_casco, Inf) <= p[:d_casco_max] &&
+    get(der, :d_shell, Inf) <= p[:d_casco_max] &&
     get(der, :l, Inf) <= p[:l_tubo_max]
 
 """
@@ -654,6 +776,29 @@ function selection_message(m::SaariLMTD, rows, teto::Real, p::AbstractDict;
                "$(round(lo, digits = 2)) a $(round(hi, digits = 2)) m/s. Amplie a " *
                "grade de tubos, mude o diâmetro do tubo, ou reveja a banda."
     end
+    # Fora da faixa da Eq. (6.23) vem ANTES do comprimento e do casco: `L` e `d_casco`
+    # são calculados A PARTIR de `h_i`, e diagnosticar por eles seria apontar o sintoma
+    # de um número que já foi reprovado na origem.
+    k = constants(method_config(m))
+    validos = filter(r -> get(r.derivados, :nu_valido, 1.0) != 0.0, na_banda)
+    if isempty(validos)
+        res = filter(isfinite, [get(r.derivados, :re, NaN) for r in na_banda])
+        lo, hi = isempty(res) ? (NaN, NaN) : extrema(res)
+        prs = filter(isfinite, [get(r.derivados, :pr, NaN) for r in na_banda])
+        pr = isempty(prs) ? NaN : first(prs)
+        return "Na banda de velocidade $(p[:v_min])–$(p[:v_max]) m/s todos os feixes " *
+               "caem fora da faixa em que Saari declara a correlação de Dittus-Boelter " *
+               "(Eq. 6.23): o Reynolds no tubo vai de $(round(lo, digits = 0)) a " *
+               "$(round(hi, digits = 0)) e o Prandtl vale $(round(pr, digits = 1)), " *
+               "contra $(round(float(k[:dittus_boelter_re_min]), digits = 0))–" *
+               "$(round(float(k[:dittus_boelter_re_max]), digits = 0)) e " *
+               "$(k[:dittus_boelter_pr_min])–$(k[:dittus_boelter_pr_max]). Como h_i " *
+               "atravessa U, a área e o comprimento, o programa não extrapola. Mude o " *
+               "diâmetro do tubo, reveja a viscosidade ou a temperatura do fluido do " *
+               "tubo, ou desloque a banda de velocidade."
+    end
+    na_banda = validos
+
     curto = filter(r -> get(r.derivados, :l, Inf) <= p[:l_tubo_max], na_banda)
     if isempty(curto)
         menor_l = minimum(get(r.derivados, :l, Inf) for r in na_banda)
@@ -662,7 +807,7 @@ function selection_message(m::SaariLMTD, rows, teto::Real, p::AbstractDict;
                "curto dá $(round(menor_l, digits = 2)) m. Amplie a grade para mais " *
                "tubos, aceite tubo mais longo, ou melhore o coeficiente do casco."
     end
-    menor = minimum(get(r.derivados, :d_casco, Inf) for r in curto)
+    menor = minimum(get(r.derivados, :d_shell, Inf) for r in curto)
     return "Na banda de velocidade todos os feixes pedem casco maior que o limite de " *
            "$(p[:d_casco_max]) mm — o menor deles dá $(round(menor, digits = 0)) mm. " *
            "Use tubo de menor diâmetro, passo mais apertado, ou divida o serviço em " *
@@ -685,6 +830,9 @@ function result_fields(m::SaariLMTD, r)
         ResultField("Área de troca A", der(r, :area); unit = "m²"),
         ResultField("Tubos no total", der(r, :n_total); digits = 0),
         ResultField("Diâmetro do feixe", der(r, :d_casco); unit = "mm", digits = 0),
+        # O casco, e não só o feixe: é ele que `admissible` compara com a Tabela 3.1, e
+        # um cartão que mostra apenas o feixe esconde justamente o número que reprova.
+        ResultField("Diâmetro do casco", der(r, :d_shell); unit = "mm", digits = 0),
         ResultField("Esbeltez do feixe L/D", der(r, :l_sobre_d)),
         ResultField("Velocidade no tubo", der(r, :v); unit = "m/s", status = ok),
         ResultField("Reynolds no tubo", der(r, :re); digits = 0),
@@ -754,8 +902,10 @@ function trace_selection!(m::SaariLMTD, tr::CalcTrace, best, p::AbstractDict)
            get(d, :u, NaN), "W/m²K")
     trace!(tr, :selection, "Eq. 4.4", "A", "q/(U·F·ΔT_lm)", get(d, :area, NaN), "m²")
     trace!(tr, :selection, "—", "L", "A/(N·π·d_o)", best.y, "m")
-    trace!(tr, :selection, "§3.2.2", "d_feixe", "√(4·N·(√3/2)·passo²/π)",
+    trace!(tr, :selection, "Br. 2-13", "d_feixe", "√(4·N·A_célula/π)",
            get(d, :d_casco, NaN), "mm")
+    trace!(tr, :selection, "Br. 2-17", "D_casco", "d_feixe + 2·d_o",
+           get(d, :d_shell, NaN), "mm")
     return nothing
 end
 

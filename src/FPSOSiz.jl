@@ -108,7 +108,7 @@ export slenderness_equation
 
 # --- os equipamentos que não são vasos
 export CentrifugalPump, MoranPumpSizing, PumpConstraints
-export reynolds_pipe, colebrook_white, darcy_friction
+export reynolds_pipe, colebrook_white, darcy_friction, flow_regime, friction_equation
 export straight_run_head, fittings_head, antoine_pressure
 export ShellTubeExchanger, SaariLMTD, ExchangerDuty, ExchangerConstraints
 export lmtd, f_correction_1_2, nusselt_dittus_boelter, overall_u

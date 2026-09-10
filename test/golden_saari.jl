@@ -253,9 +253,12 @@ end
 end
 
 @testset "Dittus-Boelter — Eq. 6.23, na forma que Saari publica" begin
+    # `nusselt_dittus_boelter` devolve `(Nu, valida)` desde a fase de validação física:
+    # o segundo elemento é a faixa que a fonte declara, e o idioma é o mesmo de
+    # `colebrook_white`, `converge_drag` e `darcy_friction`.
     re, pr = 5e4, 5.0
-    @test nusselt_dittus_boelter(re, pr, true, K_TROCADOR) ≈ 0.024 * re^0.8 * pr^0.4
-    @test nusselt_dittus_boelter(re, pr, false, K_TROCADOR) ≈ 0.026 * re^0.8 * pr^0.3
+    @test nusselt_dittus_boelter(re, pr, true, K_TROCADOR)[1] ≈ 0.024 * re^0.8 * pr^0.4
+    @test nusselt_dittus_boelter(re, pr, false, K_TROCADOR)[1] ≈ 0.026 * re^0.8 * pr^0.3
     # os quatro coeficientes moram no TOML, e são os do §6.3.1 — não os 0,023 usuais
     @test K_TROCADOR[:dittus_boelter_heating] == 0.024
     @test K_TROCADOR[:dittus_boelter_cooling] == 0.026
@@ -263,9 +266,28 @@ end
     # declara para a correlação (-26…+7 % para água)
     @test abs(0.024 / 0.023 - 1) < 0.07
     # Nu cresce com Re e com Pr
-    @test nusselt_dittus_boelter(1e5, pr, true, K_TROCADOR) >
-          nusselt_dittus_boelter(1e4, pr, true, K_TROCADOR)
-    @test isnan(nusselt_dittus_boelter(-1.0, pr, true, K_TROCADOR))
+    @test nusselt_dittus_boelter(1e5, pr, true, K_TROCADOR)[1] >
+          nusselt_dittus_boelter(1e4, pr, true, K_TROCADOR)[1]
+    @test isnan(nusselt_dittus_boelter(-1.0, pr, true, K_TROCADOR)[1])
+    @test !nusselt_dittus_boelter(-1.0, pr, true, K_TROCADOR)[2]
+
+    @testset "o Nu sai mesmo fora da faixa — é o flag que avisa, não o número" begin
+        # É por isso que a faixa precisa ser devolvida: a correlação não denuncia a
+        # própria extrapolação. Em Re = 3.000 ela entrega um número perfeitamente
+        # plausível, e é só o `false` que distingue.
+        nu_fora, ok_fora = nusselt_dittus_boelter(3.0e3, pr, true, K_TROCADOR)
+        @test isfinite(nu_fora) && nu_fora > 0
+        @test !ok_fora
+        nu_dentro, ok_dentro = nusselt_dittus_boelter(3.0e4, pr, true, K_TROCADOR)
+        @test ok_dentro
+        # e a fronteira é fechada nos dois extremos declarados
+        @test nusselt_dittus_boelter(1.0e4, pr, true, K_TROCADOR)[2]
+        @test nusselt_dittus_boelter(1.2e5, pr, true, K_TROCADOR)[2]
+        @test !nusselt_dittus_boelter(1.3e5, pr, true, K_TROCADOR)[2]
+        # o Prandtl tem as suas duas, e valem tanto quanto as do Reynolds
+        @test !nusselt_dittus_boelter(3.0e4, 0.5, true, K_TROCADOR)[2]
+        @test !nusselt_dittus_boelter(3.0e4, 200.0, true, K_TROCADOR)[2]
+    end
 end
 
 # ---------------------------------------------------------------------------
@@ -626,4 +648,239 @@ end
     end
     @test err isa ArgumentError
     @test occursin("cp_casco", sprint(showerror, err))
+end
+
+# ---------------------------------------------------------------------------
+# Fase de validação física
+# ---------------------------------------------------------------------------
+
+# A Eq. (6.23) é declarada por Saari (p. 68) "valid within 10⁴ < Re < 1,2·10⁵ and
+# 0,7 < Pr < 120", e o parágrafo seguinte é explícito: "Below Re = 10⁴ the results are
+# much worse." O programa aplicava a correlação em qualquer Re > 0.
+#
+# Um ponto fora do domínio de validade não é necessariamente impossível: é um ponto que o
+# modelo implementado não está autorizado a avaliar. Como h_i atravessa U → A → L, aceitá-lo
+# é devolver um comprimento de tubo que nenhuma correlação desta implementação sustenta.
+@testset "fora da faixa de Dittus-Boelter o feixe é recusado" begin
+    # Óleo no tubo: Pr = 80,8 (DENTRO de 0,7-120), mas Re de 3.400 a 5.700 na banda de
+    # velocidade — bem abaixo do piso de 10⁴.
+    vals = defaults(parameters(SaariLMTD()))
+    vals[:m_tubo], vals[:cp_tubo] = 20.0, 2100.0
+    vals[:t_tubo_in], vals[:t_tubo_out] = 25.0, 60.0
+    vals[:rho_tubo], vals[:mu_tubo], vals[:k_tubo] = 850.0, 5.0, 0.13
+    vals[:mu_casco], vals[:k_casco], vals[:cp_casco] = 0.3, 0.62, 4180.0
+    p = with_defaults(parameters(SaariLMTD()), vals)
+    k = FPSOSiz.constants(FPSOSiz.method_config(SaariLMTD()))
+    ok, c, _ = FPSOSiz.sizing_constraints(SaariLMTD(),
+                                          FPSOSiz.case_input(SaariLMTD(), vals), p, k)
+    @test ok
+
+    @testset "o retrato do defeito: Re fora da faixa, v dentro da banda" begin
+        t = FPSOSiz._tubo(c, 100)
+        @test 0.7 <= c.pr_tubo <= 120           # o Prandtl está dentro
+        @test p[:v_min] <= t.v <= p[:v_max]     # a velocidade está na banda
+        @test t.re < 1.0e4                      # e o Reynolds NÃO está na faixa
+    end
+
+    @testset "case_admissible recusa, e o flag viaja em _tubo" begin
+        t = FPSOSiz._tubo(c, 100)
+        @test hasproperty(t, :nu_valido)
+        @test !t.nu_valido
+        @test !case_admissible(SaariLMTD(), 100, c, p)
+    end
+
+    @testset "as quatro fronteiras vêm do TOML, não do código" begin
+        @test k[:dittus_boelter_re_min] == 1.0e4
+        @test k[:dittus_boelter_re_max] == 1.2e5
+        @test k[:dittus_boelter_pr_min] == 0.7
+        @test k[:dittus_boelter_pr_max] == 120.0
+    end
+
+    @testset "a mensagem nomeia a correlação e a faixa" begin
+        res = size_equipment(ShellTubeExchanger(), SaariLMTD(),
+                             FPSOSiz.case_input(SaariLMTD(), vals), vals)
+        @test !res.feasible
+        msg = lowercase(res.message)
+        @test occursin("dittus", msg)
+        @test occursin("reynolds", msg) || occursin("re ", msg)
+    end
+end
+
+@testset "dentro da faixa, nada muda" begin
+    # Água no tubo, os defaults: Re ~ 2×10⁴, Pr ~ 5. É o caso do formulário, e ele tem de
+    # continuar exatamente onde estava — a recusa é da EXTRAPOLAÇÃO, não do método.
+    vals = defaults(parameters(SaariLMTD()))
+    p = with_defaults(parameters(SaariLMTD()), vals)
+    k = FPSOSiz.constants(FPSOSiz.method_config(SaariLMTD()))
+    ok, c, _ = FPSOSiz.sizing_constraints(SaariLMTD(),
+                                          FPSOSiz.case_input(SaariLMTD(), vals), p, k)
+    t = FPSOSiz._tubo(c, 100)
+    @test 1.0e4 <= t.re <= 1.2e5
+    @test 0.7 <= c.pr_tubo <= 120.0
+    @test t.nu_valido
+    @test case_admissible(SaariLMTD(), 100, c, p)
+
+    res = size_equipment(ShellTubeExchanger(), SaariLMTD(),
+                         FPSOSiz.case_input(SaariLMTD(), vals), vals)
+    @test res.feasible
+end
+
+# Branan publica DUAS áreas de célula, lado a lado, e explica cada uma em prosa: "For
+# triangular pitch, draw the equilateral triangle with vertices at the center of three
+# tubes. The area of the triangle is one-half of the area required to accommodate one
+# tube. Similarly, for square pitch draw the square with corners at the center of four
+# tubes. The area of the square is equal to the area required to accommodate one tube."
+#
+#     Area_1tubo,triangular = (√3/2)·(PR·d_o)²      (2-13)
+#     Area_1tubo,quadrada   = (PR·d_o)²             (2-14)
+#
+# E a Tabela 2-6 nomeia os quatro layouts: 30° e 60° são triangulares, 45° e 90° são
+# quadrados. O código usava a Eq. (2-13) nos quatro.
+@testset "Eq. 2-13 e 2-14 — a área de célula depende do layout" begin
+    vals = defaults(parameters(SaariLMTD()))
+    k = FPSOSiz.constants(FPSOSiz.method_config(SaariLMTD()))
+    n, passes = 100, 2
+    n_total = n * passes
+    p_t = vals[:razao_passo] * vals[:d_externo] / 1000       # m
+    d_tri = sqrt(4 * n_total * (sqrt(3)/2) * p_t^2 / π)
+    d_qua = sqrt(4 * n_total * 1.0     * p_t^2 / π)
+
+    feixe = function (layout)
+        v = copy(vals); v[:layout_tubos] = float(layout)
+        p = with_defaults(parameters(SaariLMTD()), v)
+        _, c, _ = FPSOSiz.sizing_constraints(SaariLMTD(),
+                                             FPSOSiz.case_input(SaariLMTD(), v), p, k)
+        FPSOSiz._tubo(c, n).d_casco
+    end
+
+    @testset "30° e 60° são triangulares — Eq. (2-13)" begin
+        @test feixe(30) ≈ d_tri
+        @test feixe(60) ≈ d_tri
+    end
+
+    @testset "45° e 90° são quadrados — Eq. (2-14)" begin
+        @test feixe(45) ≈ d_qua
+        @test feixe(90) ≈ d_qua
+    end
+
+    @testset "o passo quadrado é 7,5 % mais largo, e é o número que estava faltando" begin
+        @test d_qua / d_tri ≈ sqrt(2/sqrt(3))
+        @test isapprox(d_qua / d_tri, 1.0746; rtol = 1e-3)
+    end
+
+    @testset "o default (30°) não se move — a correção é só dos quadrados" begin
+        # Guarda de regressão: o caso do formulário e o caso de exemplo usam 30°, e
+        # nenhum dos dois pode mudar por causa desta correção.
+        @test vals[:layout_tubos] == 30.0
+        @test feixe(30) ≈ d_tri
+    end
+
+    @testset "a razão sai do TOML, indexada por layout como pn e pp" begin
+        kbd = k[:bell_delaware]
+        @test Int.(kbd[:layouts]) == [30, 45, 60, 90]
+        @test Float64.(kbd[:area_celula_sobre_pt2]) ≈ [sqrt(3)/2, 1.0, sqrt(3)/2, 1.0]
+    end
+end
+
+# Divergência 5, encontrada na fase de validação física. Branan imprime, na Eq. (2-23),
+#
+#     Jl = 0,44(1 − ra) + [1 − 0,044(1 − ra)]·exp(−2,2·rb)
+#
+# com 0,044 no SEGUNDO colchete e 0,44 no primeiro. O programa usa 0,44 nos dois. A
+# decisão é checável por dentro, sem recorrer a outra fonte, e é o que este teste fixa.
+@testset "Eq. 2-23 — o 0,044 do segundo colchete é erro de digitação" begin
+    k = K_TROCADOR[:bell_delaware]
+    @test float(k[:jl_a]) == 0.44
+    @test float(k[:jl_b]) == 2.2
+
+    @testset "sem vazamento, Jl tem de valer exatamente 1" begin
+        # rb -> 0 é vazamento nulo: não há o que descontar, e um fator de correção que
+        # não corrige vale 1. É o único ponto do domínio em que o valor é conhecido a
+        # priori, e é ele que decide entre 0,44 e 0,044.
+        for ra in (0.0, 0.25, 0.5, 0.75, 1.0)
+            asb, atb = ra, 1 - ra            # ra = Asb/(Asb+Atb)
+            jl = j_leakage(asb, atb, 1.0e12, k)   # Aw enorme ⇒ rb ≈ 0
+            @test isapprox(jl, 1.0; atol = 1e-9)
+        end
+    end
+
+    @testset "com 0,044 o fator passaria de 1 — e um desconto não amplifica" begin
+        # A forma impressa, avaliada no mesmo limite: 0,44 + (1 − 0,044) = 1,396.
+        impressa(ra, rb) = 0.44*(1-ra) + (1 - 0.044*(1-ra)) * exp(-2.2*rb)
+        @test isapprox(impressa(0.0, 0.0), 1.396; atol = 1e-9)
+        @test impressa(0.0, 0.0) > 1.0
+        # e a forma adotada fecha em 1 no mesmo ponto
+        nossa(ra, rb) = 0.44*(1-ra) + (1 - 0.44*(1-ra)) * exp(-2.2*rb)
+        @test isapprox(nossa(0.0, 0.0), 1.0; atol = 1e-12)
+    end
+
+    @testset "e no domínio real Jl fica na faixa que Branan declara (0,7-0,8)" begin
+        # "It is typically between 0.7 and 0.8" — a faixa que o texto dá para Jl.
+        jl = j_leakage(0.3, 0.7, 6.0, k)
+        @test 0.6 < jl < 0.95
+        @test jl < 1.0                 # nunca amplifica
+    end
+end
+
+# Defeito 5 da fase de validação física. O código montava o casco somando ao feixe a
+# folga da Tabela 2-7 — que é, pelo próprio título da tabela, "Diametric shell-to-BAFFLE
+# clearance", e que Branan define como d_sb = Ds − Db, com Db o diâmetro da CHICANA.
+# Ela entra na área de vazamento A_sb (Eq. 2-24), e ali o código a usa certo.
+#
+# A folga casco-FEIXE é outra coisa, e Branan a publica na Eq. (2-17):
+#
+#     Ds,min = 2·√(A_corrigida/π) + 2·d_o
+#
+# O primeiro termo é o diâmetro do círculo do feixe, ou seja D_otl. Logo Ds = D_otl + 2·d_o.
+@testset "Eq. 2-17 — o casco é o feixe mais dois diâmetros de tubo" begin
+    vals = defaults(parameters(SaariLMTD()))
+    p = with_defaults(parameters(SaariLMTD()), vals)
+    k = K_TROCADOR
+    _, c, _ = FPSOSiz.sizing_constraints(SaariLMTD(),
+                                         FPSOSiz.case_input(SaariLMTD(), vals), p, k)
+
+    @testset "D_s = D_otl + 2·d_o, e sai em derived ao lado do feixe" begin
+        for n in (40, 100, 200)
+            t = FPSOSiz._tubo(c, n)
+            @test hasproperty(t, :d_shell)
+            @test t.d_shell ≈ t.d_casco + 2 * c.d_o
+            @test t.d_shell > t.d_casco
+        end
+    end
+
+    @testset "a folga da Tabela 2-7 continua sendo a folga da CHICANA" begin
+        # d_sb não é o vão feixe-casco: é a tolerância de fabricação da chicana, e vale
+        # 2,5 a 7,6 mm. O que mudou é onde ela é usada, não o valor.
+        for d_mm in (300.0, 500.0, 1000.0, 2000.0)
+            @test 2.0 < baffle_clearance(d_mm, k[:bell_delaware]) < 8.0
+        end
+        # e o vão feixe-casco é uma ordem de grandeza maior
+        @test 2 * 1000 * c.d_o > 10 * baffle_clearance(400.0, k[:bell_delaware])
+    end
+
+    @testset "o vão maior derruba Jb — o desvio pelo feixe deixa de ser ignorado" begin
+        # É o número que carrega o defeito: com 3 mm de vão o programa concluía que
+        # quase nada desviava (Jb ≈ 0,98); com os 38 mm da fonte, Jb cai para ~0,83.
+        t = FPSOSiz._tubo(c, 40)
+        @test t.jb < 0.90
+        @test t.jb > 0.70              # a faixa que Branan declara para Jb
+    end
+
+    @testset "o teto de diâmetro passa a ser conferido contra o CASCO" begin
+        # `d_casco_max` é a Tabela 3.1 de Saari, "Shell inside diameter" — casco, não
+        # feixe. Com o vão de 3 mm a distinção não pagava; com 38 mm, paga.
+        n = 100
+        t = FPSOSiz._tubo(c, n)
+        der_n = derived(SaariLMTD(), n, t.l, :termica, c, k, p)
+        @test haskey(der_n, :d_shell)
+        @test der_n[:d_shell] ≈ 1000 * t.d_shell
+        @test der_n[:d_shell] > der_n[:d_casco]
+
+        # um teto entre os dois tem de recusar: é a prova de que a comparação mudou
+        entre = (der_n[:d_casco] + der_n[:d_shell]) / 2
+        p_apertado = copy(p); p_apertado[:d_casco_max] = entre
+        @test !admissible(SaariLMTD(), n, der_n, p_apertado)
+        p_folgado = copy(p); p_folgado[:d_casco_max] = der_n[:d_shell] + 1.0
+        @test admissible(SaariLMTD(), n, der_n, p_folgado)
+    end
 end
