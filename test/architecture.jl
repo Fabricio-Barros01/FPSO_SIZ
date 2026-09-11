@@ -108,7 +108,16 @@ end
 @testset "todo parâmetro tem rótulo, unidade e proveniência" begin
     # Iterado pelo REGISTRO, não por uma lista escrita à mão: um equipamento novo entra
     # nesta guarda por registrar-se, que é a única forma de a guarda não envelhecer.
+    #
+    # Campos de grupo (as correntes da Análise Pinch) entram por serem `ParameterSpec`,
+    # e é por isso que o grupo é ATRIBUTO e não um tipo irmão: um `GroupSpec` sairia
+    # deste `vcat` e esta guarda continuaria VERDE verificando três campos a menos.
+    # A contagem abaixo é a asserção de que isso não aconteceu — sem ela, a cobertura
+    # poderia se perder no futuro sem nada ficar vermelho.
+    de_grupo = 0
     for eq in equipments(), met in methods_for(eq)
+        de_grupo += count(FPSOSiz.in_group,
+                          vcat(parameters(met), FPSOSiz.stream_parameters(met)))
         for spec in vcat(parameters(met), FPSOSiz.stream_parameters(met))
             @test !isempty(spec.label)
             @test !isempty(spec.unit)
@@ -135,7 +144,24 @@ end
             @test haskey(FPSOSiz.constants(FPSOSiz.method_config(met)),
                          :lss_liquid_factor)
         end
+
+        # Um grupo declarado tem de ter campo; um campo de grupo tem de ter grupo
+        # declarado. As duas metades separadas dariam um cabeçalho sem caixas ou um
+        # bloco de caixas sem título — nenhum dos dois dá erro, e os dois mentem.
+        declarados = Set(g.key for g in FPSOSiz.parameter_groups(met))
+        usados = Set(s.group for s in parameters(met) if FPSOSiz.in_group(s))
+        @test usados == declarados
+        for g in FPSOSiz.parameter_groups(met)
+            @test !isempty(g.label)
+            @test 1 <= g.min <= g.max
+        end
+        # Molde é molde: o que o método declara nunca sai já instanciado.
+        @test all(s -> !FPSOSiz.in_group(s) || FPSOSiz.is_template(s), parameters(met))
     end
+
+    # A cobertura não se perdeu: há campos de grupo no registro, e eles passaram pelas
+    # quatro asserções acima como qualquer outro campo.
+    @test de_grupo > 0
 end
 
 @testset "a seção transversal declarada é uma repartição de verdade" begin

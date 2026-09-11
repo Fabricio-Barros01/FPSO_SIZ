@@ -25,7 +25,14 @@ let esquema = null;      // descritores vindos do core
 let casos = [];          // [{name, enabled, lo:{chave:"215,8"}, hi:{...}}]
 let sel = 1;             // 1-based, como no Julia
 let globais = {};        // {chave: "3000,0"}
-let grade = [];          // diâmetros disponíveis no cursor, em mm
+// Quantas instâncias de cada descritor REPETÍVEL estão à vista: {grupo: n}.
+//
+// A tela não sabe o que se repete nem por quê. Quem declara que existe um grupo, como ele
+// se chama e quantas instâncias admite é o método, em `esquema.grupos`; aqui só se guarda
+// o número e se manda de volta. Vazio para os métodos que não têm grupo nenhum, e aí nada
+// abaixo se comporta diferente do que se comportava antes.
+let instancias = {};
+let grade = [];          // pontos do eixo disponíveis no cursor
 let arquivos = [];       // conjuntos de casos no disco: [{nome, rotulo, casos, gravavel}]
 let arquivoAtual = "";   // nome do que está aberto ("" = nunca salvo)
 // `true` quando há edição que ainda não foi para o disco. Avisa antes de Abrir (que
@@ -107,12 +114,31 @@ const CONTROLES = ["btn-dimensionar", "btn-exportar",
                    "btn-novo", "btn-duplicar", "btn-remover",
                    "sel-arquivo", "sel-caso", "slider-d"];
 
+// Os botões de instância ("+ Corrente", "− Corrente") NÃO entram na lista acima, e não é
+// esquecimento: eles não existem no HTML. São criados por `montarFormulario` a partir de
+// `esquema.grupos`, porque quantos grupos existem é do método e não da página — e um id
+// fixo no `index.html` teria de escolher um número de grupos antes de saber qual método a
+// tela serve. Daí o atributo: `ocupado()` os alcança por `[data-controle]`.
+//
+// Alcançá-los é obrigatório, e pelo motivo exato do defeito 7 do Sprint 7: eles EDITAM o
+// estado local (mudam `instancias`, que reescreve o formulário inteiro). Deixá-los vivos
+// durante uma requisição em voo faria o `aplicarEstado` da resposta chegar por cima de uma
+// contagem que já mudou — a tela com cinco correntes e o servidor com quatro.
+const SELETOR_CONTROLES_DINAMICOS = "[data-controle]";
+
 function ocupado(sim) {
   for (const id of CONTROLES) q(id).disabled = sim;
+  for (const el of document.querySelectorAll(SELETOR_CONTROLES_DINAMICOS)) {
+    el.disabled = sim;
+  }
   // O cursor tem um dono: `aplicarGrade`, que o desabilita quando não há grade. Liberar
   // aqui sem consultá-la reabriria um cursor sobre nada depois de um Exportar num estado
   // inviável — e um cursor de um item só é um controle que mente sobre ter alternativas.
   if (!sim) q("slider-d").disabled = !grade.length;
+  // Mesma regra para os botões de instância: quem sabe se ainda cabe uma corrente a mais
+  // é a faixa que o método declarou, não esta função. Liberar sem consultá-la reabriria
+  // um "−" no piso, que é um botão que promete o que vai recusar.
+  if (!sim) aplicarLimitesGrupo();
   // `aria-busy` na barra de status: enquanto a operação corre, o leitor de tela sabe que
   // a mensagem ("Dimensionando…") é de trabalho em curso, e não o resultado final.
   q("status").setAttribute("aria-busy", sim ? "true" : "false");
@@ -137,13 +163,34 @@ function limparInvalido(inp) {
   erro && (erro.textContent = "");
 }
 
-/** Uma linha rótulo / mín / máx / unidade. `extremos` distingue campo de ajuste. */
-function linhaCampo(spec, extremos) {
+/**
+ * Uma linha do formulário: rótulo / caixa(s) / unidade.
+ *
+ * `destino` é `"caso"` ou `"global"` — a que dicionário a caixa escreve. Era deduzido do
+ * número de extremos (`extremos.length === 1` significava "é ajuste"), e essa dedução
+ * deixou de valer: um campo de GRUPO também tem uma caixa só e mesmo assim pertence ao
+ * caso. Mantê-la faria o valor de uma corrente ser gravado em `globais`, onde nenhum caso
+ * o leria e de onde nenhum arquivo o salvaria — o campo aceitaria o que se digita e
+ * perderia tudo no primeiro Dimensionar.
+ *
+ * Quantas caixas a linha tem é do descritor: `caixa_unica` vem do servidor
+ * (`FPSOSiz.single_box`), e não é recalculado aqui. A regra que protege a contagem de
+ * cantos existe uma vez só, do lado que sabe por que ela existe.
+ */
+function linhaCampo(spec, destino) {
+  const ehGlobal = destino === "global";
+  const extremos = (ehGlobal || spec.caixa_unica) ? ["lo"] : ["lo", "hi"];
   const tr = document.createElement("tr");
 
   const td = document.createElement("td");
   td.className = "rotulo";
-  td.textContent = spec.label;
+  // Num grupo o rótulo já vem prefixado pelo servidor ("Corrente 2 — Temperatura de
+  // entrada"), e o prefixo é redundante debaixo do cabeçalho do bloco. Tirá-lo aqui é
+  // apresentação, não conhecimento: a tela corta no separador que o servidor pôs, sem
+  // saber o que vem antes nem depois dele.
+  td.textContent = spec.grupo && spec.grupo !== "none"
+    ? spec.label.split(" — ").slice(1).join(" — ") || spec.label
+    : spec.label;
   spec.note && (td.title = spec.note);
   tr.appendChild(td);
 
@@ -176,13 +223,20 @@ function linhaCampo(spec, extremos) {
 
     inp.addEventListener("input", () => {
       limparInvalido(inp);
-      esquecerAviso(spec.key, extremo, extremos.length === 1);
-      if (extremos.length === 1) {
+      esquecerAviso(spec.key, extremo, ehGlobal);
+      if (ehGlobal) {
         // Os ajustes de grade NÃO vão para o arquivo de casos (ver `salvar_casos!` em
         // app/src/state.jl), então mexer neles não deixa nada por salvar.
         globais[spec.key] = inp.value;
       } else {
-        casoAtual()[extremo][spec.key] = inp.value;
+        const c = casoAtual();
+        c[extremo][spec.key] = inp.value;
+        // Caixa única num campo de CASO escreve nos dois extremos. O servidor já força
+        // isso (`aplicar!` ignora o "hi" de um campo de grupo), mas se a tela deixasse os
+        // dois divergirem localmente, `corpoAtual()` mandaria um par mín ≠ máx e o
+        // `sujo`/salvar gravaria um estado que o servidor nunca aceitou — a tela e o
+        // servidor discordando em silêncio, que é o que o defeito 4 do Sprint 7 era.
+        spec.caixa_unica && (c.hi[spec.key] = inp.value);
         sujo = true;
       }
     });
@@ -200,12 +254,131 @@ function linhaCampo(spec, extremos) {
   return tr;
 }
 
+/** O cabeçalho de um bloco de instância: "Corrente 2", numa linha que atravessa a tabela. */
+function linhaCabecalhoGrupo(grupo, i) {
+  const tr = document.createElement("tr");
+  tr.className = "grupo-cabecalho";
+  const td = document.createElement("td");
+  td.colSpan = 4;
+  // O texto é o rótulo QUE O MÉTODO DECLAROU mais o índice. A palavra "corrente" não
+  // aparece neste arquivo: ela vem de `esquema.grupos[].label`, como o rótulo de qualquer
+  // campo vem de `spec.label` desde o Sprint 0.
+  td.textContent = `${grupo.label} ${i}`;
+  tr.appendChild(td);
+  return tr;
+}
+
+/**
+ * A linha de ações de um grupo: acrescentar e remover uma instância.
+ *
+ * Os dois botões são criados aqui, e não declarados no `index.html`, porque quantos
+ * grupos existem é decisão do método. Por isso também não têm `id` nem passam por `q()` —
+ * a guarda de bijeção id×`q()` do smoke exige que os dois lados se correspondam, e um id
+ * que só existe em alguns métodos não tem como se corresponder sempre.
+ */
+function linhaAcoesGrupo(grupo) {
+  const tr = document.createElement("tr");
+  tr.className = "grupo-acoes";
+  const td = document.createElement("td");
+  td.colSpan = 4;
+
+  const botao = (sinal, delta, dica) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "grupo-botao";
+    b.textContent = `${sinal} ${grupo.label}`;
+    b.dataset.controle = "grupo";          // é assim que `ocupado()` o alcança
+    b.dataset.grupo = grupo.key;
+    b.dataset.delta = String(delta);
+    b.setAttribute("aria-label", `${dica} ${grupo.label.toLowerCase()}`);
+    b.addEventListener("click", () => mudarInstancias(grupo, delta));
+    return b;
+  };
+
+  td.appendChild(botao("+", +1, "Acrescentar"));
+  td.appendChild(botao("−", -1, "Remover"));
+
+  const conta = document.createElement("span");
+  conta.className = "grupo-conta";
+  conta.dataset.contaGrupo = grupo.key;
+  tr.appendChild(td);
+  td.appendChild(conta);
+  return tr;
+}
+
+/**
+ * Desabilita o botão que já não tem para onde ir, e escreve quantas instâncias há.
+ *
+ * A faixa é a que o método declarou (`min`/`max` de `esquema.grupos`), nunca um número
+ * escrito aqui. Um botão vivo no limite é um botão que promete o que o servidor vai
+ * recusar — e o servidor recusa mesmo: `definir_instancias!` prende o valor à faixa.
+ */
+function aplicarLimitesGrupo() {
+  for (const g of esquema.grupos || []) {
+    const n = instancias[g.key] ?? g.n;
+    for (const b of document.querySelectorAll(
+           `[data-controle="grupo"][data-grupo="${g.key}"]`)) {
+      const delta = Number(b.dataset.delta);
+      b.disabled = delta > 0 ? n >= g.max : n <= g.min;
+    }
+    for (const s of document.querySelectorAll(`[data-conta-grupo="${g.key}"]`)) {
+      s.textContent = `${n} de ${g.min}–${g.max}`;
+    }
+  }
+}
+
+/**
+ * Acrescenta ou remove uma instância, e pede ao servidor o formulário novo.
+ *
+ * A contagem é decidida pelo SERVIDOR, não aqui: manda-se o número desejado junto com o
+ * estado, e a resposta traz os campos que passaram a existir (`estado.campos`). É o mesmo
+ * caminho de `dimensionar`, e é de propósito — duas fontes de verdade para "quais caixas
+ * existem" divergiriam no primeiro caso de canto, e o sintoma seria uma caixa preenchida
+ * que o cálculo não enxerga.
+ */
+function mudarInstancias(grupo, delta) {
+  const n = instancias[grupo.key] ?? grupo.n;
+  const alvo = n + delta;
+  if (alvo < grupo.min || alvo > grupo.max) {
+    status(`${grupo.label}: a faixa admitida é de ${grupo.min} a ${grupo.max}.`, false);
+    return;
+  }
+  instancias[grupo.key] = alvo;
+  sujo = true;
+  // Os avisos são endereçados por chave, e as chaves acabaram de mudar de conjunto.
+  esquecerAvisos();
+  dimensionar();
+}
+
 function montarFormulario() {
   const campos = q("form-campos").querySelector("tbody");
-  campos.replaceChildren(...esquema.campos.map((s) => linhaCampo(s, ["lo", "hi"])));
+  const grupos = esquema.grupos || [];
+  const porChave = Object.fromEntries(grupos.map((g) => [g.key, g]));
+
+  // Percorre os descritores na ordem em que vieram e abre um bloco a cada instância
+  // nova. A tela não sabe quantos blocos haverá nem o que eles significam: ela compara
+  // `grupo`/`instancia` entre linhas consecutivas, que são dois campos de dado.
+  const linhas = [];
+  let atual = "";
+  for (const s of esquema.campos) {
+    const g = s.grupo && s.grupo !== "none" ? porChave[s.grupo] : null;
+    if (g) {
+      const marca = `${s.grupo}#${s.instancia}`;
+      if (marca !== atual) {
+        atual = marca;
+        linhas.push(linhaCabecalhoGrupo(g, s.instancia));
+      }
+    } else {
+      atual = "";
+    }
+    linhas.push(linhaCampo(s, "caso"));
+  }
+  // A linha de ações fecha cada grupo declarado, mesmo que ele esteja no piso.
+  for (const g of grupos) linhas.push(linhaAcoesGrupo(g));
+  campos.replaceChildren(...linhas);
 
   const ajustes = q("form-ajustes").querySelector("tbody");
-  ajustes.replaceChildren(...esquema.ajustes.map((s) => linhaCampo(s, ["lo"])));
+  ajustes.replaceChildren(...esquema.ajustes.map((s) => linhaCampo(s, "global")));
 
   q("rotulo-equipamento").textContent = esquema.equipamento;
   q("rotulo-metodo").textContent = esquema.metodo;
@@ -213,6 +386,7 @@ function montarFormulario() {
   const eixo = esquema.eixo || { label: "", unit: "" };
   unidadeEixo = eixo.unit;
   q("rotulo-cursor").textContent = eixo.label;
+  aplicarLimitesGrupo();
 }
 
 /** Reescreve as caixas com o caso selecionado. */
@@ -388,6 +562,20 @@ function aplicarEstado(e) {
   casos = e.casos;
   sel = e.sel;
   globais = e.globais;
+  // QUAIS CAIXAS EXISTEM pode ter mudado nesta resposta, e por isso vem antes de tudo o
+  // que escreve na tela. Com descritor repetível a lista de campos deixou de ser fixa:
+  // acrescentar uma corrente cria três caixas, abrir um arquivo com outra contagem cria
+  // ou destrói várias. O servidor manda a lista nova em `e.campos`; remontar só quando
+  // ela mudou evita refazer ~50 caixas a cada movimento de cursor.
+  if (e.campos) {
+    const antes = esquema.campos.map((s) => s.key).join(" ");
+    const agora = e.campos.map((s) => s.key).join(" ");
+    esquema.campos = e.campos;
+    e.grupos && (esquema.grupos = e.grupos);
+    for (const g of esquema.grupos || []) instancias[g.key] = g.n;
+    if (antes !== agora) montarFormulario();
+    else aplicarLimitesGrupo();
+  }
   // Antes de qualquer escrita na tela: `recarregarSeletor` marca os casos com aviso e
   // `escreverCaso` repõe as caixas recusadas, e os dois leem esta lista. Os avisos
   // pertencem à resposta que os produziu — a nova apaga os da anterior, como já vale
@@ -500,7 +688,10 @@ function esquecerAviso(chave, extremo, global) {
 
 // ---------------------------------------------------------------- ações
 
-const corpoAtual = () => JSON.stringify({ casos, globais, sel });
+// `instancias` viaja junto porque o servidor é quem decide quantas caixas existem, e ele
+// precisa saber quantas a tela está pedindo ANTES de ler os valores — ver `aplicar!`, que
+// chama `definir_instancias!` como primeiro passo justamente por isso.
+const corpoAtual = () => JSON.stringify({ casos, globais, sel, instancias });
 
 async function dimensionar() {
   ocupado(true);
@@ -796,6 +987,9 @@ async function iniciar() {
   box = semente.box || "";
   esquema = semente.esquema || (await pedir(`/api/${box}/esquema`));
   if (!esquema) return;
+  // A contagem inicial de cada grupo vem do servidor, que a tirou do arquivo de casos
+  // aberto (ou do piso do TOML, quando não há arquivo). A tela não escolhe um número.
+  for (const g of esquema.grupos || []) instancias[g.key] = g.n;
   montarFormulario();
 
   q("sel-caso").addEventListener("change", (e) => trocarCaso(Number(e.target.value)));

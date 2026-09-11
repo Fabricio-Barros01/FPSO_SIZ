@@ -170,6 +170,28 @@ table.form td { padding: 1px 2px; vertical-align: middle; }
 table.form td.rotulo { font-size: 10.5px; width: 46%; }
 table.form td.unidade { font-size: 9.5px; color: var(--tinta-fraca); white-space: nowrap; }
 
+/* Descritores repetíveis (as correntes da Análise Pinch).
+   O cabeçalho separa um bloco do seguinte: sem ele, doze caixas iguais em sequência não
+   dizem onde uma corrente termina e a outra começa — e o rótulo de cada caixa, que já
+   perdeu o prefixo por ser redundante aqui, não bastaria para reconstruir a divisão. */
+table.form tr.grupo-cabecalho td {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--destaque);
+  border-top: 1px solid var(--linha);
+  padding-top: 6px;
+}
+table.form tr.grupo-cabecalho:first-child td { border-top: none; }
+table.form tr.grupo-acoes td { padding-top: 4px; }
+button.grupo-botao {
+  font-size: 10.5px;
+  padding: 2px 8px;
+  margin-right: 4px;
+  color: var(--tinta);
+}
+button.grupo-botao:disabled { color: var(--tinta-fraca); opacity: 0.55; cursor: default; }
+.grupo-conta { font-size: 9.5px; color: var(--tinta-fraca); margin-left: 2px; }
+
 input.campo {
   width: 100%;
   min-width: 52px;
@@ -198,8 +220,8 @@ input.campo.invalido { border-color: var(--erro); background: #fdf3f3; }
 
 /* O corte é um círculo: deixado solto ele cresce com a largura da coluna e empurra os
    gráficos para fora da tela. Fica na mesma fração que tinha no layout Makie. */
-.corte-linha { display: grid; grid-template-columns: minmax(0, 46%) 1fr; gap: 12px; align-items: start; }
-.corte-linha .figura { min-width: 0; }
+.figura-lado { display: grid; grid-template-columns: minmax(0, 46%) 1fr; gap: 12px; align-items: start; }
+.figura-lado .figura { min-width: 0; }
 /* As áreas são invólucros vazios quando o método não põe nada nelas — daí não terem
    altura, margem nem borda próprias. Um método sem figura secundária deixa a legenda de
    fases sozinha na linha, em vez de um retângulo em branco. */

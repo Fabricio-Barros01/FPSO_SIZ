@@ -333,6 +333,104 @@ end
         proibidas = ("leff", "lss", "sbeltez", "decanta", "óleo", "água",
                      "gás", "vaso", "diâmetro")
         @test filter(p -> occursin(p, visivel), proibidas) == ()
+
+        # -------------------------------------------------------------------
+        # A guarda acima é uma LISTA ESCRITA À MÃO, e é isso o que há de errado com
+        # ela. Ela tem nove palavras, todas de vaso, escolhidas em 2025 porque foram
+        # as nove que o Sprint 7 apagou. Nenhuma é de pinch: um
+        # `textContent = "Adicionar corrente"` escrito à mão passa por ela limpo, e
+        # `SPRINTS.md:623-624` já registrava essa limitação.
+        #
+        # Esta segunda guarda não tem lista. Ela pergunta ao REGISTRO quais palavras o
+        # usuário vai ler — e as palavras que ele vai ler são exatamente as que os
+        # descritores declaram — e exige que nenhuma delas esteja escrita nos arquivos
+        # estáticos. Um método novo entra nela por registrar-se, que é a única forma de
+        # uma guarda de vocabulário não envelhecer.
+        @testset "nenhuma palavra que o usuário lê está escrita no HTML ou no JS" begin
+            # Tokens de cinco letras ou mais: abaixo disso não há palavra de domínio
+            # ("mm", "kW", "°C", "SR"), e há ruído demais.
+            palavras(t) = Set(w for w in split(lowercase(t), r"[^\p{L}]+")
+                              if length(w) >= 5)
+
+            # As cinco exceções, uma a uma, e nenhuma é nome de grandeza. Estão aqui
+            # porque a tela LEGITIMAMENTE as usa como vocabulário de formulário, e não
+            # como nome de coisa dimensionada:
+            #   entrada — "Cada entrada é uma faixa", a explicação do modo multi-caso;
+            #   mínimo/máximo — os dois extremos de qualquer faixa, e o nome acessível
+            #                   das duas caixas de toda linha;
+            #   grade  — a lista de pontos do eixo varrido, que o cursor percorre;
+            #   passo  — o incremento dessa lista.
+            # Se um dia for preciso acrescentar um sexto, que seja com a mesma prova:
+            # a palavra descreve o FORMULÁRIO, não o que se está calculando.
+            genericas = Set(["entrada", "mínimo", "máximo", "grade", "passo"])
+
+            dominio = Set{String}()
+            for eq in FPSOSiz.equipments(), m in FPSOSiz.methods_for(eq)
+                for s in vcat(FPSOSiz.parameters(m), FPSOSiz.stream_parameters(m))
+                    union!(dominio, palavras(s.label))
+                end
+                for c in FPSOSiz.sweep_columns(m)
+                    union!(dominio, palavras(c.label))
+                end
+                for g in FPSOSiz.parameter_groups(m)
+                    union!(dominio, palavras(g.label))
+                end
+            end
+            setdiff!(dominio, genericas)
+
+            # 1. A guarda não pode passar por estar vazia.
+            @test length(dominio) > 40
+            # 2. E tem de conter o vocabulário de pinch, senão ela está verde por o
+            #    método não existir, e não por a tela estar limpa.
+            for p in ("corrente", "temperatura", "capacidade", "calorífica")
+                @test p in dominio
+            end
+            # 3. Nenhuma delas está escrita nos arquivos que o navegador baixa.
+            @test sort(collect(filter(p -> occursin(p, visivel), dominio))) == String[]
+        end
+    end
+
+    @testset "o vocabulário de pinch chega à tela, e vem todo do Julia" begin
+        # A guarda acima prova a metade NEGATIVA: as palavras não estão nos arquivos.
+        # Sozinha ela passaria numa tela em branco. Esta prova a metade POSITIVA, e é
+        # ela que `SPRINTS.md:625-627` chama de asserir sobre a SAÍDA: o vocabulário
+        # aparece de fato no que o servidor manda para dentro da tela.
+        st = A.AppState(; case_file = "exemplo_pinch_kemp.toml",
+                          equipamento = FPSOSiz.PinchTarget(),
+                          metodo = FPSOSiz.PinchKemp())
+        A.dimensionar!(st)
+        @test st.status_ok
+
+        esq = A.esquema(st)
+        saida = lowercase(join(vcat(
+            [c["label"] for c in esq["campos"]],
+            [c["unit"]  for c in esq["campos"]],
+            [c["note"]  for c in esq["campos"]],
+            [c["label"] for c in esq["ajustes"]],
+            [c["note"]  for c in esq["ajustes"]],
+            [g["label"] for g in esq["grupos"]],
+            [esq["eixo"]["label"], esq["equipamento"], esq["metodo"]],
+            [f["rotulo"] * " " * f["valor"] for f in A.cartao(st)],
+            A.tabela(st)["colunas"]), " "))
+
+        # O que a tela mostra ao usuário de uma rede térmica, e que nenhum arquivo de
+        # `app/public/` contém.
+        for termo in ("corrente", "δtmin", "utilidade quente", "utilidade fria",
+                      "pinch", "kw", "°c", "ṁ·cp")
+            @test occursin(termo, saida)
+        end
+
+        # E o aviso de escopo do B6 chega à tela pelo mesmo caminho: é `ResultField`,
+        # não `<dt>` escrito à mão.
+        @test occursin("não dimensiona casco-e-tubos", saida)
+        @test occursin("não sintetiza", saida)
+
+        # O rótulo do eixo e a unidade da exigência também são do método: a tela não
+        # sabe que existe uma grandeza chamada ΔTmin nem uma chamada QHmin.
+        @test esq["eixo"]["label"] == "ΔT mínimo de aproximação"
+        @test esq["eixo"]["unit"] == "°C"
+        @test FPSOSiz.requirement_spec(st.metodo) ==
+              ("utilidade quente mínima QHmin", "kW")
     end
 
     @testset "o app.js é JavaScript válido" begin
@@ -1061,6 +1159,282 @@ end
     end
 
     # -----------------------------------------------------------------------
+    # A Análise Pinch: o primeiro método com descritor REPETÍVEL.
+    #
+    # Os cinco anteriores têm uma lista fixa de campos, e o formulário a desenha uma vez.
+    # Aqui quantos campos existem é decisão do usuário, e é isso que estes testes
+    # vigiam: que a contagem vá e volte inteira pelos quatro caminhos que a mexem
+    # (montar, aplicar, salvar, abrir), e que ela não vaze para a contagem de cantos.
+    # -----------------------------------------------------------------------
+
+    @testset "a Análise Pinch atravessa o estado e o esquema" begin
+        st = A.AppState(; case_file = "nao_existe_de_proposito.toml",
+                          equipamento = FPSOSiz.PinchTarget(),
+                          metodo = FPSOSiz.PinchKemp())
+
+        @testset "o esquema emite N instâncias, e o mínimo do TOML é o piso" begin
+            g = only(FPSOSiz.parameter_groups(st.metodo))
+            @test st.instancias[:corrente] == g.min
+            # 3 campos por corrente, e NADA de `config/stream.toml`: uma rede não tem
+            # vazão de óleo nem viscosidade de água.
+            @test length(st.campos) == 3 * g.min
+            @test isempty(FPSOSiz.stream_parameters(st.metodo))
+
+            esq = A.esquema(st)
+            @test length(esq["campos"]) == 3 * g.min
+            grupo = only(esq["grupos"])
+            @test grupo["key"] == "corrente"
+            @test grupo["label"] == "Corrente"
+            @test (grupo["min"], grupo["max"], grupo["n"]) == (g.min, g.max, g.min)
+
+            # Cada campo carrega o grupo, o índice e a ordem de UMA caixa — é disso que
+            # o formulário vive, e nada disso está escrito no HTML.
+            for c in esq["campos"]
+                @test c["grupo"] == "corrente"
+                @test 1 <= c["instancia"] <= g.min
+                @test c["caixa_unica"]
+                @test !isempty(c["label"]) && !isempty(c["unit"]) && !isempty(c["note"])
+            end
+            # e o rótulo diz de qual corrente é, sem a tela saber a palavra "corrente"
+            @test all(i -> any(c -> startswith(c["label"], "Corrente $i — "),
+                               esq["campos"]), 1:g.min)
+
+            # Os ajustes são os quatro de ΔTmin, cada um com uma caixa por já serem
+            # globais — e nenhum deles é campo de grupo.
+            @test Set(Symbol(a["key"]) for a in esq["ajustes"]) ==
+                  Set(FPSOSiz.global_keys(st.metodo))
+            @test all(a -> a["grupo"] == "none", esq["ajustes"])
+        end
+
+        @testset "acrescentar e remover corrente recolhe as caixas de volta" begin
+            A.definir_instancias!(st, Dict(:corrente => 4))
+            @test st.instancias[:corrente] == 4
+            @test length(st.campos) == 12
+            @test A.esquema(st)["grupos"][1]["n"] == 4
+            chaves = Set(s.key for s in st.campos)
+            @test :corrente_4_mcp in chaves
+
+            A.definir_instancias!(st, Dict(:corrente => 2))
+            @test length(st.campos) == 6
+            @test !(:corrente_4_mcp in Set(s.key for s in st.campos))
+
+            # E a faixa do TOML é obedecida, porque a contagem chega do navegador.
+            g = only(FPSOSiz.parameter_groups(st.metodo))
+            A.definir_instancias!(st, Dict(:corrente => 999))
+            @test st.instancias[:corrente] == g.max
+            A.definir_instancias!(st, Dict(:corrente => -3))
+            @test st.instancias[:corrente] == g.min
+        end
+
+        @testset "o exemplo do livro abre e dá os números publicados" begin
+            @test A.abrir_casos!(st, "exemplo_pinch_kemp.toml")
+            # a contagem veio do ARQUIVO, não do piso do TOML
+            @test st.instancias[:corrente] == 4
+            @test length(st.campos) == 12
+            @test st.status_ok
+
+            r = st.resultado
+            @test r.feasible
+            @test r.x == 10.0
+            @test r.y ≈ 20.0                              # QHmin, Kemp p. 24
+            @test FPSOSiz.der(r, :qcmin) ≈ 60.0           # QCmin, p. 24
+            @test FPSOSiz.der(r, :t_pinch_quente) ≈ 90.0
+            @test FPSOSiz.der(r, :t_pinch_fria) ≈ 80.0
+
+            # E um cenário só continua sendo UM canto, com doze campos de corrente.
+            @test occursin("1 canto", st.status) || occursin("1 caso", st.status)
+        end
+
+        @testset "o cartão e a tabela saem do método, já formatados em PT-BR" begin
+            @test valor_cartao(st, "QHmin") == "20,0 kW"
+            @test valor_cartao(st, "QCmin") == "60,0 kW"
+            @test valor_cartao(st, "lado quente") == "90,00 °C"
+            @test valor_cartao(st, "Situação do pinch") == "um pinch"
+            # O aviso de escopo é texto de domínio, e vem do Julia — regra B2.
+            escopo = valor_cartao(st, "O que esta tela entrega")
+            @test occursin("NÃO dimensiona", escopo)
+
+            t = A.tabela(st)
+            @test t["colunas"][1] == "ΔTmin (°C)"
+            @test length(t["linhas"]) == 9
+            centro = only(filter(l -> l["centro"], t["linhas"]))
+            @test centro["valores"][1] == "10,0"
+            @test centro["valores"][2] == "20,0"
+        end
+
+        @testset "abrir → editar → salvar → reabrir preserva as correntes" begin
+            # O ciclo inteiro, valor a valor. É onde a chave sintetizada tem de
+            # sobreviver ao TOML: se `instance_key` e `case_input` discordassem, o
+            # arquivo reabriria com uma corrente a menos e ninguém veria.
+            antes = deepcopy(st.casos)
+            A.caso_atual(st).lo[:corrente_1_t_in] = 25.0
+            A.caso_atual(st).hi[:corrente_1_t_in] = 25.0
+            A.caso_atual(st).name = "Editado na tela"
+
+            r = A.salvar_casos!(st, "smoke_pinch.toml"; rotulo = "Pinch salvo")
+            @test r.ok
+            texto = read(r.caminho, String)
+            @test occursin("equipment = \"pinch\"", texto)
+            # as doze chaves sintetizadas estão no arquivo, com o nome que o core lê
+            for i in 1:4, k in ("t_in", "t_out", "mcp")
+                @test occursin("corrente_$(i)_$k = ", texto)
+            end
+            # e os globais de ΔTmin continuam FORA — são decisão de projeto
+            for k in FPSOSiz.global_keys(st.metodo)
+                @test !occursin(string(k), texto)
+            end
+
+            outro = A.AppState(; case_file = "nao_existe_de_proposito.toml",
+                                 equipamento = FPSOSiz.PinchTarget(),
+                                 metodo = FPSOSiz.PinchKemp())
+            @test outro.instancias[:corrente] == 2        # nasce no piso…
+            @test A.abrir_casos!(outro, "smoke_pinch.toml")
+            @test outro.instancias[:corrente] == 4        # …e o arquivo o corrige
+            @test length(outro.campos) == 12
+
+            @test length(outro.casos) == length(st.casos)
+            for (a, b) in zip(st.casos, outro.casos)
+                @test a.name == b.name
+                @test a.lo == b.lo                        # valor a valor, sem arredondar
+                @test a.hi == b.hi
+            end
+            @test outro.casos[1].name == "Editado na tela"
+            @test outro.casos[1].lo[:corrente_1_t_in] == 25.0
+            # A edição mudou o resultado, e mudou onde a Análise Pinch manda mudar.
+            #
+            # A corrente 1 é FRIA e vai de 20 a 135 °C; subir a entrada para 25 tira
+            # 10 kW da carga dela. A tentação é esperar menos utilidade QUENTE — e é
+            # errado: a 20 °C ela está bem ABAIXO do pinch (85 °C deslocada), e o §2.1.4
+            # é explícito em que o alvo quente é fixado pelo déficit ACIMA do pinch.
+            # Nada acima dele mudou, então QHmin não se move.
+            #
+            # O que muda é o lado frio, e na direção contrária à intuição: com 10 kW a
+            # menos de corrente fria para absorver o calor das quentes abaixo do pinch,
+            # sobra MAIS para a utilidade fria — QCmin sobe de 60 para 70 kW.
+            #
+            # O balanço da p. 24 fecha os dois: QCmin − QHmin = ΣQ_quente − ΣQ_frio,
+            # que passou de 510 − 470 = 40 para 510 − 460 = 50 kW.
+            A.dimensionar!(outro)
+            @test outro.status_ok
+            @test outro.resultado.y ≈ 20.0                       # o alvo quente não se move
+            @test FPSOSiz.der(outro.resultado, :qcmin) ≈ 70.0    # o frio, sim
+            @test FPSOSiz.der(outro.resultado, :q_cold) ≈ 460.0  # a edição chegou mesmo
+            @test FPSOSiz.der(outro.resultado, :qcmin) - outro.resultado.y ≈
+                  FPSOSiz.der(outro.resultado, :q_hot) -
+                  FPSOSiz.der(outro.resultado, :q_cold)
+            # e o pinch continua onde estava, que é o que "mudança abaixo dele" quer dizer
+            @test FPSOSiz.der(outro.resultado, :t_pinch_deslocada) ≈ 85.0
+            # nada do que estava antes se perdeu no caminho
+            @test keys(antes[1].lo) == keys(outro.casos[1].lo)
+        end
+
+        @testset "a contagem de cantos não cresce com o número de correntes" begin
+            # A restrição dura, verificada AQUI também porque é a tela que a poderia
+            # furar: `app.js` dá duas caixas a todo campo de `st.campos`, e é
+            # `single_box` que faz a segunda ser ignorada em `aplicar!`.
+            for n in (2, 6, 12)
+                A.definir_instancias!(st, Dict(:corrente => n))
+                st.casos = [A.CaseUI("Cenário $j", st.campos) for j in 1:3]
+                cs = FPSOSiz.CaseSet([A.to_case(c, st.globais) for c in st.casos])
+                @test FPSOSiz.corner_count(cs) == 3       # um por cenário, sempre
+            end
+
+            # E um cliente que mande "máx" diferente de "mín" numa caixa de grupo é
+            # ignorado de propósito: obedecê-lo abriria a porta dos 2^N cantos.
+            A.definir_instancias!(st, Dict(:corrente => 3))
+            st.casos = [A.CaseUI("Cenário 1", st.campos)]
+            avisos = A.aplicar!(st, Dict(
+                "casos" => [Dict("id" => st.casos[1].id, "name" => "Cenário 1",
+                                 "enabled" => true,
+                                 "lo" => Dict("corrente_1_t_in" => "111,0"),
+                                 "hi" => Dict("corrente_1_t_in" => "999,0"))]))
+            @test isempty(avisos)
+            @test A.caso_atual(st).lo[:corrente_1_t_in] == 111.0
+            @test A.caso_atual(st).hi[:corrente_1_t_in] == 111.0   # NÃO 999
+            @test FPSOSiz.corner_count(
+                FPSOSiz.CaseSet([A.to_case(c, st.globais) for c in st.casos])) == 1
+        end
+
+        @testset "mudar a contagem por aplicar! não ressuscita corrente removida" begin
+            # `merge!` copiava tudo o que o caso anterior guardava. Com grupo repetível
+            # isso reintroduz `corrente_4_*` depois de a 4 sair da tela: a chave não
+            # aparece em caixa nenhuma, mas `to_case` a grava e `case_input` a lê — a
+            # rede teria quatro correntes e a tela mostraria três.
+            A.definir_instancias!(st, Dict(:corrente => 4))
+            st.casos = [A.CaseUI("Cenário 1", st.campos)]
+            st.casos[1].lo[:corrente_4_mcp] = 7.0
+            st.casos[1].hi[:corrente_4_mcp] = 7.0
+
+            A.aplicar!(st, Dict("instancias" => Dict("corrente" => 3),
+                                "casos" => [Dict("id" => st.casos[1].id,
+                                                 "name" => "Cenário 1",
+                                                 "enabled" => true,
+                                                 "lo" => Dict(), "hi" => Dict())]))
+            @test st.instancias[:corrente] == 3
+            @test !haskey(A.caso_atual(st).lo, :corrente_4_mcp)
+            caso = A.to_case(A.caso_atual(st), st.globais)
+            @test !haskey(caso.values, :corrente_4_mcp)
+            @test length(FPSOSiz.case_input(st.metodo, caso.values)) == 3
+        end
+
+        @testset "entrada inválida vira aviso por caso, nunca exceção" begin
+            A.definir_instancias!(st, Dict(:corrente => 2))
+            st.casos = [A.CaseUI("Cenário 1", st.campos)]
+            avisos = A.aplicar!(st, Dict("casos" => [Dict(
+                "id" => st.casos[1].id, "name" => "Cenário 1", "enabled" => true,
+                "lo" => Dict("corrente_1_mcp" => "nem número é",
+                             "corrente_2_t_in" => "99999,0"),
+                "hi" => Dict())]))
+            @test length(avisos) == 2
+            @test all(a -> a["escopo"] == "caso:1", avisos)
+            @test Set(a["chave"] for a in avisos) == Set(["corrente_1_mcp",
+                                                          "corrente_2_t_in"])
+            # o valor anterior fica de pé — campo recusado não vira default
+            molde = only(filter(s -> s.key === :corrente_1_mcp, st.campos))
+            @test A.caso_atual(st).lo[:corrente_1_mcp] == molde.default
+
+            # e uma corrente isotérmica vira mensagem com a receita da p. 44, não erro
+            A.caso_atual(st).lo[:corrente_1_t_out] = A.caso_atual(st).lo[:corrente_1_t_in]
+            A.caso_atual(st).hi[:corrente_1_t_out] = A.caso_atual(st).lo[:corrente_1_t_in]
+            A.dimensionar!(st)
+            @test !st.status_ok
+            @test occursin("isotérmico", st.status)
+            @test occursin("p. 44", st.status)
+        end
+
+        @testset "o desenho e o memorial existem sem figura de vaso" begin
+            @test A.abrir_casos!(st, "exemplo_pinch_kemp.toml")
+            @test isnan(A.beta_atual(st))
+            @test isempty(A.camadas_atual(st))            # uma rede não tem fases
+
+            figs = A.figuras(st)
+            @test [f["id"] for f in figs] == ["envelope"]  # o fallback genérico
+            for f in figs
+                @test startswith(f["svg"], "<svg")
+                @test count("<", f["svg"]) == count(">", f["svg"])
+                @test !occursin("NaN", f["svg"])
+                @test !occursin("aria-label=\"\"", f["svg"])
+            end
+
+            mem = A.memorial(st)
+            @test !isempty(mem["casos"])
+            ids = [b["id"] for b in mem["casos"][1]["blocos"]]
+            @test "correntes" in ids && "selection" in ids
+        end
+
+        @testset "exportar carrega a fonte de Kemp, e não a de um trocador" begin
+            r = A.exportar!(st)
+            @test r.ok
+            txt = read(only(filter(f -> endswith(f, "_memorial.txt"), r.arquivos)),
+                       String)
+            @test occursin("Kemp", txt)
+            @test occursin("§3.9.1", txt)
+            @test !occursin("Saari", txt)
+            @test !occursin("Alves & Komesu", txt)
+        end
+    end
+
+    # -----------------------------------------------------------------------
     # O servidor de verdade
     # -----------------------------------------------------------------------
 
@@ -1262,6 +1636,70 @@ end
                 @test d.esquema.equipamento ==
                       FPSOSiz.label(FPSOSiz.box_equipamento(b)[1])
             end
+        end
+
+        @testset "acrescentar e remover corrente pelo HTTP, como a tela faz" begin
+            # O caminho REAL do botão "+ Corrente": ele muda `instancias` e chama
+            # `dimensionar()`, que manda {casos, globais, sel, instancias} e recebe o
+            # estado com os campos novos dentro. Este teste percorre esse caminho pelo
+            # protocolo, que é a única forma de provar que as duas pontas concordam sem
+            # abrir um navegador.
+            api = "$base/api/analise-pinch"
+            pega() = JSON3.read(String(HTTP.get("$api/estado").body))
+            manda(c) = JSON3.read(String(HTTP.post("$api/dimensionar",
+                ["Content-Type" => "application/json"], JSON3.write(c)).body))
+
+            # Abre o exemplo do livro: quatro correntes, e os números publicados.
+            abrir = JSON3.read(String(HTTP.post("$api/casos/abrir",
+                ["Content-Type" => "application/json", "Origin" => base],
+                JSON3.write(Dict("arquivo" => "exemplo_pinch_kemp.toml"))).body))
+            @test abrir.status_ok
+            e = pega()
+            @test length(e.campos) == 12
+            @test only(e.grupos).n == 4
+            @test valor_cartao_json(e, "Utilidade quente") == "20,0 kW"
+            @test valor_cartao_json(e, "Utilidade fria") == "60,0 kW"
+
+            # "+ Corrente": cinco instâncias, quinze caixas, e o estado volta com elas.
+            e5 = manda(Dict("casos" => e.casos, "globais" => e.globais, "sel" => e.sel,
+                            "instancias" => Dict("corrente" => 5)))
+            @test e5.status_ok
+            @test length(e5.campos) == 15
+            @test only(e5.grupos).n == 5
+            @test any(c -> c.key == "corrente_5_mcp", e5.campos)
+            # a corrente nova nasce com o default do descritor, e o cálculo a enxerga
+            @test valor_cartao_json(e5, "Correntes na rede") == "5"
+
+            # "− Corrente" duas vezes: volta a três, e a 4 e a 5 somem de verdade —
+            # nem do formulário, nem do cálculo.
+            e3 = manda(Dict("casos" => e5.casos, "globais" => e5.globais,
+                            "sel" => e5.sel, "instancias" => Dict("corrente" => 3)))
+            @test length(e3.campos) == 9
+            @test !any(c -> startswith(String(c.key), "corrente_4"), e3.campos)
+            @test valor_cartao_json(e3, "Correntes na rede") == "3"
+
+            # A faixa do TOML é obedecida do outro lado do fio: pedir 99 dá 12, pedir 0
+            # dá 2. A tela desabilita o botão no limite, mas o servidor não confia nela.
+            e12 = manda(Dict("casos" => e3.casos, "globais" => e3.globais,
+                             "sel" => e3.sel, "instancias" => Dict("corrente" => 99)))
+            @test only(e12.grupos).n == 12
+            e2 = manda(Dict("casos" => e12.casos, "globais" => e12.globais,
+                            "sel" => e12.sel, "instancias" => Dict("corrente" => 0)))
+            @test only(e2.grupos).n == 2
+            @test length(e2.campos) == 6
+
+            # Exportar continua funcionando com a contagem mexida.
+            exp = JSON3.read(String(HTTP.post("$api/exportar",
+                ["Content-Type" => "application/json", "Origin" => base], "{}").body))
+            @test exp.ok
+            @test any(f -> endswith(f, "_memorial.txt"), exp.arquivos)
+
+            # E o cursor de ΔTmin responde, como em qualquer outro box.
+            des = JSON3.read(String(HTTP.post("$api/desenho",
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict("d" => "20"))).body))
+            @test des.d_sel == 20.0
+            @test !isempty(des.desenho.figuras)
         end
 
         @testset "id de box que não serve não é servido" begin

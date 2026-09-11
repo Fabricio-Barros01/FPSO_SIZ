@@ -14,10 +14,19 @@ reference = "Saari, J., \"Heat Exchanger Dimensioning\", Lappeenranta University
 # exatamente equivalentes, que o caso-ouro usa como conferência cruzada. Um exemplo de
 # literatura com o laço de U fechado fecharia o buraco.
 #
-# A ANÁLISE PINCH NÃO ESTÁ AQUI, e não está por falta de fonte: pinch é síntese de REDE
-# de trocadores (Linnhoff, Kemp), disciplina diferente de dimensionar um equipamento, e
-# References/ não tem nenhum dos dois. Dimensionar um trocador com ΔT_min arbitrado sem
-# a análise da rede que o justifique seria dar um número com aparência de otimizado.
+# A ANÁLISE PINCH NÃO ESTÁ AQUI, e a razão mudou. Enquanto References/ não tinha
+# Linnhoff nem Kemp, a razão era falta de fonte. Kemp está lá desde então, e a análise
+# existe: config/equipment/pinch/kemp.toml, com o núcleo em src/analysis/pinch.jl.
+#
+# Ela continua não estando AQUI porque são perguntas diferentes. Pinch dá os ALVOS de
+# energia de uma REDE de correntes, antes de existir trocador; este arquivo dimensiona
+# UM trocador com o serviço já definido. O box "analise-pinch" responde à primeira; este,
+# à segunda.
+#
+# O que continua verdadeiro sem ressalva: dimensionar um trocador com ΔT_min arbitrado,
+# sem a análise da rede que o justifique, é dar um número com aparência de otimizado. O
+# programa ainda não LIGA as duas telas — o alvo de pinch não alimenta o serviço do
+# trocador, e ninguém aqui alega que alimente.
 
 # --- lado do tubo ------------------------------------------------------------
 

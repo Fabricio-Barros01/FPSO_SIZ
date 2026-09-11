@@ -132,15 +132,24 @@ end
 
 Converte os blocos `[[parameter]]` de um TOML em descritores. Campos obrigatórios:
 `key`, `label`, `unit`, `default`, `min`, `max`. Opcionais: `advanced` (false),
-`note` ("").
+`note` ("") e `group` (`:none`).
+
+`group` aponta para um bloco `[[group]]` do mesmo arquivo, e um `group` que não exista
+é erro **na carga**, não na tela: um campo órfão viraria uma caixa que o formulário não
+sabe onde pôr, e a falha apareceria como um campo sumido no navegador de quem usa.
 """
 function parameter_specs(cfg::AbstractDict)
     raw = get(cfg, "parameter", Any[])
+    grupos = Set(g.key for g in group_specs(cfg))
     specs = ParameterSpec[]
     for p in raw
         for f in ("key", "label", "unit", "default", "min", "max")
             haskey(p, f) || error("bloco [[parameter]] sem campo obrigatório '$f': $p")
         end
+        g = Symbol(get(p, "group", "none"))
+        g === :none || g in grupos ||
+            error("parâmetro '$(p["key"])' declara group = \"$g\", que não tem " *
+                  "bloco [[group]] correspondente neste arquivo")
         push!(specs, ParameterSpec(
             Symbol(p["key"]),
             String(p["label"]),
@@ -150,9 +159,38 @@ function parameter_specs(cfg::AbstractDict)
             float(p["max"]),
             get(p, "advanced", false),
             String(get(p, "note", "")),
+            g,
         ))
     end
     return specs
+end
+
+"""
+    group_specs(cfg) -> Vector{NamedTuple}
+
+Converte os blocos `[[group]]` de um TOML nos cabeçalhos dos grupos repetíveis.
+Obrigatórios: `key`, `label`, `min`, `max` — quantas instâncias o método admite.
+
+`min` e `max` são do TOML, e não do código, pela regra da guarda 3: "duas correntes é o
+mínimo para haver integração" é premissa revisável, não estrutura. Quem discordar edita
+o arquivo.
+
+O tipo devolvido é `NamedTuple` de propósito — ver [`parameter_groups`](@ref).
+"""
+function group_specs(cfg::AbstractDict)
+    out = @NamedTuple{key::Symbol, label::String, min::Int, max::Int}[]
+    for g in get(cfg, "group", Any[])
+        for f in ("key", "label", "min", "max")
+            haskey(g, f) || error("bloco [[group]] sem campo obrigatório '$f': $g")
+        end
+        lo, hi = Int(g["min"]), Int(g["max"])
+        1 <= lo <= hi ||
+            error("bloco [[group]] '$(g["key"])': exige 1 ≤ min ≤ max, " *
+                  "recebi min = $lo e max = $hi")
+        push!(out, (; key = Symbol(g["key"]), label = String(g["label"]),
+                    min = lo, max = hi))
+    end
+    return out
 end
 
 """

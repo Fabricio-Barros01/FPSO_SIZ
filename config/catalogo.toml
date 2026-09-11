@@ -66,11 +66,33 @@ method    = "moran"
 [[box]]
 id        = "trocador-calor"
 titulo    = "Trocador casco-e-tubos"
-subtitulo = "LMTD com fator F, U das resistências — Saari (LUT). Sem análise pinch"
+subtitulo = "LMTD com fator F, U das resistências — Saari (LUT). Dimensiona UM trocador"
 icone     = "trocador"
 estado    = "ativo"
 equipment = "exchanger"
 method    = "saari_lmtd"
+
+# O subtítulo acima dizia "Sem análise pinch" enquanto não havia nenhuma. Agora há, e a
+# frase passaria a mentir por omissão — sugeriria que o programa não a tem, quando o que
+# ela sempre quis dizer é que ESTE box não a faz. O que ele faz é dimensionar um
+# trocador; quem dá os alvos da rede é o box abaixo, e são perguntas diferentes.
+
+# ---------------------------------------------------------------------------
+# O box que NÃO dimensiona equipamento nenhum.
+#
+# `equipment = "pinch"` resolve num `PinchTarget`, que é o ALVO da análise e não um
+# casco — o contrato pede um `AbstractEquipment` e o catálogo exige que um box ativo o
+# resolva no registro. Ver src/analysis/pinch_method.jl.
+# ---------------------------------------------------------------------------
+
+[[box]]
+id        = "analise-pinch"
+titulo    = "Análise Pinch — alvos de energia"
+subtitulo = "Quanta utilidade quente e fria a rede exige, no mínimo — Kemp (2007), cap. 2-3"
+icone     = "pinch"
+estado    = "ativo"
+equipment = "pinch"
+method    = "pinch_kemp"
 
 # ---------------------------------------------------------------------------
 # Planejados. `motivo` é o que o cartão diz em vez de simplesmente não responder ao

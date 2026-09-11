@@ -79,12 +79,20 @@ include("sizing/pump/moran.jl")
 include("sizing/exchanger/bell_delaware.jl")
 include("sizing/exchanger/shell_and_tube.jl")
 
+# O envoltório da Análise Pinch — e repare ONDE ele está: aqui embaixo, a ~140 linhas do
+# `include("analysis/pinch.jl")` lá em cima. A distância é o ponto. O núcleo entra antes
+# de `interfaces.jl` e não tem como citar `ParameterSpec`; este entra depois de tudo e
+# cita à vontade. Juntar os dois arquivos apagaria a única garantia estrutural que o
+# passo anterior deixou, e `test/pinch.jl` verifica que ela continua de pé.
+include("analysis/pinch_method.jl")
+
 include("engine/single.jl")
 include("engine/envelope.jl")
 
 # --- interfaces e registro
 export AbstractEquipment, AbstractSizingMethod, ParameterSpec
 export method_id, label, parameters, applies_to, size_equipment
+export parameter_groups, instance_key, group_instance, in_group, is_template, single_box
 export register!, equipments, methods_for, equipment, sizing_method
 export validate, defaults, with_defaults
 
@@ -132,6 +140,9 @@ export leakage_areas, baffle_clearance, layout_pitches
 # de campo que a referência disponível não sustenta. Exportar nome que não existe
 # promete uma API na saída de `names(FPSOSiz)` e entrega `UndefVarError` a quem a usar.
 export ElectrostaticTreater, ArnoldElectrostatic
+# A Análise Pinch registrada. `PinchTarget` NÃO é um equipamento — é o alvo da análise,
+# e existe porque o contrato pede um `AbstractEquipment`. Ver `analysis/pinch_method.jl`.
+export PinchTarget, PinchKemp, PinchConstraints
 export converge_drag, terminal_velocity, reynolds, drag_coefficient, souders_brown
 export size_envelope, governing_summary, mechanism_label
 
@@ -166,6 +177,8 @@ function __init__()
     register!(MoranPumpSizing())
     register!(ShellTubeExchanger())
     register!(SaariLMTD())
+    register!(PinchTarget())
+    register!(PinchKemp())
     return nothing
 end
 

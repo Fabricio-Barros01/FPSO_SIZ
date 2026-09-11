@@ -21,16 +21,30 @@ e `governing::Symbol` precisaria de conversão de qualquer jeito.
 # Descritores → formulário
 # ---------------------------------------------------------------------------
 
-"Um `ParameterSpec` como a tela precisa dele."
+"""
+Um `ParameterSpec` como a tela precisa dele.
+
+`grupo`, `instancia` e `caixa_unica` são o que permite ao formulário desenhar um
+cabeçalho de grupo e uma caixa só sem saber que existe uma grandeza chamada corrente:
+ele compara `grupo` entre linhas consecutivas para decidir onde começa um bloco, e
+obedece a `caixa_unica` sem perguntar por quê.
+
+`caixa_unica` viaja como **dado**, e não é recalculado do lado do JavaScript, pelo
+motivo de sempre neste arquivo: a regra existiria duas vezes e as duas divergiriam. Quem
+a define é [`FPSOSiz.single_box`](@ref), e ela protege a contagem de cantos.
+"""
 spec_json(s::FPSOSiz.ParameterSpec) = Dict{String,Any}(
-    "key"      => String(s.key),
-    "label"    => s.label,
-    "unit"     => s.unit,
-    "default"  => Formato.num(s.default, Formato.casas_de(s)),
-    "min"      => s.min,
-    "max"      => s.max,
-    "advanced" => s.advanced,
-    "note"     => s.note,
+    "key"         => String(s.key),
+    "label"       => s.label,
+    "unit"        => s.unit,
+    "default"     => Formato.num(s.default, Formato.casas_de(s)),
+    "min"         => s.min,
+    "max"         => s.max,
+    "advanced"    => s.advanced,
+    "note"        => s.note,
+    "grupo"       => String(s.group),
+    "instancia"   => s.instance,
+    "caixa_unica" => FPSOSiz.single_box(s),
 )
 
 """
@@ -47,6 +61,15 @@ function esquema(st::AppState)
     return Dict{String,Any}(
     "campos"      => [spec_json(s) for s in st.campos],
     "ajustes"     => [spec_json(s) for s in st.ajustes],
+    # Os grupos repetíveis: como se chamam em português, quantas instâncias o TOML
+    # admite e quantas estão à vista. É o que o formulário precisa para escrever o
+    # cabeçalho e para saber quando desabilitar "acrescentar" e "remover" — sem nada
+    # disso escrito no HTML. Vazio para os cinco métodos que não têm grupo nenhum, e aí
+    # a tela não desenha cabeçalho nenhum, em vez de desenhar um vazio.
+    "grupos"      => [Dict{String,Any}("key" => String(g.key), "label" => g.label,
+                                       "min" => g.min, "max" => g.max,
+                                       "n" => get(st.instancias, g.key, g.min))
+                      for g in FPSOSiz.parameter_groups(st.metodo)],
     "equipamento" => FPSOSiz.label(st.equipamento),
     "metodo"      => FPSOSiz.label(st.metodo),
     # O rótulo do cursor: "diâmetro (mm)" num vaso, "diâmetro nominal (mm)" numa bomba.
@@ -277,6 +300,17 @@ function estado(st::AppState; com_desenho::Bool = true)
         "globais"   => Dict{String,Any}(String(k) => Formato.num(v, get(casas, k, 2))
                                         for (k, v) in st.globais),
         "d_sel"     => st.d_sel,
+        # Os campos viajam AQUI, e não só em `esquema`, porque com grupos repetíveis a
+        # lista deixou de ser fixa: acrescentar uma corrente muda quais caixas existem.
+        # O esquema é pedido uma vez, na abertura; é esta resposta que a tela recebe
+        # depois de cada "+ corrente", e sem os campos dentro dela o formulário
+        # continuaria desenhando a contagem antiga sobre um estado novo.
+        # Métodos sem grupo mandam a mesma lista de sempre, e nada muda para eles.
+        "campos"    => [spec_json(s) for s in st.campos],
+        "grupos"    => [Dict{String,Any}("key" => String(g.key), "label" => g.label,
+                                         "min" => g.min, "max" => g.max,
+                                         "n" => get(st.instancias, g.key, g.min))
+                        for g in FPSOSiz.parameter_groups(st.metodo)],
         "grade"     => grade_slider(st),
         "status"    => st.status,
         "status_ok" => st.status_ok,
@@ -309,6 +343,15 @@ Já a herança de valores é por `id`, não por posição — ver [`novo_id`](@r
 """
 function aplicar!(st::AppState, payload)
     avisos = Dict{String,Any}[]
+
+    # A contagem de instâncias vem PRIMEIRO, e tem de vir: ela reescreve `st.campos`, que
+    # é a lista que todo o resto desta função percorre. Lida depois, um "+ corrente"
+    # chegaria junto com os valores da corrente nova e os valores seriam descartados por
+    # pertencerem a uma chave que `por_chave` ainda não conhece.
+    inst_in = get(payload, "instancias", nothing)
+    inst_in === nothing || definir_instancias!(st, Dict{Symbol,Int}(
+        Symbol(k) => round(Int, v) for (k, v) in inst_in if v isa Real))
+
     por_chave = Dict(s.key => s for s in vcat(st.campos, st.ajustes))
 
     ler = (dic, chave, escopo, extremo) -> begin
@@ -342,14 +385,31 @@ function aplicar!(st::AppState, payload)
             anterior = get(por_id, string(get(c, "id", "")), nothing)
             if anterior !== nothing
                 base.id = anterior.id
-                merge!(base.lo, anterior.lo)
-                merge!(base.hi, anterior.hi)
+                # Herda só as chaves que o formulário AINDA tem. Era `merge!`, que copia
+                # tudo o que o caso anterior guardava — e com grupos repetíveis isso
+                # reintroduz `corrente_5_*` depois de a corrente 5 ter sido removida. A
+                # chave ressuscitada não aparece em caixa nenhuma, mas `to_case` a grava
+                # e `case_input` a lê: a rede voltaria a ter cinco correntes, e a tela
+                # mostraria quatro.
+                for k in keys(base.lo)
+                    haskey(anterior.lo, k) && (base.lo[k] = anterior.lo[k])
+                    haskey(anterior.hi, k) && (base.hi[k] = anterior.hi[k])
+                end
             end
             base.enabled = get(c, "enabled", true) === true
             escopo = "caso:$i"
             lo_in, hi_in = get(c, "lo", Dict()), get(c, "hi", Dict())
             for s in st.campos
                 v = ler(lo_in, s.key, escopo, "lo"); v === nothing || (base.lo[s.key] = v)
+                if FPSOSiz.single_box(s)
+                    # Campo de grupo tem UMA caixa, e o par mín/máx do `CaseUI` recebe o
+                    # mesmo valor. É o que impede a contagem de cantos de crescer com o
+                    # número de correntes — ver `FPSOSiz.single_box`. A caixa "máx" que
+                    # um cliente antigo ainda mande é ignorada de propósito: obedecê-la
+                    # abriria exatamente a porta que este ramo existe para fechar.
+                    v === nothing || (base.hi[s.key] = v)
+                    continue
+                end
                 w = ler(hi_in, s.key, escopo, "hi"); w === nothing || (base.hi[s.key] = w)
             end
             push!(novos, base)

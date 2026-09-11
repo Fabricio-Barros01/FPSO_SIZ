@@ -20,8 +20,21 @@ passo 2, onde Saari não publica exemplo fechado: Kemp publica as correntes, a t
 intervalos, **as duas cascatas** e os alvos com a temperatura de pinch. Tudo o que o
 programa calcula está impresso no livro.
 
-**Esta execução entrega só o núcleo.** Não há interface, não há registro, não há
-`ParameterSpec`. A entrada é `Vector{ThermalStream}` + ΔTmin; a saída é um `PinchResult`.
+**O núcleo é puro, e continua sendo.** [pinch.jl](../../src/analysis/pinch.jl) não tem
+interface, registro nem `ParameterSpec`: a entrada é `Vector{ThermalStream}` + ΔTmin e a
+saída é um `PinchResult`. Isso não é disciplina, é estrutural — o arquivo é incluído antes
+de `interfaces.jl`, quando aqueles tipos ainda não existem, e uma guarda textual em
+[test/pinch.jl](../../test/pinch.jl) verifica que continua assim.
+
+**A execução seguinte pôs isso na tela, sem tocar no núcleo.** O encaixe no contrato de
+varredura mora num arquivo à parte,
+[pinch_method.jl](../../src/analysis/pinch_method.jl), incluído *depois* de tudo: ele
+traduz e não recalcula. O eixo varrido é o ΔTmin, a grandeza envelopada é o QHmin — e o
+que autoriza chamá-la de exigência é a monotonicidade provada em `test/pinch.jl`, §5.
+
+O que a tela **não** ganhou junto, e continua declarado abaixo: troca energia × capital
+(§6.1 — por isso o ΔTmin é *cumprido*, não escolhido), persistência dos ajustes entre
+sessões (§6.2), ΔTcont por corrente e CP polinomial (§6.3).
 
 ---
 
@@ -352,10 +365,14 @@ O CP polinomial é mais caro e menos urgente: a linearização por segmentos, qu
 implementada, é o remédio que o próprio §3.1.3 recomenda, e o livro só recorre à entalpia
 quando o software não admite segmentos.
 
-### 6.4 O `note` do parâmetro de ΔTmin, quando ele existir
+### 6.4 O `note` do parâmetro de ΔTmin
 
-Registrado aqui porque a decisão foi tomada e a fonte, conferida — o parâmetro em si é da
-execução seguinte, que cria o `ParameterSpec` e o TOML.
+Decidido nesta seção enquanto o parâmetro ainda não existia, e **cumprido como está
+escrito**: o descritor `dt_min_alvo` vive hoje em
+[config/equipment/pinch/kemp.toml](../../config/equipment/pinch/kemp.toml), com o
+`default` de 10 °C e a nota abaixo, ressalvas incluídas. `test/pinch_encaixe.jl` assere
+que as duas ressalvas continuam lá — não basta a nota citar a página, ela tem de dizer o
+que a página diz.
 
 O `default` é **10 °C**, e a nota tem fonte direta. §3.7.3, p. 82:
 
@@ -380,10 +397,12 @@ Duas ressalvas que a nota precisa carregar, porque a fonte não diz o que seria 
 
 ## Resultado
 
+### Execução 1 — o núcleo (commit `c814021`)
+
 | | antes | depois |
 |---|---|---|
 | Testes do módulo | — | **304** (156 de núcleo, 148 de caso-ouro) |
-| Suíte completa | 2.014 | **2.318**, zero falhas |
+| Suíte de núcleo | 2.014 | **2.318**, zero falhas |
 | Equações conferidas contra a fonte | — | **10** |
 | Casos-ouro publicados | — | **2** (Tabela 2.2/2.3 + §3.3.2) |
 | Desvio máximo no caso-ouro | — | **0** — acordo exato em todos os números |
@@ -391,3 +410,20 @@ Duas ressalvas que a nota precisa carregar, porque a fonte não diz o que seria 
 | Erratas de fonte documentadas | 10 | **12** |
 | Constantes empíricas introduzidas | — | **0** |
 | Arquivos de `app/` tocados | — | **0** |
+
+### Execução 2 — a interface
+
+| | antes | depois |
+|---|---|---|
+| Suíte de núcleo | 2.318 | **2.885**, zero falhas |
+| Suíte de interface (`app/smoke.jl`) | 2.737 | **2.912**, zero falhas |
+| Equações novas | — | **0** — o encaixe traduz, não recalcula |
+| Constantes empíricas introduzidas | — | **0** |
+| Desvio no caso-ouro, agora pelo motor | — | **0** — QHmin 20 kW, QCmin 60 kW, pinch 85/90/80 °C |
+| Campos novos em `ParameterSpec` | — | **2** (`group`, `instance`), retrocompatíveis |
+| Guardas fortalecidas | — | **2** (proveniência alcança campo de grupo; vocabulário passa a sair do registro) |
+| Guardas afrouxadas | — | **0** |
+
+A segunda execução não mexeu em [pinch.jl](../../src/analysis/pinch.jl): a pureza do
+núcleo é a única coisa que a primeira deixou garantida estruturalmente, e desfazê-la para
+encurtar o encaixe teria custado mais do que o encaixe vale.

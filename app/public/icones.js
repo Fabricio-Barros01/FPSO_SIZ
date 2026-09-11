@@ -48,6 +48,17 @@ const ICONES = {
     <path d="M8 10v4M16 10v4"/>
     <path d="M10 12h4" stroke-dasharray="1.4 1.4"/>`),
 
+  // As duas curvas compostas e o aperto entre elas — a figura da própria Análise Pinch
+  // (Kemp, Figura 2.6). Não é equipamento nenhum, e é essa a informação: a curva quente
+  // descendo, a fria subindo, e o ponto em que se aproximam ao máximo, marcado.
+  pinch: _svg(`
+    <path d="M3 17c3.2 0 4.6-3.1 7.4-3.1"/>
+    <path d="M10.4 13.9c2.9 0 4.4 3.1 7.6 3.1"/>
+    <path d="M4.6 10.1c3.2 0 4.6-3.1 7.4-3.1"/>
+    <path d="M12 7c2.9 0 4.4 3.1 7.4 3.1"/>
+    <path d="M11.2 13.5V10.6" stroke-dasharray="1.3 1.2"/>
+    <circle cx="11.2" cy="13.7" r="1"/>`),
+
   // Malha fechada: medição, controlador e válvula.
   controle: _svg(`
     <circle cx="6" cy="12" r="2.4"/>

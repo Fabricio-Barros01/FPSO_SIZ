@@ -75,6 +75,76 @@ end
 "Cópia com identidade **própria**: duplicar um caso cria outro caso, não um apelido."
 Base.copy(c::CaseUI) = CaseUI(novo_id(), c.name, c.enabled, copy(c.lo), copy(c.hi))
 
+"""
+    campos_do_metodo(metodo, instancias) -> Vector{ParameterSpec}
+
+Os descritores **por caso**, com os grupos repetíveis já expandidos nas suas instâncias.
+
+Um método sem grupo nenhum (os cinco primeiros) sai daqui exatamente como entrava: o
+`vcat` de sempre, menos as chaves globais. Um método com grupo (a Análise Pinch) troca
+cada molde por `n` campos concretos, agrupados **por instância** e não por grandeza —
+"Corrente 1: entrada, saída, CP; Corrente 2: …" é a ordem em que a pessoa lê, e a
+contrária ("todas as entradas, depois todas as saídas") obrigaria a contar colunas.
+
+A tela continua sem citar um parâmetro pelo nome: quem diz que existe um grupo chamado
+`:corrente`, como ele se chama em português e quantas instâncias admite é
+[`FPSOSiz.parameter_groups`](@ref), e quem sintetiza a chave é
+[`FPSOSiz.instance_key`](@ref) — a mesma função que `case_input` usa para ler de volta.
+"""
+function campos_do_metodo(metodo::FPSOSiz.AbstractSizingMethod,
+                          instancias::AbstractDict{Symbol,Int})
+    todos   = vcat(FPSOSiz.stream_parameters(metodo), FPSOSiz.parameters(metodo))
+    globais = FPSOSiz.global_keys(metodo)
+    rotulos = Dict(g.key => g.label for g in FPSOSiz.parameter_groups(metodo))
+
+    out  = FPSOSiz.ParameterSpec[]
+    feitos = Set{Symbol}()
+    for s in todos
+        s.key in globais && continue
+        if !FPSOSiz.in_group(s)
+            push!(out, s)
+            continue
+        end
+        # O grupo inteiro é emitido de uma vez, no lugar do seu PRIMEIRO molde; os
+        # demais moldes do mesmo grupo são pulados, senão ele sairia repetido uma vez
+        # por grandeza.
+        s.group in feitos && continue
+        push!(feitos, s.group)
+        moldes = filter(t -> t.group === s.group, todos)
+        for i in 1:get(instancias, s.group, 0), t in moldes
+            push!(out, FPSOSiz.group_instance(t, i; prefixo = get(rotulos, s.group, "")))
+        end
+    end
+    return out
+end
+
+"Quantas instâncias de cada grupo o método admite, no piso declarado no TOML."
+instancias_iniciais(metodo::FPSOSiz.AbstractSizingMethod) =
+    Dict{Symbol,Int}(g.key => g.min for g in FPSOSiz.parameter_groups(metodo))
+
+"""
+    instancias_dos_valores(metodo, valores) -> Dict{Symbol,Int}
+
+Quantas instâncias um conjunto de chaves já gravadas descreve — o **maior índice** que
+aparece, preso à faixa que o TOML declara.
+
+É o maior índice, e não a contagem: um arquivo com `corrente_1_*` e `corrente_3_*` e sem
+a 2 descreve três correntes, uma delas por preencher. Contar daria duas e faria a
+terceira sumir em silêncio na primeira gravação.
+"""
+function instancias_dos_valores(metodo::FPSOSiz.AbstractSizingMethod, valores)
+    out = Dict{Symbol,Int}()
+    for g in FPSOSiz.parameter_groups(metodo)
+        moldes = filter(t -> t.group === g.key, FPSOSiz.parameters(metodo))
+        n = 0
+        for i in 1:g.max
+            any(t -> FPSOSiz.instance_key(g.key, i, t.key) in valores, moldes) && (n = i)
+        end
+        out[g.key] = clamp(n, g.min, g.max)
+    end
+    return out
+end
+
 "Converte de volta para o `Case` do core, mesclando os ajustes globais."
 function to_case(c::CaseUI, globais::AbstractDict)
     vals = Dict{Symbol,Any}()
@@ -95,8 +165,13 @@ há caminho por onde a tela mostre um número que não venha do core.
 mutable struct AppState
     equipamento::FPSOSiz.AbstractEquipment   # de qual box esta tela é
     metodo::FPSOSiz.AbstractSizingMethod
-    campos::Vector{FPSOSiz.ParameterSpec}    # editáveis por caso
+    campos::Vector{FPSOSiz.ParameterSpec}    # editáveis por caso, grupos já expandidos
     ajustes::Vector{FPSOSiz.ParameterSpec}   # globais (grade, banda de SR)
+    # Quantas instâncias de cada grupo repetível estão à vista. É da TELA, e não de cada
+    # caso: a rede de correntes é uma só, e os casos são cenários de operação dela. Com
+    # uma contagem por caso, o envelope compararia redes diferentes e chamaria isso de
+    # "o equipamento que atende a todos". Vazio para os métodos sem grupo nenhum.
+    instancias::Dict{Symbol,Int}
     casos::Vector{CaseUI}
     sel::Int
     arquivo::String                          # nome do TOML de onde os casos vieram
@@ -130,11 +205,15 @@ function AppState(; case_file::AbstractString = "exemplo_alves_komesu.toml",
     # Quais parâmetros são decisão de projeto (painel único) e quais são dado de
     # corrente (um por caso) é o método que diz — ver `global_keys`. Era uma tupla fixa
     # de seis chaves de vaso aqui; a bomba tem outras quatro.
-    globais = FPSOSiz.global_keys(metodo)
-    campos  = filter(s -> !(s.key in globais), todos)
+    globais    = FPSOSiz.global_keys(metodo)
+    instancias = instancias_iniciais(metodo)
+    # Os campos por caso passam por `campos_do_metodo` para que um método com grupo
+    # repetível chegue à tela já expandido. Sem grupo, a função devolve o mesmo `filter`
+    # que estava escrito aqui.
+    campos  = campos_do_metodo(metodo, instancias)
     ajustes = filter(s -> s.key in globais, todos)
 
-    st = AppState(equipamento, metodo, campos, ajustes, CaseUI[], 1, "", "",
+    st = AppState(equipamento, metodo, campos, ajustes, instancias, CaseUI[], 1, "", "",
                   Dict{Symbol,Float64}(s.key => s.default for s in ajustes),
                   nothing, nothing, 0.0,
                   "Pronto. Ajuste as entradas e clique em Dimensionar.", true)
@@ -157,6 +236,27 @@ function rotulo_casos(nome::AbstractString)
 end
 
 """
+    definir_instancias!(st, novas) -> nothing
+
+Muda quantas instâncias de cada grupo estão à vista e **reexpande `st.campos`**.
+
+Os dois andam juntos sempre, e por isso moram numa função só: `st.campos` é a lista que
+`aplicar!`, `CaseUI`, `salvar_casos!` e o formulário percorrem, e uma contagem que mude
+sem ela produziria uma tela com quatro correntes e um estado com três — a tela e o
+servidor deixando de se corresponder, que é o defeito 4 do Sprint 7 por outro caminho.
+
+Cada valor é preso à faixa que o TOML declara, porque a contagem chega do navegador.
+"""
+function definir_instancias!(st::AppState, novas::AbstractDict)
+    for g in FPSOSiz.parameter_groups(st.metodo)
+        haskey(novas, g.key) || continue
+        st.instancias[g.key] = clamp(Int(novas[g.key]), g.min, g.max)
+    end
+    st.campos = campos_do_metodo(st.metodo, st.instancias)
+    return nothing
+end
+
+"""
     carregar_casos!(st, nome) -> Bool
 
 Substitui a lista de casos pelo conteúdo do arquivo `nome`. Devolve `false` — e deixa
@@ -170,8 +270,6 @@ Arquivo ilegível **não** lança. É o mesmo contrato do resto da tela: um TOML
 usuário editou à mão e quebrou tem de virar mensagem, não uma janela que não abre.
 """
 function carregar_casos!(st::AppState, nome::AbstractString)
-    chaves = [s.key for s in st.campos]
-
     # Um arquivo de outro equipamento é RECUSADO, não avisado. As chaves que faltam
     # entrariam com o default do descritor (o `for` logo abaixo) e o vaso sairia
     # dimensionado a partir de dados que ninguém informou — a mesma classe de falha
@@ -204,6 +302,15 @@ function carregar_casos!(st::AppState, nome::AbstractString)
         st.status_ok = false
         return false
     end
+
+    # QUANTAS instâncias o arquivo descreve vem ANTES de montar os casos: `st.campos` é
+    # quem diz quais chaves um `CaseUI` guarda, e ele ainda está com a contagem da tela
+    # anterior. Sem este passo, abrir um arquivo de quatro correntes numa tela de duas
+    # descartaria a terceira e a quarta em silêncio — e o "Salvar" seguinte gravaria por
+    # cima do arquivo original com duas.
+    definir_instancias!(st, instancias_dos_valores(
+        st.metodo, Set(k for c in cs.cases for k in keys(c.values))))
+    chaves = [s.key for s in st.campos]
 
     novos = isempty(cs.cases) ? [CaseUI("Caso 1", st.campos)] :
                                 [CaseUI(c, chaves) for c in cs.cases]

@@ -18,6 +18,10 @@ using FPSOSiz
     # depende do motor de varredura — nem o alcança.
     @testset "pinch"         begin include("pinch.jl")        end
     @testset "caso-ouro pinch"    begin include("golden_kemp.jl")   end
+    # O ENCAIXE do pinch no contrato de varredura vem depois dos dois: ele só faz
+    # sentido se o núcleo e o caso-ouro já estiverem de pé, e é o que traduz um
+    # `Vector{ThermalStream}` para dentro do motor. Antes do envelope, que é quem o usa.
+    @testset "encaixe pinch" begin include("pinch_encaixe.jl") end
     @testset "tratador"      begin include("treater.jl")      end
     @testset "envelope"      begin include("envelope.jl")     end
     @testset "registro"      begin include("registry.jl")     end
