@@ -36,6 +36,14 @@ using TOML
 include("units.jl")
 using .Units
 
+# Alvos de energia de uma REDE de correntes — outra pergunta que a de dimensionar um
+# equipamento, e por isso um módulo à parte. Está aqui, e não lá embaixo junto do
+# trocador, porque a posição é a prova de pureza: incluído antes de `interfaces.jl`,
+# ele não tem como citar `ParameterSpec`, `AbstractSizingMethod` ou `Case` — nenhum
+# deles existe ainda. Ciclo de import não tem por onde nascer.
+include("analysis/pinch.jl")
+using .PinchAnalysis
+
 include("interfaces.jl")
 include("registry.jl")
 

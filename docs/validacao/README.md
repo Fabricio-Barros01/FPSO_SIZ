@@ -13,17 +13,18 @@ casos-ouro com desvio e tolerância justificada, defeitos classificados, e lacun
 | 3 | [Tratador eletrostático](03-tratador-eletrostatico.md) | `:arnold_electrostatic` | Stewart & Arnold §4.7–4.9.6 | 0 |
 | 4 | [Separador trifásico](04-separador-trifasico.md) | `:stewart_arnold` | Alves & Komesu (2025) + S&A cap. 4 | 0 |
 | 5 | [Vaso flash / knockout](05-vaso-flash-knockout.md) | `:stewart_arnold_2f` | Stewart & Arnold cap. 3 | 0 |
+| 6 | [Análise Pinch](06-pinch-kemp.md) | `PinchAnalysis` — não dimensiona | Kemp 2ª ed., caps. 2–3 | 0 |
 
 ## Resultado global
 
 | | antes | depois |
 |---|---|---|
-| Testes | **1.916** | **2.014** |
+| Testes | **1.916** | **2.318** |
 | Falhas | 0 | **0** |
-| Tempo do `@testset` | 22,2 s | ~20 s |
-| Equações conferidas contra a fonte | — | **76** |
+| Tempo do `@testset` | 22,2 s | ~28 s |
+| Equações conferidas contra a fonte | — | **86** |
 | Defeitos corrigidos | — | **9** |
-| Erratas de fonte documentadas | 5 | **10** |
+| Erratas de fonte documentadas | 5 | **12** |
 | Casos de exemplo viáveis | 5 de 5 | **5 de 5** |
 
 ## Defeitos encontrados e corrigidos
@@ -62,6 +63,8 @@ são novas.
 | **Branan** | **Eq. (2-26)** | `θ₂ = arccos(…)` | `2·arccos(…)` | sem o 2 a área da janela sai 6,8× menor que o segmento |
 | **Branan** | **Tab. 2-5** | 90°/Re 0–10: `a₂ = 0,667` | `−0,667` | as outras 19 linhas trazem o menos; `j` tem de cair com `Re` |
 | **S&A** | **Tab. 3.4** | `L_ss` com `+2,5` constante | `+d/12` pela Eq. (3.10a) | não reproduzível pela equação publicada; o caso-ouro não testa essa coluna |
+| **Kemp** | **§2.1.4 e §3.3** | o apêndice é a *"Section 3.11"* | **§3.9** | não existe §3.11; o cap. 3 termina em §3.9, e o índice traz o número certo |
+| **Kemp** | **p. 24** | cargas *"510 and 470 kWh"* | **kW** | `CP` [kW/K] × `T` [°C] = kW; a Tabela 2.3 e a Fig. 2.6 do mesmo exemplo usam kW |
 
 Todas foram decididas **por dentro** — coerência dimensional, coerência com outra equação
 do mesmo texto, ou um limite conhecido a priori — e nunca por preferir outra fonte.
@@ -75,6 +78,7 @@ do mesmo texto, ou um limite conhecido a priori — e nunca por preferir outra f
 | Branan, *Rules of Thumb* | não | texto extraído + páginas 42–43 rasterizadas para conferir sinais da Tab. 2-5 |
 | Stewart & Arnold | não | texto extraído |
 | Alves & Komesu (2025) | não | texto extraído + páginas 8–9 rasterizadas (as equações são objetos do Word) |
+| Kemp, *Pinch Analysis and Process Integration*, 2ª ed. | não | texto extraído |
 
 ## Decisões tomadas pelo usuário nesta fase
 
