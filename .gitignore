@@ -18,5 +18,38 @@
 *.jl.mem
 /docs/build/
 
+# Grafo de conhecimento — artefato GERADO, reconstruído por `graphify update .`.
+# São ~107 arquivos e 5,6 MB de cache, índice e relatório que ninguém revisa a olho, e
+# `cost.json` ainda registra consumo de tokens por execução, que é dado da máquina e não
+# do projeto.
+# ATENÇÃO: estes arquivos já estavam versionados quando esta regra entrou, e `.gitignore`
+# não desversiona o que já entrou. Para valer, uma vez: `git rm -r --cached graphify-out`
+# (não apaga nada do disco).
+/graphify-out/
+
+# Ferramentas de assistente que não são do projeto: configuração pessoal, não premissa
+# de engenharia. `.claude/settings.json` FICA versionado de propósito — é o hook do
+# graphify, que vale para quem clonar; o `settings.local.json` é de cada máquina.
+/.codex/
+/AGENTS.md
+.claude/settings.local.json
+
+# Segredos. Nenhum existe hoje, e a regra entra antes de o primeiro aparecer: um
+# `.env` que vaze num push fica em cache e indexado mesmo depois de apagado.
+.env
+.env.*
+*.key
+*.pem
+secrets.toml
+
+# Lixo de editor e de sistema
+*~
+*.swp
+.DS_Store
+Thumbs.db
+
 # NOTA: flake.nix, flake.lock, Project.toml e Manifest.toml são versionados
 # DE PROPÓSITO — juntos são o que torna o ambiente reprodutível.
+# NOTA: docs/ TAMBÉM é versionado de propósito. `docs/validacao/` é a auditoria das
+# contas contra a bibliografia — publicar o cálculo sem ela seria publicar o número
+# sem a conferência.
