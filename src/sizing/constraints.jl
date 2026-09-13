@@ -284,6 +284,14 @@ banda de esbeltez. É o que a tela mostra no lugar do resultado.
 """
 function selection_message(m::AbstractVesselMethod, rows, ceiling::Real,
                            p::AbstractDict; mechanism::Symbol = :none)
+    # Vazão nula não é problema de esbeltez nem de teto: sem líquido e sem gás o
+    # comprimento efetivo é zero em TODA a grade (Leff ≡ 0 ⇔ ambas as exigências nulas
+    # ⇔ vazões nulas), e o SR cai em ~1 para todo diâmetro. Mandar ampliar a banda de SR
+    # diagnostica a causa errada; a causa certa é a falta de vazão (D.3 do sprint).
+    all(r -> iszero(r.y), rows) && return (
+        "As vazões informadas são nulas: não há corrente a separar e o comprimento " *
+        "efetivo é zero em toda a grade, então não há diâmetro a dimensionar. Informe " *
+        "ao menos uma vazão positiva.")
     under = filter(r -> r.x <= ceiling, rows)
     if isempty(under)
         return "Nenhum diâmetro da grade respeita o teto de decantação " *

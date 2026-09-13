@@ -179,9 +179,13 @@ function sizing_constraints(m::StewartArnold, s::StreamState,
     # esconder do leitor do resultado a única coisa que ele não teria como recalcular.
     # O `*` no nome, e não "(geom.)": `linha_memorial` alinha `var` em 24 colunas, e um
     # rótulo que estoure a coluna cola no valor. Ver o teste de larguras em smoke.jl.
-    trace!(tr, :settling, "Eq. 21*", "d_max (óleo em água)*",
+    # Sem água livre (Qw = 0), `Aw/A = 0` e β sai EXATO em 0,5 (curto-circuito de
+    # beta.jl), zerando o denominador `0,5 − β`. A linha é só documental — não decide o
+    # teto — então é omitida em vez de carimbar `Inf` no memorial que vai assinado (D.1).
+    denom_geom = 0.5 - beta
+    denom_geom > 0 && trace!(tr, :settling, "Eq. 21*", "d_max (óleo em água)*",
            "(h_w)max/(0,5−β) — variante não adotada; ver nota 3 em stewart_arnold.jl",
-           hw_max / (0.5 - beta), "mm")
+           hw_max / denom_geom, "mm")
 
     d_max, mechanism = d_max_wio <= d_max_oiw ? (d_max_wio, :water_in_oil) :
                                                 (d_max_oiw, :oil_in_water)

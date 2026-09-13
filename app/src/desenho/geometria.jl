@@ -77,6 +77,7 @@ escrito dentro da faixa.
 """
 struct Camada
     nome::String
+    fase::Symbol         # :water | :oil | :gas — a identidade, para não compará-la pelo rótulo
     y0::Float64
     y1::Float64
     zona::String
@@ -141,7 +142,7 @@ function camadas(d_m, layers::Vector{FPSOSiz.PhaseLayer})
         traco, tracejada = get(_INTERFACE_FASE, l.fase, ("", false))
         i == length(layers) && (traco = "")          # a de cima fecha no casco
         y1 = y + l.fracao * d_m
-        push!(out, Camada(nome(l.fase), y, y1, zona, op, cor, rotulo, traco, tracejada))
+        push!(out, Camada(nome(l.fase), l.fase, y, y1, zona, op, cor, rotulo, traco, tracejada))
         y = y1
     end
     return out
@@ -150,11 +151,11 @@ end
 "Altura do topo da fase líquida mais alta, em m — o nível. `d_m` num vaso cheio."
 nivel_liquido(g) =
     isempty(g.camadas) ? g.d_m / 2 :
-    (i = findlast(c -> c.nome != "GÁS", g.camadas);
+    (i = findlast(c -> c.fase !== :gas, g.camadas);
      i === nothing ? 0.0 : g.camadas[i].y1)
 
 "Há fase gasosa neste vaso? O que só existe no céu de gás pergunta antes de se desenhar."
-tem_gas(g) = any(c -> c.nome == "GÁS", g.camadas)
+tem_gas(g) = any(c -> c.fase === :gas, g.camadas)
 
 """
     geometry_from(result, d_mm, layers, beta) -> NamedTuple
