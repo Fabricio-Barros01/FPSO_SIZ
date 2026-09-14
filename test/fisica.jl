@@ -200,6 +200,22 @@ _vals() = FPSOSiz.valores_default_dinamico()
         @test (@inferred SD.passo!(e, pr)) isa Tuple{Bool,Float64}
         @test _aloc_passo(e, pr) == 0
     end
+
+    @testset "o Euler de passo fixo em Δt = 0,5 s está convergido (crit. 10)" begin
+        # Oráculo de convergência por refino de malha (auto-contido, sem dependência de
+        # solver): a solução em Δt = 0,5 s difere da de Δt = 0,05 s por < 1e-4 relativo
+        # em P, níveis e φ — medido ~1,6e-5 —, e a de Δt = 0,05 s é ~10× mais próxima da
+        # referência, o que confirma a ordem 1 do Euler. Ver docs/validacao.
+        base = _vals(); base[:horizonte] = 300.0; base[:cadencia_registro] = 300.0
+        fim(dt) = (v = copy(base); v[:dt_passo] = dt;
+                   r = FPSOSiz.simular_dinamico(v; malha_fechada = false);
+                   (r.P[end], r.H_agua[end], r.H_oleo[end], r.phi_esq[end]))
+        grosso = fim(0.5)
+        fino = fim(0.05)
+        for i in 1:4
+            @test abs(grosso[i] - fino[i]) < 1e-4 * max(abs(fino[i]), 1e-9)
+        end
+    end
 end
 
 # ===========================================================================

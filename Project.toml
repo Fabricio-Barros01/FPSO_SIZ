@@ -16,8 +16,18 @@ Printf = "1"
 TOML = "1"
 julia = "1.10"
 
+# Ferramentas SÓ DE TESTE — nunca em [deps], nunca no executável. Entram no sandbox de
+# `Pkg.test()` pelo alvo abaixo. AllocCheck prova em compilação o passo sem alocação;
+# Aqua pega ambiguidade de método; JET, instabilidade de tipo; Unitful, homogeneidade
+# dimensional. O oráculo de convergência do Euler (crit. 10) é feito por REFINO DE MALHA
+# em test/fisica.jl, sem dependência — o que o sprint (H.1) autoriza como a via mais leve;
+# `OrdinaryDiffEqTsit5` ficaria bom mas puxa a pilha SciML inteira para o CI.
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
+AllocCheck = "9b6a8646-10ed-4001-bbdc-1d2f46dfbb1a"
 
 [targets]
-test = ["Test"]
+test = ["Test", "Unitful", "Aqua", "JET", "AllocCheck"]

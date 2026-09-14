@@ -34,6 +34,23 @@ jobs:
             using Pkg; Pkg.instantiate();
             include("test/runtests.jl")'
 
+  # As ferramentas de qualidade (Unitful, Aqua, JET, AllocCheck) vivem em [extras] e só
+  # entram pelo sandbox de `Pkg.test()`. O núcleo acima roda por include direto (rápido,
+  # sem os extras) e os blocos guardados de qualidade.jl se pulam; este job os roda de
+  # fato. Aqua e JET entram como AVISO (relatório no log, sem reprovar) nesta introdução.
+  qualidade:
+    name: qualidade (Unitful/Aqua/JET/AllocCheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+      - uses: julia-actions/cache@v2
+      - name: Pkg.test com os extras (só o grupo de qualidade)
+        run: |
+          julia --project=. -e 'using Pkg; Pkg.test(; test_args=["qualidade"])'
+
   app:
     name: app (smoke)
     runs-on: ubuntu-latest

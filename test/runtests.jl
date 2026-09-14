@@ -41,4 +41,8 @@ end
     grupo("envelope",           "envelope.jl")
     grupo("registro",           "registry.jl")
     grupo("arquitetura",        "architecture.jl")
+    # Homogeneidade dimensional (E.5) e qualidade (Aqua/JET/AllocCheck). Guardado: os
+    # blocos se pulam se a ferramenta não estiver instalada, então `julia --project=.
+    # test/runtests.jl` direto passa, e `Pkg.test()` (que traz os extras) roda tudo.
+    grupo("qualidade",          "qualidade.jl")
 end
