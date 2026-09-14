@@ -1,0 +1,49 @@
+name: testes
+
+# 3270 testes de núcleo e ~2912 de app, e até este sprint nada os rodava sozinho.
+# Roda em push e em PR, nas duas configurações de thread — é o que amarra o
+# determinismo bit a bit do módulo dinâmico (Entrega A/G): o mesmo caso-ouro tem de
+# dar o mesmo número com 1 e com N threads.
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  nucleo:
+    name: núcleo (Julia ${{ matrix.julia }}, threads ${{ matrix.threads }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        julia: ["1.10", "1.12"]
+        threads: ["1", "auto"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia }}
+      - uses: julia-actions/cache@v2
+      - name: Instalar e testar o núcleo
+        env:
+          JULIA_NUM_THREADS: ${{ matrix.threads }}
+        run: |
+          julia --project=. -t ${{ matrix.threads }} -e '
+            using Pkg; Pkg.instantiate();
+            include("test/runtests.jl")'
+
+  app:
+    name: app (smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+      - uses: julia-actions/cache@v2
+      - name: Instalar e rodar a fumaça do app
+        run: |
+          julia --project=app -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+          julia --project=app -e 'include("app/smoke.jl")'
