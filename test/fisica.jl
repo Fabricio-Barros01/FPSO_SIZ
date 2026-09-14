@@ -21,6 +21,16 @@ using FPSOSiz
 const SD = FPSOSiz.SongDynamics
 const PR = FPSOSiz.Propriedades
 
+# `passo!` importado DIRETO (não `SD.passo!`): medir alocação por `SD.passo!` mede o
+# boxing do getproperty do módulo, não a função — o passo real aloca zero (crit. 8).
+import FPSOSiz.SongDynamics: passo! as _passo_direto!
+
+"Alocação de um passo, medida em escopo tipado com a função referenciada diretamente."
+function _aloc_passo(e, pr)
+    _passo_direto!(e, pr)                     # warmup (compila)
+    return @allocated _passo_direto!(e, pr)
+end
+
 # ===========================================================================
 # Parte 1 — invariantes universais, dirigidas pelo registro
 # ===========================================================================
@@ -175,5 +185,172 @@ _vals() = FPSOSiz.valores_default_dinamico()
         SD.passo!(e, pr)
         @test abs((e.v_w - vw_antes) - esperado_dvw) < 1e-12 * max(abs(esperado_dvw), 1.0)
         @test abs((e.v_l - vl_antes) - esperado_dvl) < 1e-12 * max(abs(esperado_dvl), 1.0)
+    end
+
+    @testset "o passo do laço quente é tipo-estável e não aloca (crit. 8)" begin
+        pr = FPSOSiz.construir_params_dinamico(_vals(); malha_fechada = false,
+                                               paralelo = false)
+        v_w0, v_l0, p0 = FPSOSiz.estado_inicial_dinamico(pr, _vals())
+        e = SD.construir_estado(pr; v_w0, v_l0, p0)
+        for kk in 1:pr.malha.n_gota
+            vol = (π / 6) * pr.d_gota[kk]^3
+            e.sigin_k[kk] = vol > 0 ? pr.ent.phi_agua_oleo_in * pr.frac_gota[kk] / vol : 0.0
+        end
+        SD.passo!(e, pr)                                    # warmup
+        @test (@inferred SD.passo!(e, pr)) isa Tuple{Bool,Float64}
+        @test _aloc_passo(e, pr) == 0
+    end
+end
+
+# ===========================================================================
+# Parte 3 — vasos (E.1), dirigida pelo registro
+# ===========================================================================
+
+"Constrói as restrições de um método de vaso a partir dos defaults; `nothing` se não montar."
+function _cons_vaso(met)
+    vals = merge(FPSOSiz.defaults(FPSOSiz.stream_parameters(met)),
+                 FPSOSiz.defaults(FPSOSiz.parameters(met)))
+    entrada = try
+        FPSOSiz.case_input(met, vals)
+    catch
+        return nothing
+    end
+    k = FPSOSiz.constants(FPSOSiz.method_config(met))
+    ok, cons, _ = FPSOSiz.sizing_constraints(met, entrada,
+                        FPSOSiz.with_defaults(FPSOSiz.parameters(met), vals), k)
+    return ok ? cons : nothing
+end
+
+@testset "vasos — invariantes de decantação (E.1)" begin
+    for eq in FPSOSiz.equipments(), met in FPSOSiz.methods_for(eq)
+        met isa FPSOSiz.AbstractVesselMethod || continue
+        @testset "$(FPSOSiz.method_id(met))" begin
+            cons = _cons_vaso(met)
+            cons === nothing && continue
+
+            # Leff estritamente decrescente no diâmetro (o comprimento exigido cai quando
+            # o vaso engorda). Cobre gás (∝ d⁻¹) e líquido (∝ d⁻²) juntos.
+            ds = collect(range(2000.0, 8000.0; length = 40))
+            leffs = [FPSOSiz.requirement(met, d, cons) for d in ds]
+            @test all(l -> isfinite(l) && l > 0, leffs)
+            @test all(diff(leffs) .< 0)
+
+            # cross_section: repartição de verdade sobre a grade inteira (é d-independente,
+            # mas conferimos que o que ela devolve é geometria possível em todo ponto).
+            faixas = FPSOSiz.cross_section(met, cons)
+            @test all(l -> l.fracao > 0 && isfinite(l.fracao), faixas)
+            @test isapprox(sum(l.fracao for l in faixas), 1.0; atol = 1e-9)
+        end
+    end
+end
+
+# ===========================================================================
+# Parte 4 — trocador (E.2): funções puras, sem registro
+# ===========================================================================
+
+@testset "trocador — ΔT_lm, F e o laço ε-NTU (E.2)" begin
+    @testset "ΔT_lm: simetria, limites e o limite removível" begin
+        # Pares bem separados: a desigualdade GM ≤ LM ≤ AM é apertada demais em 1e-9
+        # perto de ΔT₁ = ΔT₂, onde a fórmula é mal-condicionada — o limite removível é
+        # testado à parte logo abaixo.
+        for (a, b) in ((5.0, 40.0), (10.0, 50.0), (3.0, 90.0), (18.0, 22.0))
+            lm = FPSOSiz.lmtd(a, b)
+            @test lm ≈ FPSOSiz.lmtd(b, a)                    # simétrica
+            @test sqrt(a * b) - 1e-9 <= lm <= (a + b) / 2 + 1e-9
+        end
+        @test FPSOSiz.lmtd(30.0, 30.0) ≈ 30.0                # ΔT₁ = ΔT₂ (limite removível)
+        @test FPSOSiz.lmtd(25.0, 25.0) ≈ 25.0
+    end
+
+    @testset "F ≤ 1 sempre, e F → 1 quando P → 0" begin
+        for p in (0.05, 0.2, 0.4, 0.6), r in (0.3, 1.0, 2.0, 4.0)
+            f = FPSOSiz.f_correction_1_2(p, r)
+            isfinite(f) || continue
+            @test f <= 1 + 1e-9
+        end
+        @test FPSOSiz.f_correction_1_2(1e-6, 1.0) > 0.999
+    end
+
+    @testset "U abaixo do h de cada lado" begin
+        for h_i in (500.0, 2000.0), h_o in (800.0, 3000.0)
+            u = FPSOSiz.overall_u(h_i, h_o, 1e-4, 2e-4, 0.016, 0.020, 50.0)
+            @test 0 < u < min(h_i, h_o)
+        end
+    end
+
+    @testset "LMTD contra ε-NTU em contracorrente puro (o caso-ouro que falta)" begin
+        # Para 1000 deveres sorteados, o U·A do LMTD prediz o mesmo q que o ε-NTU.
+        rng = 0
+        piores = 0.0
+        for _ in 1:1000
+            rng = (1103515245 * rng + 12345) % (1 << 31)     # LCG determinístico
+            frac(n) = ((1103515245 * (rng + n) + 12345) % (1 << 31)) / (1 << 31)
+            Th_in = 120 + 60 * frac(1)
+            Tc_in = 20 + 30 * frac(2)
+            Th_in - Tc_in > 20 || continue
+            Ch = 1.0 + 4 * frac(3)
+            Cc = 1.0 + 4 * frac(4)
+            q = 0.3 * min(Ch, Cc) * (Th_in - Tc_in) * (0.3 + 0.5 * frac(5))
+            Th_out = Th_in - q / Ch
+            Tc_out = Tc_in + q / Cc
+            Th_out > Tc_in && Th_in > Tc_out || continue
+            dt1 = Th_in - Tc_out
+            dt2 = Th_out - Tc_in
+            (dt1 > 0 && dt2 > 0) || continue
+            ua = q / FPSOSiz.lmtd(dt1, dt2)                  # F = 1 em contracorrente
+            cmin, cmax = minmax(Ch, Cc)
+            ntu = ua / cmin
+            eps = FPSOSiz.effectiveness_ntu_counterflow(ntu, cmin / cmax)
+            q_ntu = eps * cmin * (Th_in - Tc_in)
+            piores = max(piores, abs(q_ntu - q) / q)
+        end
+        @test piores < 1e-9
+    end
+end
+
+# ===========================================================================
+# Parte 5 — pinch (E.3): via PinchAnalysis
+# ===========================================================================
+
+const _KP = FPSOSiz.PinchAnalysis
+
+# ΔH de uma corrente de um segmento: mcp·|Δt|. Positivo sempre; o sinal é o papel.
+_dh(s) = abs(s.segments[1].t_out - s.segments[1].t_in) * s.segments[1].mcp
+_frio(s) = s.segments[1].t_out > s.segments[1].t_in
+
+@testset "pinch — balanço, cascata e monotonicidade (E.3)" begin
+    correntes = [_KP.ThermalStream("1 fria", 20, 135, 2.0),
+                 _KP.ThermalStream("2 quente", 170, 60, 3.0),
+                 _KP.ThermalStream("3 fria", 80, 140, 4.0),
+                 _KP.ThermalStream("4 quente", 150, 30, 1.5)]
+
+    @testset "balanço global: QHmin − QCmin = ΣΔH_frias − ΣΔH_quentes" begin
+        r = _KP.problem_table(correntes, 10.0)
+        @test r.feasible
+        soma = sum(_frio(s) ? _dh(s) : -_dh(s) for s in correntes)
+        @test isapprox(r.q_h_min - r.q_c_min, soma; atol = 1e-9 * max(abs(soma), 1))
+    end
+
+    @testset "a cascata factível nunca é negativa" begin
+        r = _KP.problem_table(correntes, 10.0)
+        @test all(x -> x >= -1e-9, r.cascade_feasible)
+        @test minimum(r.cascade_feasible) < 1e-6              # toca zero no pinch
+    end
+
+    @testset "QHmin e QCmin não decrescem com ΔTmin" begin
+        qhs = Float64[]; qcs = Float64[]
+        for dt in (2.0, 6.0, 10.0, 14.0, 20.0)
+            r = _KP.problem_table(correntes, dt)
+            push!(qhs, r.q_h_min); push!(qcs, r.q_c_min)
+        end
+        @test all(diff(qhs) .>= -1e-9)
+        @test all(diff(qcs) .>= -1e-9)
+    end
+
+    @testset "os alvos independem da ordem das correntes" begin
+        r  = _KP.problem_table(correntes, 10.0)
+        rr = _KP.problem_table(reverse(correntes), 10.0)
+        @test isapprox(r.q_h_min, rr.q_h_min; atol = 1e-9)
+        @test isapprox(r.q_c_min, rr.q_c_min; atol = 1e-9)
     end
 end

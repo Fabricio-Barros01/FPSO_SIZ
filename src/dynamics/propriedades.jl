@@ -108,11 +108,28 @@ O `κ` usa o ramo de Peng-Robinson (1978) para `ω > 0,49` — os pseudocomponen
 da Tabela 2 têm `ω > 1`, onde o `κ` de 1976 não vale; na fase gasosa eles pesam ~0, mas
 o ramo correto mantém a função utilizável para qualquer composição.
 """
-function z_peng_robinson(comps::AbstractVector{Componente}, T::Float64, P::Float64;
-                         R::Float64 = 8.314)
+z_peng_robinson(comps::AbstractVector{Componente}, T::Float64, P::Float64;
+                R::Float64 = 8.314) = _z_pr(comps, T, P, R)
+
+# Núcleo POSICIONAL: o caminho quente (`compressibilidade` por passo) o chama sem
+# keyword, porque o argumento nomeado `R` vindo de um campo aloca ~64 B por chamada — e o
+# critério de aceitação 8 é passo com ZERO alocação. A forma com keyword acima é o API.
+function _z_pr(comps::AbstractVector{Componente}, T::Float64, P::Float64, R::Float64)
+    aα_mix, b_mix = _mistura_pr(comps, T, R)
+    return _z_de_mistura(aα_mix, b_mix, P, R, T)
+end
+
+"""
+    _mistura_pr(comps, T, R) -> (aα_mix, b_mix)
+
+Os dois parâmetros de mistura de Peng-Robinson que dependem **só** de `T` (constante numa
+simulação), não de `P`: `aα_mix = (Σ yᵢ√(aαᵢ))²` e `b_mix = Σ yᵢ bᵢ`. Calculados **uma
+vez** na construção do [`Fluido`](@ref) — é o que tira o laço sobre a composição do
+caminho quente e faz `z` por passo ser aritmética escalar (zero-alloc, crit. 8).
+"""
+function _mistura_pr(comps::AbstractVector{Componente}, T::Float64, R::Float64)
     soma_sqrt_aα = 0.0
     b_mix = 0.0
-    RT = R * T
     for c in comps
         a = 0.45724 * R^2 * c.Tc^2 / c.Pc
         b = 0.07780 * R * c.Tc / c.Pc
@@ -123,7 +140,12 @@ function z_peng_robinson(comps::AbstractVector{Componente}, T::Float64, P::Float
         soma_sqrt_aα += c.y * sqrt(a * α)
         b_mix += c.y * b
     end
-    aα_mix = soma_sqrt_aα^2
+    return (soma_sqrt_aα^2, b_mix)
+end
+
+"`z` a partir dos parâmetros de mistura já calculados e da pressão `P` — o passo quente."
+function _z_de_mistura(aα_mix::Float64, b_mix::Float64, P::Float64, R::Float64, T::Float64)
+    RT = R * T
     A = aα_mix * P / RT^2
     B = b_mix * P / RT
     # z³ − (1−B)z² + (A − 3B² − 2B)z − (AB − B² − B³) = 0
@@ -133,8 +155,12 @@ function z_peng_robinson(comps::AbstractVector{Componente}, T::Float64, P::Float
     return _maior_raiz_real_cubica(a2, a1, a0)
 end
 
-"Densidade do gás pela lei dos gases reais: `ρ_g = P·M/(z·R·T)`. `M` em kg/mol, `P` em Pa."
-densidade_gas(P::Float64, M::Float64, z::Float64, T::Float64; R::Float64 = 8.314) =
+"""
+Densidade do gás pela lei dos gases reais: `ρ_g = P·M/(z·R·T)`. `M` em kg/mol, `P` em Pa.
+`R` é **posicional** (com default) de propósito: o caminho quente o chama sem keyword para
+não alocar (ver [`_z_pr`](@ref)); um keyword vindo de campo aloca ~32 B por chamada.
+"""
+densidade_gas(P::Float64, M::Float64, z::Float64, T::Float64, R::Float64 = 8.314) =
     P * M / (z * R * T)
 
 # ---------------------------------------------------------------------------
@@ -230,6 +256,8 @@ struct Fluido
     z_fixo::Float64             # NaN = Peng-Robinson por passo
     T::Float64                  # K
     R::Float64                  # J/(mol·K)
+    aalpha_mix::Float64         # (Σ yᵢ√(aαᵢ))² — depende só de T, precalculado
+    b_mix::Float64              # Σ yᵢ bᵢ — depende só de T, precalculado
     carimbos::Vector{Carimbo}
 end
 
@@ -240,7 +268,8 @@ end
 sobre a composição à temperatura `f.T`.
 """
 compressibilidade(f::Fluido, P::Float64) =
-    isfinite(f.z_fixo) ? f.z_fixo : z_peng_robinson(f.comps, f.T, P; R = f.R)
+    isfinite(f.z_fixo) ? f.z_fixo :
+    _z_de_mistura(f.aalpha_mix, f.b_mix, P, f.R, f.T)
 
 """
     construir_fluido(comps, T, R; ρ_oleo, ρ_agua, P_ref,
@@ -277,8 +306,8 @@ function construir_fluido(comps::AbstractVector{Componente}, T::Float64, R::Floa
         viscosidade_agua_vogel(T)
     end
 
-    z_ref = isfinite(z_fixo) ? z_fixo : z_peng_robinson(comps, T, P_ref; R = R)
-    rho_g_ref = densidade_gas(P_ref, M, z_ref, T; R = R)
+    z_ref = isfinite(z_fixo) ? z_fixo : _z_pr(comps, T, P_ref, R)
+    rho_g_ref = densidade_gas(P_ref, M, z_ref, T, R)
 
     mu_g = if isfinite(mu_gas)
         mu_gas
@@ -289,8 +318,9 @@ function construir_fluido(comps::AbstractVector{Componente}, T::Float64, R::Floa
         viscosidade_gas_lge(M, T, rho_g_ref)
     end
 
+    aα_mix, b_mix = _mistura_pr(comps, T, R)   # dependem só de T: uma vez, aqui
     return Fluido(collect(comps), M, rho_oleo, rho_agua, mu_o, mu_w, mu_g,
-                  z_fixo, T, R, carimbos)
+                  z_fixo, T, R, aα_mix, b_mix, carimbos)
 end
 
 end # module Propriedades

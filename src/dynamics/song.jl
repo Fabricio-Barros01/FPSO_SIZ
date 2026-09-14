@@ -396,7 +396,7 @@ function niveis_e_pressao(p::Params, v_w::Float64, v_l::Float64, n::Float64)
         P = z * p.k.r_gas * p.ent.temperatura * n / Vg
         z = compressibilidade(p.fluido, P)
     end
-    rho_g = densidade_gas(P, p.fluido.M, z, p.ent.temperatura; R = p.k.r_gas)
+    rho_g = densidade_gas(P, p.fluido.M, z, p.ent.temperatura, p.k.r_gas)
     return (Hw, Hl, P, z, rho_g)
 end
 
@@ -560,9 +560,20 @@ admissível; `ok = false` quando o `Δt` corrente o viola. O módulo **verifica 
 passo** e nunca reduz `Δt` em silêncio (A.8): a violação vira estado de inviabilidade.
 """
 function verificar_cfl(e::Estado, p::Params, vx_o::Float64)
-    dx = minimum(_dx(p, i) for i in 1:p.malha.n_colunas)
-    dy = minimum(e.yface[j + 1] - e.yface[j] for j in 1:p.malha.n_oleo)
-    vy = maximum(e.vy_k)
+    # Laços explícitos, e não `minimum(gen)`: a generator que captura `p` aloca ~32 B por
+    # passo, e o critério de aceitação 8 é passo com ZERO alocação.
+    dx = Inf
+    for i in 1:p.malha.n_colunas
+        dx = min(dx, _dx(p, i))
+    end
+    dy = Inf
+    @inbounds for j in 1:p.malha.n_oleo
+        dy = min(dy, e.yface[j + 1] - e.yface[j])
+    end
+    vy = 0.0
+    @inbounds for kk in 1:p.malha.n_gota
+        vy = max(vy, e.vy_k[kk])
+    end
     dt_x = vx_o > 0 ? dx / vx_o : Inf
     dt_y = vy > 0 ? dy / vy : Inf
     dt_max = min(dt_x, dt_y)
