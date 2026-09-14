@@ -188,7 +188,7 @@ note     = "h_i da Eq. 3; NÃO publicado — default = D/4 (tampo 2:1). Ajustar 
 # --- Malha e passo (A.8)
 [[parameter]]
 key      = "n_colunas"
-label    = "Colunas (N_x)"
+label    = "Divisões horizontais (N_x)"
 unit     = "–"
 default  = 8.0
 min      = 3.0

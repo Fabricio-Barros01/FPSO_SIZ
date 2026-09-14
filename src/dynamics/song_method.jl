@@ -6,11 +6,14 @@ a física, que lê a configuração, cita `ParameterSpec` e faz a **conversão d
 ponto só** (°C→K, m³/h→m³/s, kPa→Pa, µm→m, cP→Pa·s). `SongDynamics` e `Propriedades`
 continuam sem conhecer nada disto — a fronteira é aqui, como em `analysis/pinch_method.jl`.
 
-Não registra um método de dimensionamento: o módulo dinâmico **não devolve `SizingResult`**
-(não tem diâmetro, teto nem esbeltez), então forçá-lo no contrato dos vasos violaria as
-invariantes de `test/architecture.jl`. A tela do box dinâmico consome as funções daqui
-diretamente — `parametros_dinamico`, `simular_dinamico`, `canais_dinamico` — e o cartão do
-catálogo fica `em_breve` até o sprint de design ligar a série temporal na interface.
+Registra um par equipamento/método (`SeparadorDinamico`/`SongDinamico`) **fora da família
+dos vasos**: `SongDinamico <: AbstractSizingMethod`, não `AbstractVesselMethod`. Ele existe
+só para que o box do catálogo **resolva no registro** (guarda `architecture.jl:252`) e o
+formulário se monte pelo `ParameterSpec` como o de qualquer outro método. Não dimensiona:
+`stream_keys` é vazio (sem entradas de corrente), e `size_equipment` devolve estado
+inviável dizendo para usar a tela dinâmica. O caminho de servir do box dinâmico **desvia
+do fluxo de dimensionamento** (sem `AppState`, sem `dimensionar!`): a tela consome
+`parametros_dinamico`, `simular_dinamico` e `canais_dinamico` por rotas próprias.
 """
 
 const _DYN_CONFIG = ("dynamics", "song.toml")
@@ -172,3 +175,47 @@ function simular_dinamico(valores::AbstractDict; malha_fechada::Bool = true,
     v_w0, v_l0, p0 = estado_inicial_dinamico(pr, valores)
     return SongDynamics.simular(pr; v_w0, v_l0, p0)
 end
+
+# ---------------------------------------------------------------------------
+# Registro — um par equipamento/método fora da família dos vasos (Entrega C.1)
+# ---------------------------------------------------------------------------
+
+"O equipamento do box dinâmico. Não é vaso; não produz `VesselConstraints`."
+struct SeparadorDinamico <: AbstractEquipment end
+method_id(::SeparadorDinamico) = :separador_dinamico
+label(::SeparadorDinamico) = "Separador Trifásico — Dinâmico"
+
+"""
+O método do box dinâmico. `AbstractSizingMethod`, **não** `AbstractVesselMethod` — não
+tem grade de diâmetro, teto de decantação nem esbeltez. Serve para o box resolver no
+registro e o formulário montar-se pelo `ParameterSpec`; a simulação corre por
+[`simular_dinamico`](@ref), não por `size_equipment`.
+"""
+struct SongDinamico <: AbstractSizingMethod end
+method_id(::SongDinamico) = :song_dinamico
+applies_to(::SongDinamico) = SeparadorDinamico()
+method_config(::SongDinamico) = config_dinamico()
+label(::SongDinamico) = config_label(config_dinamico(), "Song et al. (2023)")
+parameters(::SongDinamico) = parametros_dinamico()
+
+# Sem entradas de corrente: as vazões do dinâmico são campos próprios do TOML, não a
+# `StreamState` comum. `stream_keys` vazio faz `stream_parameters(m)` devolver vetor
+# vazio, e a tela dinâmica não desenha nenhuma caixa de corrente.
+stream_keys(::SongDinamico) = ()
+
+# O dinâmico não varre eixo nenhum (não dimensiona): sem colunas de varredura. Definido
+# porque a guarda de vocabulário de `smoke.jl` chama `sweep_columns(m)` sobre TODO método
+# registrado, e não há default genérico.
+sweep_columns(::SongDinamico) = SweepColumn[]
+
+"""
+    size_equipment(::SeparadorDinamico, ::SongDinamico, stream, params) -> SizingResult
+
+O dinâmico não dimensiona um vaso — ele simula no tempo. Devolve estado inviável (nunca
+lança) apontando para a tela dinâmica, para o caso de o fluxo genérico de dimensionamento
+alcançar este método por engano.
+"""
+size_equipment(::SeparadorDinamico, ::SongDinamico, stream, params) =
+    infeasible(:song_dinamico,
+        "O separador dinâmico não dimensiona um vaso: ele simula no tempo. Use a tela " *
+        "dinâmica (Simular), não Dimensionar.")

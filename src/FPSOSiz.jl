@@ -167,6 +167,7 @@ export size_envelope, governing_summary, mechanism_label
 export parametros_dinamico, valores_default_dinamico, config_dinamico
 export construir_params_dinamico, estado_inicial_dinamico, simular_dinamico
 export canais_dinamico, CanalSerie
+export SeparadorDinamico, SongDinamico
 export SongDynamics, Propriedades
 
 """
@@ -202,6 +203,10 @@ function __init__()
     register!(SaariLMTD())
     register!(PinchTarget())
     register!(PinchKemp())
+    # O separador dinâmico (Song 2023) — não é vaso e não dimensiona; registra-se para o
+    # box do catálogo resolver e o formulário montar-se pelo ParameterSpec.
+    register!(SeparadorDinamico())
+    register!(SongDinamico())
     return nothing
 end
 

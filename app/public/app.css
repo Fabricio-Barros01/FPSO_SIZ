@@ -442,3 +442,42 @@ a.box:focus-visible { outline: 2px solid var(--destaque); outline-offset: 2px; }
 }
 .voltar:hover, .voltar:focus-visible { border-color: var(--destaque); color: var(--destaque); }
 .voltar:focus-visible { outline: 2px solid var(--destaque); outline-offset: 2px; }
+
+/* -------------------------------------------------------------------------
+   Tela dinâmica (Song 2023). Layout apenas — nenhuma cor nova: usa as
+   variáveis de :root, para não divergir da paleta do Julia (formato.jl). É a
+   versão mínima e funcional; o acabamento vem no sprint de design.
+   ------------------------------------------------------------------------- */
+main.dinamico {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) 1fr;
+  gap: 20px;
+  padding: 20px;
+  align-items: start;
+}
+main.dinamico .parametros {
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
+}
+.malha-modo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin-right: 6px;
+}
+.avancado-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--tinta-fraca);
+}
+.graficos-dinamico {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+.graficos-dinamico .grafico svg { width: 100%; height: auto; }
+#resumo-dinamico { margin-bottom: 18px; }
