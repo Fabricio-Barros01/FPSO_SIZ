@@ -109,4 +109,34 @@ acima do alvo. Como o sprint manda, cobra-se a **ordem de grandeza**, não o AAD
 regime; CFL violado devolve `Inviabilidade` (nunca exceção); determinismo bit a bit
 1 vs N threads; degenerações (vazão nula, ΔP negativo, correlação fora de faixa) sem
 lançar; conservação de massa por passo (Eq. 1/2, acumulação exata) resíduo < 1e-12.
-Suíte inteira: **3270/3270** com `-t 1` e `-t 4`; `app/smoke` **2912/2912**.
+
+**Crit. 8 — passo zero-alloc e tipo-estável**: `@inferred` passa e `@allocated` do passo
+é **zero** (medido com a função importada direto; `SD.passo!` mede o boxing do getproperty
+do módulo). Para chegar a zero, `aα_mix`/`b_mix` de Peng-Robinson (dependem só de T) são
+precalculados na construção do `Fluido`, e o caminho quente não usa keyword `R`.
+
+**Crit. 10 — convergência do Euler**: oráculo por REFINO DE MALHA (auto-contido, sem
+dependência de solver): Δt = 0,5 s difere de Δt = 0,05 s por **< 1e-4 relativo** (medido
+~1,6e-5) em P, níveis e φ, e o de 0,05 s é ~10× mais próximo da referência (Δt = 0,005 s),
+confirmando a ordem 1 do Euler.
+
+Baterias dos equipamentos existentes (E.1/E.2/E.3): Leff decrescente e cross_section nos
+vasos; ΔT_lm/F/U e **LMTD vs ε-NTU** (1000 deveres, < 1e-9) no trocador; balanço global,
+cascata ≥ 0, monotonicidade em ΔTmin e ordem-invariância no pinch.
+
+Ferramentas SÓ DE TESTE (`Pkg.test()`, `test/qualidade.jl`): **E.5 homogeneidade
+dimensional** com Unitful (relações físicas homogêneas), AllocCheck (crit. 8 em
+compilação), Aqua e JET (aviso).
+
+## 8. A tela dinâmica (Entrega C)
+
+O box `controle-separador` do catálogo é **ativo**: registra `SeparadorDinamico`/
+`SongDinamico` (fora da família dos vasos — não devolve `SizingResult`), e o servidor o
+serve por um caminho próprio (`/app/:box` → `pagina_dinamica`, sem `AppState`;
+`/api/:box/simular`). O formulário nasce do `ParameterSpec` (37 campos); a resposta traz
+cinco painéis de série temporal em SVG (`svg_serie_temporal`) e o resumo do regime. Malha
+aberta (§3.1) ou fechada (§3.2) por interruptor. **Não é dimensionamento**: simula no
+tempo.
+
+Suíte inteira: **3701/3701** (+4 pulados sem os extras) com `-t 1` e `-t 4`;
+`Pkg.test(test_args=["qualidade"])` **8/8**; `app/smoke` **2915/2915**.
