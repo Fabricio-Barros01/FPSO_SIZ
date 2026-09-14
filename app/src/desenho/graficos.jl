@@ -260,3 +260,60 @@ function html_legenda_casos(res; max_itens::Int = 12, unidade::AbstractString = 
     n_extra > 0 && push!(itens, "<li class=\"resto\">+ $n_extra caso(s) não desenhado(s)</li>")
     return string("<ul class=\"legenda-casos\">", join(itens), "</ul>")
 end
+
+"""
+    svg_serie_temporal(ts, series; titulo, xlabel, ylabel, larg, alt) -> String
+
+Renderizador de séries temporais do módulo dinâmico (Entrega C.3): eixo de tempo, uma
+polilinha por canal, legenda. **É uma função por cima de [`moldura!`](@ref)** — como as
+outras deste arquivo, não cita nenhuma grandeza pelo nome: `ts` são os instantes e cada
+elemento de `series` é uma `NamedTuple` `(nome, ys[, cor])` já na escala do seu eixo. O
+agrupamento por unidade (pressão num painel, aberturas noutro) é de quem chama, que sabe
+o que plota. Versão mínima e funcional; o acabamento vem no sprint de design.
+"""
+function svg_serie_temporal(ts, series; titulo::AbstractString = "",
+                            xlabel::AbstractString = "Tempo (s)",
+                            ylabel::AbstractString = "",
+                            larg::Real = 560.0, alt::Real = 260.0)
+    (isempty(ts) || isempty(series)) && return documento_vazio(larg, alt, "Sem série.")
+    ys_all = Float64[]
+    for s in series, y in s.ys
+        isfinite(y) && push!(ys_all, float(y))
+    end
+    isempty(ys_all) && return documento_vazio(larg, alt, "Sem dados finitos.")
+    ylo, yhi = minimum(ys_all), maximum(ys_all)
+    yhi <= ylo && (yhi = ylo + 1.0)
+    pad = (yhi - ylo) * 0.08
+    xlo, xhi = float(first(ts)), float(last(ts))
+    xhi <= xlo && (xhi = xlo + 1.0)
+
+    t = tela_livre(xlo, ylo - pad, xhi, yhi + pad; larg, alt, margem = MARGEM_GRAFICO)
+    p = String[]
+    moldura!(p, t, ticks_bonitos(xlo, xhi), ticks_bonitos(ylo - pad, yhi + pad);
+             titulo, xlabel, ylabel,
+             fx = v -> Formato.num(v, 0), fy = v -> Formato.num(v, 2))
+
+    corte, envolver = _painel("fpso-rec-serie", larg, alt)
+    push!(p, corte)
+    linhas = String[]
+    for (i, s) in enumerate(series)
+        pts = [(float(ts[j]), float(s.ys[j])) for j in eachindex(ts) if isfinite(s.ys[j])]
+        isempty(pts) && continue
+        push!(linhas, polilinha(t, pts; traco = get(s, :cor, Formato.cor_caso(i)),
+                                largura = 1.8))
+    end
+    push!(p, envolver(join(linhas)))
+
+    # legenda simples no topo direito — uma amostra de cor e o nome do canal
+    yl = MARGEM_GRAFICO.topo + 6.0
+    for (i, s) in enumerate(series)
+        cor = get(s, :cor, Formato.cor_caso(i))
+        xL = larg - MARGEM_GRAFICO.dir - 130
+        push!(p, string("<line ", atrs("x1" => xL, "y1" => yl, "x2" => xL + 16,
+                        "y2" => yl, "stroke" => cor, "stroke-width" => 2.4), "/>"))
+        push!(p, texto_px(xL + 21, yl, s.nome; tam = 10, cor = Formato.TINTA_FRACA,
+                          ancora = "start"))
+        yl += 14.0
+    end
+    return documento(t, join(p); fundo = Formato.FUNDO, rotulo = titulo)
+end

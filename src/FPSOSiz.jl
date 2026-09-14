@@ -44,6 +44,17 @@ using .Units
 include("analysis/pinch.jl")
 using .PinchAnalysis
 
+# Módulo dinâmico do separador (Song 2023) — subapp isolado, na MESMA posição de prova de
+# pureza do pinch: incluído antes de `interfaces.jl`, não tem como citar `ParameterSpec`,
+# `AbstractSizingMethod`, `field_units` nem nada de `src/sizing/` — eles não existem
+# ainda. `propriedades.jl` (Entrega B) antes de `song.jl` (Entrega A), que dele depende.
+# `test/architecture.jl` fixa esta ordem. O adaptador de box entra lá embaixo, depois de
+# `config.jl` e do registro, como o de pinch.
+include("dynamics/propriedades.jl")
+using .Propriedades
+include("dynamics/song.jl")
+using .SongDynamics
+
 include("interfaces.jl")
 include("registry.jl")
 
@@ -85,6 +96,11 @@ include("sizing/exchanger/shell_and_tube.jl")
 # cita à vontade. Juntar os dois arquivos apagaria a única garantia estrutural que o
 # passo anterior deixou, e `test/pinch.jl` verifica que ela continua de pé.
 include("analysis/pinch_method.jl")
+
+# Adaptador do módulo dinâmico: a ponte entre o TOML (SI) e a física isolada de
+# `dynamics/`. Entra AQUI — depois de `config.jl`, `interfaces.jl` e do registro — porque
+# é ele, e não a física, que cita `ParameterSpec` e lê a configuração. Ver `pinch_method.jl`.
+include("dynamics/song_method.jl")
 
 include("engine/single.jl")
 include("engine/envelope.jl")
@@ -145,6 +161,13 @@ export ElectrostaticTreater, ArnoldElectrostatic
 export PinchTarget, PinchKemp, PinchConstraints
 export converge_drag, terminal_velocity, reynolds, drag_coefficient, souders_brown
 export size_envelope, governing_summary, mechanism_label
+
+# --- o módulo dinâmico (Song 2023) e seu adaptador. A física vive nos submódulos
+# `SongDynamics` e `Propriedades` (isolados); estas são as funções de fronteira.
+export parametros_dinamico, valores_default_dinamico, config_dinamico
+export construir_params_dinamico, estado_inicial_dinamico, simular_dinamico
+export canais_dinamico, CanalSerie
+export SongDynamics, Propriedades
 
 """
     stream_parameters() -> Vector{ParameterSpec}

@@ -1,0 +1,439 @@
+label = "Separador Trifásico — Dinâmico (Song 2023)"
+
+# =====================================================================
+# Módulo dinâmico do separador trifásico — Song et al. (2023)
+# ACS Omega 2023, 8, 6078−6089, doi 10.1021/acsomega.2c08267
+#
+# TODAS as constantes numéricas do modelo moram aqui, com proveniência por
+# linha (regra do projeto). O `.jl` de src/dynamics/ não tem literal numérico.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Composição do GÁS — fração molar na fase gasosa (Tabela 1 e 2 do artigo).
+# (Chaves de topo: ficam ANTES de qualquer cabeçalho [tabela].)
+# `y` já em fração (0–1); `tc_c` em °C, `pc_kpa` em kPa, `m_kg_mol` em kg/mol,
+# `omega` o fator acêntrico. O adaptador converte para SI ao montar `Componente`.
+# Componentes com fração ~0 na fase gasosa são omitidos: não pesam em z nem em M
+# do gás. Propriedades críticas de bancos padrão; os NBP* vêm da Tabela 2.
+# ---------------------------------------------------------------------
+componente = [
+  {nome = "N2",       y = 0.026485,  m_kg_mol = 0.0280134, tc_c = -146.95, pc_kpa = 3394,  omega = 0.037},
+  {nome = "CO2",      y = 0.002413,  m_kg_mol = 0.0440095, tc_c = 30.98,   pc_kpa = 7377,  omega = 0.225},
+  {nome = "metano",   y = 0.939110,  m_kg_mol = 0.0160425, tc_c = -82.59,  pc_kpa = 4599,  omega = 0.011},
+  {nome = "etano",    y = 0.004059,  m_kg_mol = 0.0300690, tc_c = 32.17,   pc_kpa = 4872,  omega = 0.099},
+  {nome = "propano",  y = 0.0009113, m_kg_mol = 0.0440956, tc_c = 96.74,   pc_kpa = 4251,  omega = 0.152},
+  {nome = "n-butano", y = 0.0002548, m_kg_mol = 0.0581222, tc_c = 151.97,  pc_kpa = 3796,  omega = 0.200},
+  {nome = "i-butano", y = 0.0008763, m_kg_mol = 0.0581222, tc_c = 134.66,  pc_kpa = 3640,  omega = 0.184},
+  {nome = "agua",     y = 0.025879,  m_kg_mol = 0.0180153, tc_c = 373.95,  pc_kpa = 22064, omega = 0.3449},
+  {nome = "NBP275",   y = 0.00001,   m_kg_mol = 0.2032,    tc_c = 444.1,   pc_kpa = 1610,  omega = 0.874},
+]
+
+# ---------------------------------------------------------------------
+# Distribuição de tamanho de gotícula de ÁGUA na entrada — Figura 4.
+# `d_um` em µm (o adaptador converte para m); `frac` é a fração NUMÉRICA da
+# faixa (Σ = 1). PROVENIÊNCIA: a Figura 4 é imagem no PDF e não foi extraída
+# numericamente aqui — leitura PROVISÓRIA, monótona decrescente em número,
+# coerente com "acumulada de 0 a 500 µm". DEVE ser ajustada à figura na
+# validação; override por tabela do usuário. Não é um número do artigo.
+# ---------------------------------------------------------------------
+gota = [
+  {d_um = 25,  frac = 0.30},
+  {d_um = 75,  frac = 0.22},
+  {d_um = 125, frac = 0.15},
+  {d_um = 175, frac = 0.10},
+  {d_um = 225, frac = 0.07},
+  {d_um = 275, frac = 0.05},
+  {d_um = 325, frac = 0.04},
+  {d_um = 375, frac = 0.03},
+  {d_um = 425, frac = 0.02},
+  {d_um = 475, frac = 0.02},
+]
+
+[constants]
+r_gas            = 8.314    # J/(mol·K) — Eq. 5, constante universal dos gases
+gravidade        = 9.8      # m/s² — nomenclatura do artigo (NÃO 9,80665 nem 9,81)
+isa_coeficiente  = 2.73     # Eq. 6 — derivado de Kv/Cv (ver o cabeçalho de song.jl)
+fp               = 1.0      # §3 — parâmetro geométrico de tubulação
+xt               = 0.7      # §3 — Eq. 8
+fk               = 0.9      # §3 — Eq. 8
+stokes_divisor   = 18.0     # Eq. 13 — ramo laminar
+intermediario_c  = 0.153    # Eq. 13 — ramo intermediário (ref. 29)
+newton_c         = 1.74     # Eq. 13 — ramo de Newton (ref. 29)
+d1_c             = 3.3      # Eq. 14 — fronteira laminar/intermediário
+d2_c             = 43.5     # Eq. 15 — fronteira intermediário/Newton
+alfa_limiar_gas  = 0.1      # Eq. 7 — fração mássica de gás para α = 1
+alfa_fator       = 10.0     # Eq. 7 — inclinação de α no regime intermediário
+cv_oleo          = 52.8215  # §3.1 — coeficiente da válvula de óleo
+cv_agua          = 57.3018  # §3.1 — coeficiente da válvula de água
+cv_gas           = 0.3924   # §3.1 — coeficiente da válvula de gás
+
+[aberturas_iniciais]
+oleo = 0.0879   # §3.1
+agua = 0.19     # §3.1
+gas  = 1.0      # §3.1
+
+# =====================================================================
+# Descritores de formulário — a tela itera sobre eles (nenhum nome de
+# grandeza no código da interface). Ganhos, setpoints, malha e passo, todos
+# por ParameterSpec (Entrega C.5).
+# =====================================================================
+
+# --- Operação (A.8)
+[[parameter]]
+key     = "temperatura"
+label   = "Temperatura"
+unit    = "°C"
+default = 40.0
+min     = 5.0
+max     = 120.0
+note    = "NÃO publicada no artigo; entrada obrigatória"
+
+[[parameter]]
+key     = "q_oleo_in"
+label   = "Vazão de óleo na entrada"
+unit    = "m³/h"
+default = 8.715
+min     = 0.0
+max     = 500.0
+note    = "§3"
+
+[[parameter]]
+key     = "q_agua_in"
+label   = "Vazão de água na entrada"
+unit    = "m³/h"
+default = 31.12
+min     = 0.0
+max     = 2000.0
+note    = "§3"
+
+[[parameter]]
+key     = "q_gas_in"
+label   = "Vazão de gás na entrada"
+unit    = "m³/h"
+default = 8.175
+min     = 0.0
+max     = 5000.0
+note    = "§3 reconstruída: 3,696 kmol/h e 0,1936 m³/h não fecham; ρ_g de PR a 1150 kPa/40 °C ≈ 7,51 kg/m³ → 8,175 m³/h"
+
+[[parameter]]
+key     = "p_jusante"
+label   = "Pressão a jusante das válvulas"
+unit    = "kPa"
+default = 200.0
+min     = 50.0
+max     = 5000.0
+note    = "§3 — as três válvulas"
+
+[[parameter]]
+key      = "phi_agua_oleo_in"
+label    = "Fração de água nas gotículas do óleo (entrada)"
+unit     = "–"
+default  = 0.25
+min      = 0.0
+max      = 0.6
+advanced = true
+note     = "PROVISÓRIA: fixa a escala absoluta de φ; ajustar para reproduzir φ = 17,45 % de §3.1"
+
+# --- Geometria (§3)
+[[parameter]]
+key      = "d_vaso"
+label    = "Diâmetro do cilindro"
+unit     = "m"
+default  = 2.2
+min      = 0.5
+max      = 6.0
+advanced = true
+note     = "§3"
+
+[[parameter]]
+key      = "l_esquerda"
+label    = "Comprimento à esquerda do vertedouro"
+unit     = "m"
+default  = 3.5
+min      = 0.5
+max      = 20.0
+advanced = true
+note     = "§3 — L da Eq. 3"
+
+[[parameter]]
+key      = "l_total"
+label    = "Comprimento total"
+unit     = "m"
+default  = 5.0
+min      = 1.0
+max      = 30.0
+advanced = true
+note     = "§3"
+
+[[parameter]]
+key      = "h_vertedouro"
+label    = "Altura do vertedouro"
+unit     = "m"
+default  = 1.6
+min      = 0.1
+max      = 6.0
+advanced = true
+note     = "§3"
+
+[[parameter]]
+key      = "h_tampo"
+label    = "Largura de superfície do tampo elíptico (h_i)"
+unit     = "m"
+default  = 0.55
+min      = 0.05
+max      = 3.0
+advanced = true
+note     = "h_i da Eq. 3; NÃO publicado — default = D/4 (tampo 2:1). Ajustar na validação"
+
+# --- Malha e passo (A.8)
+[[parameter]]
+key      = "n_colunas"
+label    = "Colunas (N_x)"
+unit     = "–"
+default  = 8.0
+min      = 3.0
+max      = 40.0
+advanced = true
+note     = "N_x−1 à esquerda, 1 à direita"
+
+[[parameter]]
+key      = "n_oleo"
+label    = "Corpos na camada de óleo (N_o)"
+unit     = "–"
+default  = 4.0
+min      = 2.0
+max      = 20.0
+advanced = true
+note     = "A.8"
+
+[[parameter]]
+key      = "n_agua"
+label    = "Corpos na camada de água (N_w)"
+unit     = "–"
+default  = 6.0
+min      = 2.0
+max      = 20.0
+advanced = true
+note     = "A.8"
+
+[[parameter]]
+key      = "dt_passo"
+label    = "Passo de tempo"
+unit     = "s"
+default  = 0.5
+min      = 0.01
+max      = 60.0
+advanced = true
+note     = "40× abaixo do limite CFL; ~1/10 da constante de tempo mais rápida (A.8)"
+
+[[parameter]]
+key      = "horizonte"
+label    = "Horizonte de simulação"
+unit     = "s"
+default  = 3600.0
+min      = 60.0
+max      = 86400.0
+advanced = true
+note     = "ordem de grandeza de §4.1"
+
+[[parameter]]
+key      = "cadencia_registro"
+label    = "Cadência de registro"
+unit     = "s"
+default  = 5.0
+min      = 0.01
+max      = 600.0
+advanced = true
+note     = "independente de dt_passo"
+
+[[parameter]]
+key      = "janela_regime"
+label    = "Janela de regime permanente"
+unit     = "s"
+default  = 300.0
+min      = 10.0
+max      = 3600.0
+advanced = true
+note     = "A.7 — 6× o maior K_I da Tabela 3 (50 s)"
+
+# --- Setpoints (Tabela 3)
+[[parameter]]
+key     = "sp_pressao"
+label   = "Setpoint de pressão"
+unit    = "kPa"
+default = 1150.0
+min     = 100.0
+max     = 5000.0
+note    = "Tabela 3"
+
+[[parameter]]
+key     = "sp_oleo"
+label   = "Setpoint de nível de óleo"
+unit    = "m"
+default = 1.6
+min     = 0.1
+max     = 2.2
+note    = "Tabela 3 publica 1 m (nível de óleo À DIREITA do vertedouro). Nesta implementação de poço único à esquerda o 'nível de óleo' é o nível de líquido total H_l (≥ nível de água), então o default é a altura do vertedouro. RECONCILIAR os referenciais na validação — ver o cabeçalho de song.jl"
+
+[[parameter]]
+key     = "sp_agua"
+label   = "Setpoint de nível de água"
+unit    = "m"
+default = 1.547
+min     = 0.1
+max     = 2.2
+note    = "Tabela 3"
+
+# --- Ganhos das malhas PI (Tabela 3). KPP por kPa; KPol/KPwl por m; KI em s.
+[[parameter]]
+key      = "kp_p"
+label    = "Ganho proporcional — pressão"
+unit     = "kPa⁻¹"
+default  = 8.0
+min      = 0.0
+max      = 1000.0
+advanced = true
+note     = "Tabela 3 (K_PP)"
+
+[[parameter]]
+key      = "ki_p"
+label    = "Tempo integral — pressão"
+unit     = "s"
+default  = 4.0
+min      = 0.1
+max      = 10000.0
+advanced = true
+note     = "Tabela 3 (K_IP)"
+
+[[parameter]]
+key      = "kp_ol"
+label    = "Ganho proporcional — nível de óleo"
+unit     = "m⁻¹"
+default  = 2.0
+min      = 0.0
+max      = 1000.0
+advanced = true
+note     = "Tabela 3 (K_Pol)"
+
+[[parameter]]
+key      = "ki_ol"
+label    = "Tempo integral — nível de óleo"
+unit     = "s"
+default  = 50.0
+min      = 0.1
+max      = 10000.0
+advanced = true
+note     = "Tabela 3 (K_Iol)"
+
+[[parameter]]
+key      = "kp_wl"
+label    = "Ganho proporcional — nível de água"
+unit     = "m⁻¹"
+default  = 10.0
+min      = 0.0
+max      = 1000.0
+advanced = true
+note     = "Tabela 3 (K_Pwl)"
+
+[[parameter]]
+key      = "ki_wl"
+label    = "Tempo integral — nível de água"
+unit     = "s"
+default  = 25.0
+min      = 0.1
+max      = 10000.0
+advanced = true
+note     = "Tabela 3 (K_Iwl)"
+
+# --- Aberturas fixas (modo malha aberta, §3.1)
+[[parameter]]
+key      = "ab_oleo"
+label    = "Abertura fixa — válvula de óleo"
+unit     = "–"
+default  = 0.0879
+min      = 0.0
+max      = 1.0
+advanced = true
+note     = "§3.1 (malha aberta)"
+
+[[parameter]]
+key      = "ab_agua"
+label    = "Abertura fixa — válvula de água"
+unit     = "–"
+default  = 0.19
+min      = 0.0
+max      = 1.0
+advanced = true
+note     = "§3.1 (malha aberta)"
+
+[[parameter]]
+key      = "ab_gas"
+label    = "Abertura fixa — válvula de gás"
+unit     = "–"
+default  = 1.0
+min      = 0.0
+max      = 1.0
+advanced = true
+note     = "§3.1 (malha aberta)"
+
+# --- Camada de propriedades (Entrega B): densidades e overrides. Em cada override,
+#     0 = usar a correlação; > 0 = valor imposto pelo usuário (carimbado no memorial).
+[[parameter]]
+key      = "rho_oleo"
+label    = "Densidade do óleo"
+unit     = "kg/m³"
+default  = 850.0
+min      = 600.0
+max      = 1050.0
+advanced = true
+note     = "entra direto; define o °API de Beggs-Robinson"
+
+[[parameter]]
+key      = "rho_agua"
+label    = "Densidade da água"
+unit     = "kg/m³"
+default  = 1000.0
+min      = 950.0
+max      = 1200.0
+advanced = true
+note     = "entra direto"
+
+[[parameter]]
+key      = "z_fixo"
+label    = "Compressibilidade z (override)"
+unit     = "–"
+default  = 0.0
+min      = 0.0
+max      = 1.2
+advanced = true
+note     = "0 = Peng-Robinson por passo; > 0 = z fixo"
+
+[[parameter]]
+key      = "mu_oleo_override"
+label    = "Viscosidade do óleo (override)"
+unit     = "cP"
+default  = 0.0
+min      = 0.0
+max      = 2000.0
+advanced = true
+note     = "0 = Beggs & Robinson; faixa de validade 0,3–2000 cP"
+
+[[parameter]]
+key      = "mu_agua_override"
+label    = "Viscosidade da água (override)"
+unit     = "cP"
+default  = 0.0
+min      = 0.0
+max      = 3.0
+advanced = true
+note     = "0 = Vogel; faixa 0,2–3 cP"
+
+[[parameter]]
+key      = "mu_gas_override"
+label    = "Viscosidade do gás (override)"
+unit     = "cP"
+default  = 0.0
+min      = 0.0
+max      = 0.05
+advanced = true
+note     = "0 = Lee-Gonzalez-Eakin; faixa 0,005–0,05 cP"
