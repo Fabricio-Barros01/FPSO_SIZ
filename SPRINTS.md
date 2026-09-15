@@ -10,7 +10,7 @@ lido inteiro sem abrir mais nada.
 
 ## Estado atual
 
-**SPRINT ATUAL: 8 — Bomba centrífuga**
+**SPRINT ATUAL: 10 — Artefato distribuível de verdade**
 
 **2915 testes passando** (1142 no core, 1773 na interface).
 
@@ -651,7 +651,7 @@ foram conferidos reintroduzindo os defeitos: os três casos testados falharam co
 
 ---
 
-## Sprint 8 — Bomba centrífuga ⏳ ← ATUAL
+## Sprint 8 — Bomba centrífuga ✅
 
 Fonte: **Moran, *Pump Sizing*, CEP dez/2016** — autocontida. Varre-se o diâmetro nominal
 da tubulação; por DN e por caso: `v = Q/A`, `Re`, `f` por Colebrook-White, perda reta por
@@ -667,7 +667,7 @@ Haaland) não. Implementa-se só Colebrook-White, que é a que o autor prefere.
 
 ---
 
-## Sprint 9 — Trocador de calor ⏳
+## Sprint 9 — Trocador de calor ✅
 
 Fonte: **Saari, *Heat Exchanger Dimensioning*, LUT**. Casco-e-tubos, um passe no casco.
 Varre-se o número de tubos; `q` pelo balanço, `ΔT_lm` com fator `F`, `U` das resistências
@@ -682,7 +682,7 @@ haver Kemp/Linnhoff em `References/`.
 
 ---
 
-## Sprint 10 — Artefato distribuível de verdade ⏳
+## Sprint 10 — Artefato distribuível de verdade ⏳ ← ATUAL
 
 O Sprint 2 entregou o `create_app` funcionando e registrou o limite com honestidade: o
 bundle gerado no NixOS **linka contra a glibc do `/nix/store`** e não roda em outra

@@ -1,0 +1,42 @@
+<!--
+  Corpo da tela DINÂMICA (Song 2023). A casca (cabeçalho do documento, barra de status,
+  tag do script) está em `casca.html`; ver `pagina_dinamica` em app/src/server.jl.
+
+  Como a tela de dimensionamento, nada de conteúdo de domínio é escrito aqui: o
+  formulário nasce em dinamico.js a partir do `ParameterSpec` (injetado em
+  `window.__INICIAL__.campos`), e os gráficos vêm do servidor já em SVG, agrupados por
+  eixo. Esta página só declara os contêineres e as ações.
+-->
+<header class="topo">
+  <img class="marca" src="/senai-cetiqt.webp" alt="SENAI CETIQT" width="860" height="131">
+  <h1>FPSO_Siz</h1>
+  <span class="equipamento" id="rotulo-titulo">—</span>
+  <div class="acoes">
+    <a class="voltar" href="/" title="Voltar ao menu">←&nbsp; Menu</a>
+    <label class="malha-modo" title="Fechada: as três malhas PI atuam (§3.2). Aberta: aberturas fixas (§3.1).">
+      <input type="checkbox" id="chk-malha" checked>
+      <span>malhas fechadas (PI)</span>
+    </label>
+    <button id="btn-simular" class="primario" type="button">▶&nbsp; Simular</button>
+    <button id="btn-sair" class="sair" type="button" title="Encerra o programa">Sair</button>
+  </div>
+</header>
+
+<main class="dinamico">
+  <section class="coluna parametros">
+    <h2>Parâmetros</h2>
+    <table class="form" id="form-dinamico" role="presentation"><tbody></tbody></table>
+    <label class="avancado-toggle">
+      <input type="checkbox" id="chk-avancado">
+      <span>mostrar parâmetros avançados</span>
+    </label>
+  </section>
+
+  <section class="coluna painel-dinamico">
+    <h2>Simulação no tempo</h2>
+    <dl class="cartao" id="resumo-dinamico"></dl>
+    <div id="graficos-dinamico" class="graficos-dinamico">
+      <p class="dica">Ajuste os parâmetros e clique em <strong>Simular</strong>.</p>
+    </div>
+  </section>
+</main>

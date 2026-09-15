@@ -272,6 +272,23 @@ pagina_inicial(st::AppState, box::FPSOSiz.BoxCatalogo) = pagina(;
     dados   = Dict("box" => box.id, "titulo" => box.titulo,
                    "esquema" => esquema(st), "estado" => estado(st)))
 
+"""
+    _e_dinamico(box) -> Bool
+
+Se este box é o do simulador dinâmico (Song 2023). Ele resolve no registro como qualquer
+outro (por isso o catálogo o aceita como `ativo`), mas serve por um caminho próprio — sem
+`AppState`, sem `dimensionar!` —, porque simula no tempo em vez de dimensionar um vaso.
+"""
+_e_dinamico(box::FPSOSiz.BoxCatalogo) = box.method == "song_dinamico"
+
+"A página da tela dinâmica. Não constrói `AppState`: os campos vêm do `ParameterSpec` e a
+simulação corre por `/api/:box/simular`."
+pagina_dinamica(box::FPSOSiz.BoxCatalogo) = pagina(;
+    titulo  = "$(box.titulo) — FPSO_Siz",
+    corpo   = "dinamico.html",
+    scripts = ["dinamico.js"],
+    dados   = dados_dinamico(box))
+
 "O menu de abertura. O catálogo é dado — ver `config/catalogo.toml`."
 pagina_menu() = pagina(;
     titulo  = "FPSO_Siz — dimensionamento de equipamentos",
@@ -315,6 +332,8 @@ function rotas!()
             404, ["Content-Type" => "text/html; charset=utf-8"];
             body = "<p style=\"padding:24px;font:14px system-ui\">Essa aplicação não " *
                    "existe. <a href=\"/\">Voltar ao menu</a></p>")
+        # O box dinâmico desvia do fluxo de dimensionamento: página própria, sem AppState.
+        _e_dinamico(box) && return html(pagina_dinamica(box))
         lock(TRAVA) do
             try
                 html(pagina_inicial(estado_atual(box), box))
@@ -364,6 +383,33 @@ function rotas!()
                                            "desenho" => desenho(st),
                                            "cartao" => cartao(st),
                                            "tabela" => tabela(st)))
+        end
+    end
+
+    # --- a tela dinâmica (Song 2023): simular no tempo ---------------------
+    #
+    # NÃO usa `protegido`: aquele caminho constrói um `AppState` e dimensiona, e o box
+    # dinâmico não faz nem uma coisa nem outra. Valida o box à mão, roda a simulação (pura
+    # nos valores do formulário) e devolve os painéis de série temporal já em SVG.
+    # Inviabilidade (CFL) volta como `ok = false`, nunca como exceção.
+    Genie.Router.route("/api/:box/simular"; method = Genie.Router.POST) do
+        box = box_da_rota()
+        (box === nothing || !_e_dinamico(box)) && return resposta_json(
+            Dict("erro" => "aplicação desconhecida",
+                 "status" => "Essa aplicação não existe. Volte ao menu.",
+                 "status_ok" => false); status = 404)
+        try
+            corpo = corpo_json()
+            valores = valores_do_corpo(corpo)
+            malha_fechada = get(corpo, "malha_fechada", true) == true
+            r = FPSOSiz.simular_dinamico(valores; malha_fechada)
+            resposta_json(resultado_dinamico(r, valores; malha_fechada))
+        catch err
+            @error "falha ao simular" exception = (err, catch_backtrace())
+            resposta_json(Dict("ok" => false, "graficos" => String[],
+                "resumo" => Dict{String,Any}(),
+                "status" => "Erro na simulação: " * sprint(showerror, err),
+                "status_ok" => false); status = 500)
         end
     end
 

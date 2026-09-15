@@ -54,6 +54,9 @@ include("state.jl")
 include("desenho/figuras.jl")
 include("report.jl")
 include("api.jl")
+# A tela dinâmica (Song 2023) — subapp isolado: não passa pelo AppState nem por api.jl.
+# Depois de graficos.jl (usa svg_serie_temporal) e antes de server.jl (que a serve).
+include("dinamico.jl")
 include("server.jl")
 
 export main, julia_main

@@ -206,7 +206,7 @@ function bocais!(p, t, g)
     baixo = lowercase(first(g.camadas).nome)
     topo  = lowercase(last(g.camadas).nome)
     # A fase líquida mais alta: num trifásico é o óleo, que sai depois da placa vertedora.
-    i_liq = findlast(c -> c.nome != "GÁS", g.camadas)
+    i_liq = findlast(c -> c.fase !== :gas, g.camadas)
     meio_ = i_liq === nothing ? "" : lowercase(g.camadas[i_liq].nome)
 
     caixas = Tuple{Float64,Float64,String,Float64}[
@@ -275,7 +275,7 @@ function svg_corte(g; larg::Real = 460.0)
     x_cota = R * 1.20
     cotas = Tuple{Float64,String,String}[]
     for c in g.camadas
-        c.nome == "GÁS" && continue          # o gás ocupa o que sobra; não se cota
+        c.fase === :gas && continue          # o gás ocupa o que sobra; não se cota
         push!(cotas, (meio(c), "$(c.nome) = $(Formato.num(altura(c))) m", c.cor))
     end
     pct = g.d_m > 0 ? round(Int, 100 * nivel / g.d_m) : 0

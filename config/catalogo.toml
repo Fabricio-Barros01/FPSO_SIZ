@@ -101,8 +101,9 @@ method    = "pinch_kemp"
 
 [[box]]
 id        = "controle-separador"
-titulo    = "Controle do separador trifásico"
-subtitulo = "Malhas de nível, pressão e interface"
+titulo    = "Separador trifásico — dinâmico"
+subtitulo = "Sintonia das três malhas e monitoramento no tempo — Song et al. (2023)"
 icone     = "controle"
-estado    = "em_breve"
-motivo    = "Escopo futuro, declarado no planejamento. Dimensionar e controlar são problemas diferentes; este box é a porta para o segundo."
+estado    = "ativo"
+equipment = "separador_dinamico"
+method    = "song_dinamico"

@@ -289,3 +289,50 @@ end
         @test FPSOSiz.box_catalogo("../etc/passwd") === nothing
     end
 end
+
+# ---------------------------------------------------------------------------
+# Ordem de include — a barreira estrutural dos subapps isolados (Entrega F)
+# ---------------------------------------------------------------------------
+
+@testset "a ordem de include isola os subapps antes de interfaces.jl" begin
+    # A pureza do Pinch e do módulo dinâmico não é disciplina: é posição. Incluídos
+    # ANTES de `interfaces.jl`, `ParameterSpec`/`AbstractSizingMethod` ainda não existem
+    # quando compilam, então citá-los é impossível, não "evitado". Nada impede alguém de
+    # mover a linha e apagar a barreira sem que nada reclame — este teste é o que reclama.
+    fonte = readlines(joinpath(ROOT, "src", "FPSOSiz.jl"))
+    linha_include(p) = findfirst(l -> occursin("include(", l) && occursin(p, l), fonte)
+
+    li = linha_include("interfaces.jl")
+    @test li !== nothing
+
+    for barreira in ("analysis/pinch.jl", "dynamics/propriedades.jl", "dynamics/song.jl")
+        lb = linha_include(barreira)
+        @test lb !== nothing
+        @test lb < li                       # antes de interfaces.jl
+    end
+
+    # `propriedades.jl` (Entrega B) antes de `song.jl` (Entrega A), que dela depende.
+    @test linha_include("dynamics/propriedades.jl") < linha_include("dynamics/song.jl")
+
+    # E o adaptador de box vem DEPOIS de interfaces.jl — é ele que cita `ParameterSpec`.
+    @test linha_include("dynamics/song_method.jl") > li
+end
+
+@testset "os módulos dinâmicos são puros: isolados de sizing e da configuração" begin
+    # O espelho da guarda de pureza do Pinch (test/pinch.jl), aplicada às Eq. de Song:
+    # o que se proíbe é o nome USADO no código, não o citado numa docstring/comentário
+    # (o cabeçalho de song.jl PRECISA dizer "converge_drag não é chamado" para registrar
+    # a decisão). Por isso caem fora as docstrings e os comentários, e sobra o código.
+    for arq in ("propriedades.jl", "song.jl")
+        fonte = read(joinpath(ROOT, "src", "dynamics", arq), String)
+        sem_doc = replace(fonte, r"\"{3}.*?\"{3}"s => "")
+        codigo = join(filter(l -> !startswith(strip(l), "#"), split(sem_doc, '\n')), "\n")
+        for proibido in ("ParameterSpec", "AbstractSizingMethod", "AbstractEquipment",
+                         "sizing/", "converge_drag", "load_config", "method_config",
+                         "field_units", "StreamState", "VesselConstraints")
+            @test !occursin(proibido, codigo)
+        end
+    end
+    @test isdefined(FPSOSiz, :SongDynamics)
+    @test isdefined(FPSOSiz, :Propriedades)
+end

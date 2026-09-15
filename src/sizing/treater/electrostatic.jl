@@ -193,7 +193,10 @@ function sizing_constraints(m::ArnoldElectrostatic, s::StreamState,
     d_max_oiw = hw_max / beta_w
     trace!(tr, :settling, "Eq. 4.18", "d_max (água em óleo)", "(h_o)max/(β_l − β_w)",
            d_max_wio, "mm")
-    trace!(tr, :settling, "Eq. 4.18*", "d_max (óleo em água)",
+    # Sem água emulsionada (a_w = 0), `β_w = 0` e `d_max_oiw = Inf` — que perde no mínimo
+    # abaixo e não decide nada. A linha é só documental, então é omitida em vez de sujar
+    # o memorial assinado com `Inf` (mesmo defeito e mesma decisão do separador, D.1).
+    beta_w > 0 && trace!(tr, :settling, "Eq. 4.18*", "d_max (óleo em água)",
            "(h_w)max/β_w — contraparte geométrica; ver a nota 3 em electrostatic.jl",
            d_max_oiw, "mm")
 
