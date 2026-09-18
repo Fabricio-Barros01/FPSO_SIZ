@@ -130,17 +130,23 @@ Carimbar "Colebrook" sobre um `f` que veio de `64/Re` manda o leitor conferir a 
 equação errada. Não muda nenhum número e por isso não aparece em teste de valor — é
 defeito de atribuição, e é o `test/golden_moran.jl` que o fixa.
 
+**O turbulento cita o NÚMERO da equação; o laminar, o nome.** A assimetria é a própria
+proveniência: Colebrook-White é a **Eq. (2)** do artigo (p. 41), então o memorial manda o
+revisor ao número que ele vai achar lá; `f = 64/Re` **não é do artigo** — é
+Hagen-Poiseuille, acrescentada por este programa —, e dar-lhe um número de equação seria
+mandar procurar na fonte uma equação que ela não tem. Ver §3 de
+`docs/validacao/01-bomba-moran.md`.
+
 **A `fonte` é curta de propósito.** `linha_memorial` (em `app/src/report.jl`) alinha esse
-campo em 10 colunas, e o rótulo mais longo que o core emite hoje tem 9 caracteres
-(`Eq. 4.15b`). "Hagen-Poiseuille" tem 16 e colaria no nome da variável — daí o sobrenome
-só, como em "Colebrook" e "Darcy". O nome inteiro vai na `forma`, que é a última coluna e
-não tem largura fixa.
+campo em 10 colunas. "Hagen-Poiseuille" tem 16 e colaria no nome da variável — daí o
+sobrenome só. O nome inteiro vai na `forma`, que é a última coluna e não tem largura fixa.
 """
 friction_equation(regime::Symbol) =
     regime === :laminar    ? ("Hagen",
-                              "f = 64/Re — Hagen-Poiseuille, exata no laminar") :
+                              "f = 64/Re — Hagen-Poiseuille, exata no laminar; " *
+                              "NÃO consta do artigo") :
     regime === :indefinido ? ("—", "regime indefinido: Re não é número positivo") :
-    ("Colebrook", "1/√f = −2log₁₀(ε/3,7D + 2,51/(Re√f))")
+    ("Eq. 2", "1/√f = −2log₁₀(ε/3,7D + 2,51/(Re√f)) — Colebrook-White")
 
 """
     darcy_friction(re, rel_rough, k) -> (f, regime, confiavel)

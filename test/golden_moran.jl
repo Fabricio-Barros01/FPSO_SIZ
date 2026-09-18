@@ -359,7 +359,10 @@ end
                                                  derivados = d), p)
         linha_f = only(filter(e -> e.var == "f", tr.entries))
         @test occursin("Hagen", linha_f.eq)
-        @test !occursin("Colebrook", linha_f.eq)
+        # E NÃO cita número de equação: Hagen-Poiseuille não está no artigo, e um
+        # "Eq. 2" aqui mandaria conferir a conta na correlação do outro regime.
+        @test !occursin("Eq.", linha_f.eq)
+        @test occursin("NÃO consta do artigo", linha_f.formula)
         # e o regime é uma linha do memorial, não um campo perdido no NamedTuple
         @test any(e -> occursin("regime", lowercase(e.var)), tr.entries)
     end
@@ -380,7 +383,16 @@ end
     trace_selection!(MoranPumpSizing(), tr, (; x = 125.0, y = hid.h_total,
                                              derivados = d), p)
     linha_f = only(filter(e -> e.var == "f", tr.entries))
-    @test occursin("Colebrook", linha_f.eq)
+    # A citação é o NÚMERO da equação do artigo, e não o sobrenome do autor: no
+    # turbulento vale a Eq. (2) (p. 41), e o memorial manda o revisor ao número que ele
+    # vai encontrar na fonte. O nome da correlação continua escrito, na forma algébrica.
+    #
+    # A assimetria com o laminar é a própria proveniência: `f = 64/Re` NÃO consta do
+    # artigo, e por isso é citada por nome — dar-lhe um número mandaria procurar na fonte
+    # uma equação que ela não tem. Ver `friction_equation` em hydraulics.jl.
+    @test linha_f.eq == "Eq. 2"
+    @test occursin("Colebrook-White", linha_f.formula)
+    @test !occursin("Hagen", linha_f.eq)
 end
 
 @testset "quando a transição recusa TUDO, a mensagem diz isso" begin

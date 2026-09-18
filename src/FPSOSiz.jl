@@ -96,6 +96,7 @@ include("memorial_specs/arnold_electrostatic.jl")
 # que promete se alguém de fora da família dos vasos o preencher.
 include("sizing/pump/hydraulics.jl")
 include("sizing/pump/moran.jl")
+include("memorial_specs/moran.jl")
 # Coeficiente do lado do casco: física de feixe, e por isso fora do método — do mesmo
 # jeito que `hydraulics.jl` está fora de `moran.jl`.
 include("sizing/exchanger/bell_delaware.jl")

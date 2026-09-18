@@ -207,8 +207,11 @@ function sizing_constraints(m::MoranPumpSizing, s::StreamState,
         "temperatura): sem pressão de vapor não há NPSH disponível.", tr)
     npsh_est = (p_suc - pv) / (rho * g) + p[:h_sucao]
 
-    trace!(tr, :npsh, "Antoine", "Pv", "10^(A − B/(T+C)) bar", pv, "Pa")
-    trace!(tr, :npsh, "—", "NPSH sem atrito", "(P₀ − Pv)/(ρg) + h₀", npsh_est, "m")
+    trace!(tr, :npsh, "Eq. 5", "Pv", "10^(A − B/(T+C)) bar", pv, "Pa")
+    # A parcela do NPSH que não depende do diâmetro — a Eq. (6) sem o termo de atrito na
+    # sucção, que só existe depois de escolhido o DN. A equação é a mesma, avaliada em
+    # duas etapas; a linha do NPSH disponível, no bloco de seleção, a fecha.
+    trace!(tr, :npsh, "Eq. 6", "NPSH sem atrito", "(P₀ − Pv)/(ρg) + h₀", npsh_est, "m")
     trace!(tr, :npsh, "—", "NPSH exigido", "NPSHr + margem",
            p[:npsh_requerido] + p[:npsh_margem], "m")
 
@@ -520,8 +523,11 @@ function trace_selection!(m::MoranPumpSizing, tr::CalcTrace, best, p::AbstractDi
            "menor DN com $(p[:v_min]) ≤ v ≤ $(p[:v_max]) m/s, NPSH folgado e " *
            "correlação de atrito válida",
            best.x, "mm")
+    # `v = Q/A` fica em "—" DE PROPÓSITO: é continuidade, e o artigo não a numera. As
+    # sete equações que ele numera estão citadas pelo número delas nas linhas abaixo —
+    # ver a tabela de conferência em docs/validacao/01-bomba-moran.md §1.
     trace!(tr, :selection, "—", "v", "Q/(πD²/4)", get(d, :v, NaN), "m/s")
-    trace!(tr, :selection, "—", "Re", "ρvD/µ", re, "–")
+    trace!(tr, :selection, "Eq. 3", "Re", "ρvD/µ", re, "–")
     # O regime como GRANDEZA do memorial, e não como adjetivo numa frase: é ele que diz
     # qual das duas relações de atrito vale, e é a única linha do bloco cujo valor não é
     # um número. `1`/`0` em "válida?" é o mesmo 0/1 que `derived` expõe no CSV.
@@ -531,12 +537,16 @@ function trace_selection!(m::MoranPumpSizing, tr::CalcTrace, best, p::AbstractDi
            "— aqui: $(regime)",
            confiavel ? 1.0 : 0.0, "válida?")
     trace!(tr, :selection, fonte_f, "f", forma_f, get(d, :f, NaN), "–")
-    trace!(tr, :selection, "Darcy", "h_atrito", "f·(L/D)·v²/2g + Σk·v²/2g",
+    # A perda por atrito soma as DUAS equações do artigo — trecho reto pela Eq. (4) e
+    # acessórios pela Eq. (1) —, e a citação diz as duas. "Darcy" nomeava a correlação de
+    # trecho reto e calava a das perdas localizadas, que no recalque costuma ser a maior.
+    trace!(tr, :selection, "Eq. 1/4", "h_atrito", "f·(L/D)·v²/2g + Σk·v²/2g",
            get(d, :h_atrito, NaN), "m")
+    # `H` continua em "—": é a soma das parcelas, não uma equação da fonte.
     trace!(tr, :selection, "—", "H", "h_est + h_atrito", best.y, "m")
-    trace!(tr, :selection, "—", "NPSH disponível", "(P₀−Pv)/(ρg) + h₀ − h_atrito,suc",
+    trace!(tr, :selection, "Eq. 6", "NPSH disponível", "(P₀−Pv)/(ρg) + h₀ − h_atrito,suc",
            get(d, :npsh, NaN), "m")
-    trace!(tr, :selection, "—", "P", "ρgQH/(3,6×10⁶·η)", get(d, :potencia, NaN), "kW")
+    trace!(tr, :selection, "Eq. 7", "P", "ρgQH/(3,6×10⁶·η)", get(d, :potencia, NaN), "kW")
     return nothing
 end
 
