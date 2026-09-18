@@ -1,4 +1,4 @@
-# Passo 8 — Memorial de cálculo documental (fatia vertical: Separador trifásico)
+# Passo 8 — Memorial de cálculo documental (três vasos: SEP, VKO, TRE)
 
 **Módulo:** `memorial` · **Não é um método de dimensionamento** — é a camada documental
 do contrato método↔motor.
@@ -8,7 +8,7 @@ do contrato método↔motor.
 **Fonte da física documentada:** Alves & Komesu (2025), Lajer v.12 n.1 p.16-29, sobre
 Stewart & Arnold (2008) — a mesma do [passo 4](04-separador-trifasico.md).
 **Arquivos:** [memorial.jl](../../src/memorial.jl),
-[memorial_specs/stewart_arnold.jl](../../src/memorial_specs/stewart_arnold.jl),
+[memorial_specs/](../../src/memorial_specs/) (um por método),
 [app/src/memorial/documento.jl](../../app/src/memorial/documento.jl),
 [app/src/memorial/folhas.jl](../../app/src/memorial/folhas.jl),
 [app/public/memorial.css](../../app/public/memorial.css),
@@ -27,7 +27,7 @@ ela vale. Este passo acrescenta a camada que faltava, **sem duplicar nenhuma fí
 | camada | o que declara | arquivo |
 |---|---|---|
 | Contrato | `MemorialSpec`, `EquacaoDoc`, `VariavelDoc`, `PremissaDoc`, `ResultadoDoc`, `VerificacaoDoc` | `src/memorial.jl` |
-| Conteúdo (SEP) | as 18 equações, 6 premissas, 4 hipóteses, 8 resultados, 2 verificações | `src/memorial_specs/stewart_arnold.jl` |
+| Conteúdo, por equipamento | SEP 18 eqs · VKO 9 · TRE 11, cada um com premissas, hipóteses, resultados e verificações próprios | `src/memorial_specs/*.jl` |
 | Infra documental | folha A4, bloco de título, quadro de revisões, grade de 28 colunas, tokens, paginação | `app/src/memorial/documento.jl` |
 | Folhas | rosto, premissas, fórmulas, resultados, figuras | `app/src/memorial/folhas.jl` |
 | Impressão | geometria A4 e tipografia do handoff | `app/public/memorial.css` |
