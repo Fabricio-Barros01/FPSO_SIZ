@@ -243,13 +243,33 @@ no exemplo do app) atravessa engine → tela → documento com os mesmos valores
 | # | lacuna | consequência | encaminhamento |
 |---|---|---|---|
 | 1 | **Só o separador tem `memorial_spec`.** Os outros cinco métodos devolvem `nothing` | o botão Memorial não aparece neles — não há documento vazio | um `memorial_spec` por método, reusando toda a infra |
-| 2 | Cliente, unidade e executor saem como `A DEFINIR` | o documento precisa ser completado à mão (ou pela consulta `?cliente=…&unidade=…`) | um formulário de metadados do estudo |
+| 2 | Cliente, unidade e executor saem como `A DEFINIR` por padrão | preenchem-se pela consulta (abaixo) ou à mão no PDF | um formulário de metadados do estudo |
 | 3 | O quadro de revisões só registra a emissão inicial | revisões seguintes não são rastreadas pelo programa | exigiria persistir histórico de revisão por estudo |
-| 4 | `meta_da_consulta` lê os parâmetros de forma defensiva | se a versão do Genie expuser a consulta sob outra chave, os campos caem nos defaults em vez de falhar | confirmar a chave na máquina do usuário e fixá-la |
+| ~~4~~ | ~~`meta_da_consulta` lê os parâmetros de forma defensiva e a chave do Genie não foi confirmada~~ | **fechada** — verificada e fixada por teste, ver abaixo | — |
 | 5 | O documento é do **caso governante**; os demais cantos não aparecem | o `.txt` exportado continua trazendo o rastro de todos | manter os dois artefatos, que respondem a perguntas diferentes |
 | 6 | Não há visor 3D nem design system "Industry" nesta entrega | a tela continua com o layout e o SVG 2D atuais | fase seguinte do plano de UI |
 | 7 | A verificação do **teto de decantação** sai em `—`, não em `ATENDE` | ver §10.1 | decisão do usuário: alterar `result_fields` no core |
 | 8 | Eq. 15 e Eq. 23 saem sem `VALOR CALCULADO` na folha 03 | ver §10.2 | um `trace!` em `lss_from`, se se quiser |
+
+### 10.0 Metadados pela consulta — verificado
+
+O que o programa não tem como saber sai em `A DEFINIR`, nunca num nome plausível. Para
+preencher sem que o programa invente nada, a rota aceita os campos na consulta:
+
+```
+/app/separador-3f/memorial?cliente=PETROBRAS&unidade=P-77&seq=042&rev=B
+```
+
+Verificado com o servidor no ar: o documento sai com
+`MC-SENAI-SEP-ENG-**042-B**`, `CLIENTE: PETROBRAS`, `UNIDADE: P-77` — e o que **não** foi
+informado continua em `A DEFINIR`, em vez de virar célula vazia. Campos aceitos:
+`cliente`, `projeto`, `unidade`, `executor`, `seq`, `rev`; cada valor é escapado e
+limitado a 120 caracteres, porque vai para dentro do bloco de título, que tem largura
+fixa.
+
+`app/smoke.jl` fixa o comportamento: `meta_da_consulta` lê os parâmetros defensivamente
+(se a chave que o Genie usa mudar, os campos caem nos defaults em vez de derrubar a
+rota), e sem o teste essa queda seria silenciosa.
 
 ### 10.1 Por que o teto de decantação não diz ATENDE
 

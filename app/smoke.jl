@@ -1914,6 +1914,26 @@ end
                 @test !occursin("NÃO ATENDE", doc)
             end
 
+            @testset "os metadados do documento entram pela consulta" begin
+                # Cliente, unidade, executor e o sequencial não são coisas que o programa
+                # calcule — sem isto saem como `A DEFINIR`, que é a resposta honesta. Esta
+                # é a porta para preenchê-los sem que o programa invente nada, e o teste
+                # existe porque `meta_da_consulta` lê os parâmetros de forma defensiva:
+                # se a chave que o Genie usa mudar, os campos voltariam silenciosamente
+                # para o default e ninguém notaria.
+                padrao = String(HTTP.get("$base/app/separador-3f/memorial").body)
+                @test occursin("MC-SENAI-SEP-ENG-001-0", padrao)
+                @test occursin("A DEFINIR", padrao)
+
+                com = String(HTTP.get("$base/app/separador-3f/memorial" *
+                    "?cliente=PETROBRAS&unidade=P-77&seq=042&rev=B").body)
+                @test occursin("MC-SENAI-SEP-ENG-042-B", com)
+                @test occursin("PETROBRAS", com)
+                @test occursin("P-77", com)
+                # E o que não foi informado continua em `A DEFINIR`, não vira vazio.
+                @test occursin("A DEFINIR", com)
+            end
+
             @testset "o box dinâmico não emite memorial de dimensionamento" begin
                 # Ele monitora no tempo; não dimensiona equipamento nenhum. Servir-lhe um
                 # memorial de dimensionamento seria emitir um documento sobre um cálculo
