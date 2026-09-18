@@ -150,7 +150,7 @@ export AbstractVesselMethod, Separator, StewartArnold, VesselConstraints
 export KnockoutDrum, StewartArnoldTwoPhase, gas_capacity_dleff
 export sizing_constraints, method_config, method_reference, lss_from, size_vessel
 export beta_coefficient, water_area_fraction, segment_height_fraction
-export slenderness_equation
+export slenderness_equation, lss_trace
 
 # --- os equipamentos que não são vasos
 export CentrifugalPump, MoranPumpSizing, PumpConstraints

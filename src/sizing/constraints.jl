@@ -339,9 +339,31 @@ function result_fields(m::AbstractVesselMethod, r)
         ResultField("Restrição governante", txt(governing_label(m, r.governing))),
         ResultField("Caso governante", txt(_driver_case(r))),
         ResultField("Teto de decantação",
-                    isfinite(r.ceiling) ? r.ceiling : NaN; unit = "mm", digits = 0),
+                    isfinite(r.ceiling) ? r.ceiling : NaN; unit = "mm", digits = 0,
+                    status = _sob_o_teto(r, tem)),
     ]
 end
+
+"""
+    _sob_o_teto(r, tem) -> Symbol
+
+Se o ponto respeita o teto do eixo — o ✓/✗ do campo "Teto de decantação".
+
+O motor **já** impõe `x ≤ teto` (é assim que a admissibilidade funciona), mas até aqui
+ele não DIZIA isso: o campo informava o valor do teto com `status = :neutro`, e o
+memorial exportado, que lê o status para escrever ATENDE / NÃO ATENDE, imprimia
+travessão numa verificação que o programa de fato faz. Uma verificação sem veredito num
+documento assinado passa por não verificada.
+
+`:neutro` quando não há teto (`Inf` — o vaso bifásico não tem decantação
+líquido-líquido, então não há o que verificar) e quando não há resultado. Nos dois casos
+o travessão continua sendo a resposta verdadeira; o que mudou é que ele deixou de ser a
+resposta em todos os casos.
+
+Segue o CURSOR, como os demais campos: arrastá-lo para além do teto tem de mostrar ✗.
+"""
+_sob_o_teto(r, tem::Bool) =
+    !tem || !isfinite(r.ceiling) ? :neutro : (r.x <= r.ceiling ? :ok : :erro)
 
 # Um `SizingResult` não tem caso governante — ele É um caso. O cartão é o mesmo nos dois,
 # então a diferença vira travessão em vez de dois cartões quase iguais.
@@ -396,7 +418,36 @@ a fonte errada.
 """
 slenderness_equation(::AbstractVesselMethod) = "—"
 
+"""
+    lss_trace(m, gov) -> (eq::String, formula::String)
+
+Qual equação produziu o `Lss`, e como ela se escreve — para a linha de rastro da seleção.
+
+**Depende de quem governa**, e é por isso que é um hook e não uma constante: pela regra
+de Stewart & Arnold o `Lss` sai da Eq. 15 quando o gás governa (folga do trecho de
+entrada e do extrator de névoa) e da Eq. 23 quando o líquido governa (vaso preenchido a
+50 %). Citar só uma das duas mandaria o revisor conferir a errada em metade dos casos.
+
+O default acompanha o [`lss_from`](@ref) default, e cita [`SEM_EQUACAO`](@ref) em vez de
+palpitar um número: um vaso cuja fonte não numere essas relações prefere não citar nada a
+citar a equação de outro método — a mesma decisão de `slenderness_equation`.
+"""
+lss_trace(::AbstractVesselMethod, gov::Symbol) =
+    gov === :gas ? (SEM_EQUACAO, "Leff + d/1000") : (SEM_EQUACAO, "f·Leff")
+
 function trace_selection!(m::AbstractVesselMethod, tr::CalcTrace, best, p::AbstractDict)
+    # O `Lss` é derivado, não restrição: ele não sai de `sizing_constraints` e por isso
+    # não tinha linha de rastro nenhuma. O resultado aparecia no cartão e na folha de
+    # resultados, e a folha de fórmulas mostrava as Eq. 15 e 23 com a notação, a
+    # referência — e travessão no valor. Era o único número do documento sem o passo
+    # intermediário que o produziu.
+    #
+    # Aqui, e não dentro de `derived`: `derived` roda uma vez por ponto da grade, e
+    # carimbar o rastro ali encheria o memorial com uma linha por diâmetro varrido. Este
+    # ponto é o ESCOLHIDO, que é o que o documento descreve.
+    eq_lss, formula_lss = lss_trace(m, best.governing)
+    trace!(tr, :selection, eq_lss, "Lss", formula_lss, best.derivados[:lss], "m")
+
     trace!(tr, :selection, slenderness_equation(m), "SR", "Lss/(d/1000)",
            best.derivados[:sr], "–")
     trace!(tr, :selection, "—", "d escolhido",

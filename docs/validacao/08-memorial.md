@@ -247,9 +247,9 @@ no exemplo do app) atravessa engine → tela → documento com os mesmos valores
 | 3 | O quadro de revisões só registra a emissão inicial | revisões seguintes não são rastreadas pelo programa | exigiria persistir histórico de revisão por estudo |
 | ~~4~~ | ~~`meta_da_consulta` lê os parâmetros de forma defensiva e a chave do Genie não foi confirmada~~ | **fechada** — verificada e fixada por teste, ver abaixo | — |
 | 5 | O documento é do **caso governante**; os demais cantos não aparecem | o `.txt` exportado continua trazendo o rastro de todos | manter os dois artefatos, que respondem a perguntas diferentes |
-| 6 | Não há visor 3D nem design system "Industry" nesta entrega | a tela continua com o layout e o SVG 2D atuais | fase seguinte do plano de UI |
-| 7 | A verificação do **teto de decantação** sai em `—`, não em `ATENDE` | ver §10.1 | decisão do usuário: alterar `result_fields` no core |
-| 8 | Eq. 15 e Eq. 23 saem sem `VALOR CALCULADO` na folha 03 | ver §10.2 | um `trace!` em `lss_from`, se se quiser |
+| ~~6~~ | ~~Não há visor 3D nem design system "Industry"~~ | **fechada** — [passo 9](09-ui-industry-3d.md) | — |
+| ~~7~~ | ~~A verificação do teto de decantação sai em `—`~~ | **fechada** — ver §10.1 | — |
+| ~~8~~ | ~~Eq. 15 e Eq. 23 sem `VALOR CALCULADO`~~ | **fechada** — ver §10.2 | — |
 
 ### 10.0 Metadados pela consulta — verificado
 
@@ -271,39 +271,48 @@ fixa.
 (se a chave que o Genie usa mudar, os campos caem nos defaults em vez de derrubar a
 rota), e sem o teste essa queda seria silenciosa.
 
-### 10.1 Por que o teto de decantação não diz ATENDE
+### 10.1 O teto de decantação agora diz ATENDE — e por que não dizia
 
-O motor **impõe** `d ≤ d_max` — é assim que a admissibilidade funciona, e é por isso que
-o vaso escolhido respeita o teto. Mas o `ResultField` "Teto de decantação" que
-`result_fields` declara em `src/sizing/constraints.jl` tem `status = :neutro`: ele
-informa o valor do teto, não um veredito sobre ele.
+O motor sempre **impôs** `d ≤ d_max`: é assim que a admissibilidade funciona, e é por
+isso que o vaso escolhido respeita o teto. Mas o `ResultField` "Teto de decantação"
+tinha `status = :neutro` — informava o valor do teto, sem veredito sobre ele. A folha 04
+lia o status e imprimia travessão numa conferência que o programa **de fato faz**.
 
-O documento **não converte isso em `ATENDE`**. Escrever ali um "atende" que o motor não
-calculou é exatamente a falha que a regra existe para impedir — uma verificação que passa
-por feita sem ter sido. Sai travessão, e o travessão é verdadeiro.
+Isso é pior que ausência: uma linha de VERIFICAÇÃO sem veredito, num documento assinado,
+passa por verificada. E o memorial não podia corrigir sozinho — escrever ali um "atende"
+que o motor não calculou é exatamente a falha que a regra existe para impedir.
 
-Corrigir isso é uma mudança no **core**, não no memorial: dar `status` ao campo do teto
-em `result_fields`. Ela tem efeito colateral visível fora daqui — o cartão da tela
-passaria a mostrar um ✓ no teto, e `fecho_memorial` (que filtra por
-`status !== :neutro`) passaria a imprimi-lo em toda linha de fecho do `.txt`. Por isso
-fica registrada como decisão, e não feita de passagem numa entrega de memorial.
+A correção é no **core**, em `result_fields`: `_sob_o_teto` devolve `:ok` quando
+`x ≤ teto`, `:erro` quando passa, e `:neutro` só quando não há teto (o vaso bifásico não
+tem decantação líquido-líquido) ou não há resultado. Segue o **cursor**, como os demais
+campos: arrastá-lo para além do teto mostra ✗.
 
-Verificado com os números: para o exemplo do artigo o teto é 9124 mm e o vaso escolhido
-tem 6300 mm — folga de 2824 mm. A informação está no documento; o que falta é o motor
-declarar o veredito.
+Efeitos colaterais, assumidos: o cartão da tela ganha ✓ no teto, e `fecho_memorial` (que
+filtra por `status !== :neutro`) passa a imprimi-lo na linha de fecho do `.txt`. Os dois
+são informação verdadeira que antes não aparecia.
 
-### 10.2 Por que Eq. 15 e Eq. 23 não trazem valor calculado
+Para o exemplo do artigo: teto 9124 mm, vaso 6300 mm → **ATENDE**, com folga de 2824 mm.
 
-`lss_from` não emite linha de rastro: ela é chamada dentro de `derived`, uma vez por
-ponto da varredura, e carimbar o `CalcTrace` ali encheria o memorial com uma linha por
-diâmetro da grade. O `Lss` resultante aparece **na folha 04**, ligado às duas equações
-pela coluna `EQUAÇÃO`.
+`test/memorial.jl` passou a exigir que **toda** `VerificacaoDoc` aponte para um campo com
+veredito no caso de referência — não mais só a esbeltez.
 
-O efeito é que a folha 03 mostra as duas regras (a do gás e a do líquido) com a notação e
-a referência, e travessão no valor. É consistente com a regra da camada documental — não
-há número onde o motor não registrou um —, e a rastreabilidade continua fechada pelo
-outro lado. Quem quiser o valor na folha 03 precisa de um `trace!` na seleção, depois de
-o diâmetro estar escolhido.
+### 10.2 Eq. 15 e Eq. 23 agora trazem valor calculado
+
+O `Lss` era o **único** resultado sem passo intermediário: a folha 03 mostrava as duas
+regras com notação e referência, e travessão no valor.
+
+A causa era onde o `Lss` nasce. `lss_from` é chamada dentro de `derived`, uma vez por
+ponto da varredura; carimbar o `CalcTrace` ali encheria o memorial com uma linha por
+diâmetro da grade. A correção foi carimbar em `trace_selection!`, que roda **uma vez**,
+sobre o ponto escolhido — que é o que o documento descreve.
+
+Qual equação citar depende de quem governa, então é hook (`lss_trace`) e não constante:
+Eq. 15 quando o gás governa, Eq. 23 quando o líquido governa. O default cita
+`SEM_EQUACAO` em vez de palpitar, como `slenderness_equation`.
+
+A que **não** governou continua sem linha — não se registra conta que não se fez. No
+caso de referência governa o líquido: `Eq. 23 → Lss = 24,78080 m`, e a Eq. 15 fica em
+travessão.
 
 ---
 

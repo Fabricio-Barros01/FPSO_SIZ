@@ -112,16 +112,39 @@ const _RES_SEP  = size_equipment(Separator(), StewartArnold(),
         end
     end
 
-    @testset "a verificação de esbeltez aponta para um campo que dá veredito" begin
+    @testset "TODA verificação dá veredito no caso de referência" begin
         campos = FPSOSiz.result_fields(StewartArnold(), _RES_SEP)
         for v in spec.verificacoes
             i = findfirst(f -> f.label == v.campo, campos)
-            i === nothing && continue
-            # Um campo `:neutro` não aprova nem reprova nada. Pelo menos uma verificação
-            # tem de apontar para um campo que DÊ veredito, senão a seção inteira sai em
-            # travessão e passa por "verificado".
-            v.campo == "Esbeltez SR" && @test campos[i].status in (:ok, :erro)
+            @test i !== nothing
+            # Um campo `:neutro` não aprova nem reprova nada, e o documento imprime
+            # travessão. Numa verificação isso é pior que ausência: uma linha de
+            # VERIFICAÇÃO sem veredito, num documento assinado, passa por verificada.
+            #
+            # O teto de decantação era exatamente esse caso — o motor IMPÕE `d ≤ d_max`
+            # (é assim que a admissibilidade funciona) mas não o declarava, e a folha 04
+            # saía com travessão numa conferência que o programa de fato faz.
+            @test campos[i].status in (:ok, :erro)
         end
+    end
+
+    @testset "o Lss deixa rastro, e pela equação do bloco que governa" begin
+        # Sem isto o `Lss` era o único resultado sem passo intermediário: a folha de
+        # fórmulas mostrava as Eq. 15 e 23 com notação e referência, e travessão no
+        # valor. Ver `lss_trace`.
+        eq_gov, _ = FPSOSiz.lss_trace(StewartArnold(), _RES_SEP.governing)
+        linhas = FPSOSiz.entradas_do_rastro(_RES_SEP.trace, eq_gov)
+        @test length(linhas) == 1
+        @test only(linhas).var == "Lss"
+        @test only(linhas).value ≈ FPSOSiz.der(_RES_SEP, :lss)
+        @test only(linhas).unit == "m"
+        # As duas regras são numeradas, e cada uma pela sua: gás pela Eq. 15, líquido
+        # pela Eq. 23. Citar só uma mandaria conferir a errada em metade dos casos.
+        @test FPSOSiz.lss_trace(StewartArnold(), :gas)[1]    == "Eq. 15"
+        @test FPSOSiz.lss_trace(StewartArnold(), :liquid)[1] == "Eq. 23"
+        # E a que NÃO governou não deixa linha — não se registra conta que não se fez.
+        eq_outra = _RES_SEP.governing === :gas ? "Eq. 23" : "Eq. 15"
+        @test isempty(FPSOSiz.entradas_do_rastro(_RES_SEP.trace, eq_outra))
     end
 
     @testset "a camada documental não guarda número — estruturalmente" begin

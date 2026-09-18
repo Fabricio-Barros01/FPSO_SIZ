@@ -223,5 +223,10 @@ de poder escrever o seu do zero.
 # A esbeltez é a Eq. 24 do artigo — a numeração deste método, e não a de todo vaso.
 slenderness_equation(::StewartArnold) = "Eq. 24"
 
+# E o `Lss` sai da Eq. 15 ou da Eq. 23 conforme o bloco que governa — ver a nota 4 do
+# cabeçalho deste arquivo, que é onde a escolha entre as duas está discutida.
+lss_trace(::StewartArnold, gov::Symbol) =
+    gov === :gas ? ("Eq. 15", "Leff + d/1000") : ("Eq. 23", "(4/3)·Leff")
+
 size_equipment(eq::Separator, m::StewartArnold, s::StreamState, params::AbstractDict) =
     size_vessel(eq, m, s, params)
