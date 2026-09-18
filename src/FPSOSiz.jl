@@ -86,8 +86,10 @@ include("sizing/separator/stewart_arnold.jl")
 # do arquivo. Depois dele, porque despacha em `StewartArnold`.
 include("memorial_specs/stewart_arnold.jl")
 include("sizing/knockout/two_phase.jl")
+include("memorial_specs/stewart_arnold_2f.jl")
 # Terceiro vaso da família: sem fase gasosa, e com a generalização de §4.9.4-4.9.6.
 include("sizing/treater/electrostatic.jl")
+include("memorial_specs/arnold_electrostatic.jl")
 
 # Os dois que NÃO são vasos. Nenhum dos dois produz `VesselConstraints`, nenhum dos dois
 # tem esbeltez, e é por isso que estão aqui: o contrato de `engine/contract.jl` só vale o

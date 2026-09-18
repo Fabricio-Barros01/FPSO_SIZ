@@ -230,6 +230,11 @@ lss_from(::ArnoldElectrostatic, d_mm::Real, leff::Real, gov::Symbol,
 
 slenderness_equation(::ArnoldElectrostatic) = "§4.9.2"
 
+# Como no bifásico, UMA citação para a regra inteira: §4.9.1 manda tomar o maior entre as
+# duas folgas, e citar só a que venceu diria que a outra não foi avaliada.
+lss_trace(::ArnoldElectrostatic, gov::Symbol) =
+    ("§4.9.1", "max(Leff + d/1000 ; (4/3)·Leff)")
+
 """
     per_constraint(m::ArnoldElectrostatic, d, c)
 

@@ -158,5 +158,17 @@ lss_from(::StewartArnoldTwoPhase, d_mm::Real, leff::Real, gov::Symbol,
 # que o memorial deste vaso citava por herdar o default da família.
 slenderness_equation(::StewartArnoldTwoPhase) = "§3.8.5"
 
+# UMA citação para as duas equações, e não a do bloco que governa: aqui `lss_from` toma o
+# MAIOR entre a Eq. 3.10b e a Eq. 3.11, como §3.8.4 manda. Citar só uma delas diria ao
+# revisor que a outra não foi avaliada — e ela foi, em toda linha da varredura.
+#
+# A SEÇÃO, e não as duas equações: `linha_memorial` alinha a coluna de equação em 10
+# colunas, e "Eq. 3.10b / 3.11" tem 16 — colaria na coluna seguinte do `.txt` que vai
+# anexo ao relatório. §3.8.4 é onde a regra do maior está escrita, cabe, e manda o
+# revisor ao lugar certo; as duas equações aparecem na referência da folha de fórmulas.
+# O teste de larguras em app/smoke.jl é quem pega isso.
+lss_trace(::StewartArnoldTwoPhase, gov::Symbol) =
+    ("§3.8.4", "max(Leff + d/1000 ; (4/3)·Leff)")
+
 size_equipment(eq::KnockoutDrum, m::StewartArnoldTwoPhase, s::StreamState,
                params::AbstractDict) = size_vessel(eq, m, s, params)
