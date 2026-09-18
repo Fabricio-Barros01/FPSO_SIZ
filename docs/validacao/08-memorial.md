@@ -1,4 +1,4 @@
-# Passo 8 — Memorial de cálculo documental (três vasos: SEP, VKO, TRE)
+# Passo 8 — Memorial de cálculo documental (seis módulos: SEP, VKO, TRE, BMB, TRC, PCH)
 
 **Módulo:** `memorial` · **Não é um método de dimensionamento** — é a camada documental
 do contrato método↔motor.
@@ -27,7 +27,7 @@ ela vale. Este passo acrescenta a camada que faltava, **sem duplicar nenhuma fí
 | camada | o que declara | arquivo |
 |---|---|---|
 | Contrato | `MemorialSpec`, `EquacaoDoc`, `VariavelDoc`, `PremissaDoc`, `ResultadoDoc`, `VerificacaoDoc` | `src/memorial.jl` |
-| Conteúdo, por equipamento | SEP 18 eqs · VKO 9 · TRE 11, cada um com premissas, hipóteses, resultados e verificações próprios | `src/memorial_specs/*.jl` |
+| Conteúdo, por módulo | SEP 18 eqs · VKO 9 · TRE 11 · BMB 8 · TRC 23 · PCH 5, cada um com premissas, hipóteses, resultados e verificações próprios | `src/memorial_specs/*.jl` |
 | Infra documental | folha A4, bloco de título, quadro de revisões, grade de 28 colunas, tokens, paginação | `app/src/memorial/documento.jl` |
 | Folhas | rosto, premissas, fórmulas, resultados, figuras | `app/src/memorial/folhas.jl` |
 | Impressão | geometria A4 e tipografia do handoff | `app/public/memorial.css` |
@@ -242,7 +242,7 @@ no exemplo do app) atravessa engine → tela → documento com os mesmos valores
 
 | # | lacuna | consequência | encaminhamento |
 |---|---|---|---|
-| 1 | **Três dos seis métodos têm `memorial_spec`** — os três vasos. Bomba, trocador e pinch devolvem `nothing` | o botão Memorial não aparece neles — não há documento vazio | ver §12 |
+| ~~1~~ | ~~Só três métodos têm `memorial_spec`~~ | **fechada** — os seis têm; ver §12 | — |
 | 2 | Cliente, unidade e executor saem como `A DEFINIR` por padrão | preenchem-se pela consulta (abaixo) ou à mão no PDF | um formulário de metadados do estudo |
 | 3 | O quadro de revisões só registra a emissão inicial | revisões seguintes não são rastreadas pelo programa | exigiria persistir histórico de revisão por estudo |
 | ~~4~~ | ~~`meta_da_consulta` lê os parâmetros de forma defensiva e a chave do Genie não foi confirmada~~ | **fechada** — verificada e fixada por teste, ver abaixo | — |
@@ -373,48 +373,102 @@ Com o servidor no ar e Firefox headless, sobre `exemplo_alves_komesu.toml`:
 
 ---
 
-## 12. Cobertura por método, e por que ela para onde para
+## 12. Cobertura por método — completa
 
-| método | sigla | equações | folhas | estado |
-|---|---|---|---|---|
-| `stewart_arnold` (separador trifásico) | SEP | 18 | 12 | **completo** |
-| `stewart_arnold_2f` (knockout bifásico) | VKO | 9 | 9 | **completo** |
-| `arnold_electrostatic` (tratador) | TRE | 11 | 10 | **completo** |
-| `moran` (bomba centrífuga) | BMB | — | — | não feito |
-| `saari_lmtd` (trocador) | TRC | — | — | não feito |
-| `pinch_kemp` (Análise Pinch) | PCH | — | — | não feito |
+| método | sigla | natureza | equações | folhas | verificações |
+|---|---|---|---|---|---|
+| `stewart_arnold` (separador trifásico) | SEP | dimensionamento | 18 | 12 | 2 |
+| `stewart_arnold_2f` (knockout bifásico) | VKO | dimensionamento | 9 | 9 | 1 |
+| `arnold_electrostatic` (tratador) | TRE | dimensionamento | 11 | 10 | 2 |
+| `moran` (bomba centrífuga) | BMB | dimensionamento | 8 | 9 | 2 |
+| `saari_lmtd` (trocador) | TRC | dimensionamento | 23 | 14 | 1 |
+| `pinch_kemp` (Análise Pinch) | PCH | **metas** | 5 | 7 | 1 |
 
-Os três vasos são a família de Stewart & Arnold, e foi por ela que a generalização
-começou: compartilham `constraints.jl`, o contrato de `VesselConstraints` e a estrutura
-de blocos A/B/C. O que muda entre eles é conteúdo, que é exatamente o que o
-`MemorialSpec` existe para carregar.
+**Os seis módulos do catálogo que dimensionam ou calculam alvos têm memorial.** O único
+box sem memorial é o **separador dinâmico** (Song 2023), que monitora no tempo e não
+produz `SizingResult` — ver §12.4.
 
-Os três restantes **não** foram documentados, e o motivo é a regra dura do projeto —
-*nenhuma equação, referência ou número pode ser inventado*:
+### 12.1 A proveniência de cada um, e como ela foi fechada
 
-**Bomba (`moran`).** Onze das quinze linhas do rastro saem com `"—"` no lugar da
-equação, porque a fonte é um artigo de revista (Moran, *CEP*, 2016) cuja exposição é em
-prosa, sem equações numeradas. As quatro que têm citação real (`Antoine`, `§ regime`,
-`Colebrook`, `Darcy`) são as correlações clássicas, que o artigo usa mas não inventa.
-Documentar as outras onze exigiria ou numerá-las com uma numeração que a fonte não tem —
-e o número numa folha de memorial é uma **promessa de onde conferir** —, ou ler o artigo
-para descobrir a estrutura dele. As fórmulas já estão no campo `formula` de cada
-`TraceEntry`; o que falta é a proveniência, não a matemática.
+Nenhuma citação foi inventada. Onde a fonte numera equação, cita-se o número; onde não
+numera, cita-se a localização real (seção, subseção, tabela, figura, página); e onde a
+relação **não é da fonte**, isso está escrito.
 
-**Trocador (`saari_lmtd`).** São **trinta** equações citadas, repartidas entre Saari
-(LUT, caps. 3–6) e o método de Bell-Delaware na forma de Branan (`Br. 2-13` a
-`Br. 2-29`). Transcrever trinta notações e suas variáveis com fidelidade é um trabalho do
-mesmo tamanho do que este passo inteiro fez pelo separador, e feito às pressas é
-exatamente onde nasceria uma citação errada — o tipo de defeito que a bijeção pega no
-código mas que ninguém pega no *texto* da notação.
+| método | fonte | forma da citação |
+|---|---|---|
+| SEP | Alves & Komesu (2025) sobre Stewart & Arnold (2008) | `Eq. 9–24`, `Fig. 3`, e `Geom.` para o que não consta |
+| VKO | Stewart & Arnold (2008), cap. 3 | `Eq. 3.x`, `§3.7`, `§3.8.4`, `§3.8.5` |
+| TRE | Stewart & Arnold (2008), §4.7–4.9.6 | `Eq. 4.x`, `§4.9.1`, `§4.9.2` |
+| BMB | Moran (CEP, dez/2016), pp. 38–44 | `Eq. 1` a `Eq. 7`, e `Hagen` para o acréscimo |
+| TRC | Saari (LUT) **+** Branan (2012), cap. 2 | `Eq. 4.x`/`§x.y`/`Fig. 4.x` (Saari) e `Br. 2-xx`/`Tab. 4.1` (Branan) |
+| PCH | Kemp (2007), 2ª ed. | `Tab. 2.2`, `§2.1.4`, `§3.7.3`, `§3.9.1`, `p. 24` |
 
-**Análise Pinch (`pinch_kemp`).** Não dimensiona equipamento: devolve alvos de energia de
-uma **rede**. As folhas de "Resultados do dimensionamento" e "Verificações" não são a
-forma certa para ele, e a folha 02 teria de tabelar N correntes em vez de um conjunto
-fixo de entradas. Precisa de uma variante de estrutura documental, não de um
-`memorial_spec` a mais. O mesmo vale para o separador dinâmico, que monitora no tempo.
+As duas numerações do TRC convivem e são distinguíveis à vista, de propósito: o revisor
+precisa saber em qual dos dois livros procurar.
 
-Para os três, a infra está pronta e o caminho é o mesmo: escrever
-`src/memorial_specs/<metodo>.jl`. `test/memorial.jl` é dirigido por tabela sobre o
-registro, então qualquer um deles entra na bateria inteira ao ser declarado — sem editar
-o teste.
+### 12.2 O que mudou no SOLVER para fechar a proveniência
+
+Documentar obrigou a corrigir atribuições no motor. Em nenhum caso mudou um número; em
+todos, mudou **para onde o documento manda o revisor olhar**.
+
+| método | antes | agora | por quê |
+|---|---|---|---|
+| BMB | `Re`, `Pv`, `NPSH`, `P` saíam como `—` | `Eq. 3`, `Eq. 5`, `Eq. 6`, `Eq. 7` | têm número na fonte; o travessão escondia a proveniência |
+| BMB | `h_atrito` saía como `Darcy` | `Eq. 1/4` | nomeava a correlação do trecho reto e calava a dos acessórios, que no recalque costuma ser a maior |
+| BMB | `f` saía como `Colebrook` | `Eq. 2` no turbulento; `Hagen` segue no laminar | a assimetria **é** a proveniência: `f = 64/Re` não consta do artigo |
+| PCH | `§3.9.1 p. 8` (11 caracteres) | `§3.9.1`, com a página na coluna livre | estourava a coluna de 10 e saía `§3.9.1 p. 8QHmin` no `.txt` |
+| todos os vasos | `Lss` sem linha de rastro | `Eq. 15`/`Eq. 23`/`§3.8.4`/`§4.9.1` | era o único resultado sem passo intermediário |
+| todos os vasos | teto de decantação sem veredito | `:ok`/`:erro` por `_sob_o_teto` | o motor impunha `d ≤ d_max` e não o declarava |
+| PCH | balanço de entalpia rastreado e não julgado | `:ok`/`:erro` por `_balanco_fecha` | um número sem o critério ao lado obriga quem confere a saber de cor |
+
+O que **continua** em `—` continua por decisão, e o documento diz qual é qual: a
+velocidade de uma bomba é continuidade, a carga estática é aritmética de cotas, a soma
+`H` é soma, e o diâmetro escolhido é critério de projeto. A fonte não as numera, então
+elas não entram na folha de fórmulas — o travessão ali é a afirmação de que **não há
+onde conferir**.
+
+### 12.3 O Pinch não é um memorial de equipamento, e a arquitetura acompanhou
+
+A Análise Pinch devolve **alvos termodinâmicos de uma rede**, não um equipamento. Forçá-la
+na estrutura dos outros cinco prometeria um casco que ninguém calculou.
+
+O contrato ganhou `natureza`:
+
+* `:dimensionamento` (default) — a seção de resultados se chama
+  "RESULTADOS DO DIMENSIONAMENTO";
+* `:metas` — chama-se **"METAS DE ENERGIA DA REDE"**, e o resumo da folha de rosto,
+  "RESUMO DAS METAS".
+
+E `verificacoes` passou a poder ser **vazia**, com a seção sumindo do documento quando é.
+A regra é a mesma que já valia por linha: *uma VERIFICAÇÃO existe quando o motor emite um
+veredito, e não existe quando não emite*. Imprimir a seção com travessões se leria como
+conferência feita.
+
+O Pinch acabou com **uma** verificação, e ela é genuína: o balanço de entalpia da p. 24,
+`QCmin − QHmin = ΣQ_quente − ΣQ_frio`. Não é tautologia — o lado esquerdo vem da cascata
+de calor e o direito da soma corrente a corrente, por rotas independentes —, e é o que
+pega erro de dado e erro de cascata. Ela já era rastreada; passou a ser julgada.
+
+### 12.4 O que segue sem memorial, e por quê
+
+O **separador dinâmico** (`song_dinamico`, Song et al. 2023). Ele monitora no tempo: não
+devolve `SizingResult`, não tem rastro de cálculo no formato `CalcTrace`, e a rota do
+memorial o recusa explicitamente com 404 e a explicação. Um memorial dele seria um
+terceiro tipo de documento — um relatório de simulação, com séries temporais em vez de
+equações resolvidas uma vez —, e a estrutura para isso ainda não existe. A `natureza`
+do contrato é o lugar por onde ele entraria.
+
+### 12.5 Verificação da cobertura
+
+`test/memorial.jl` é dirigido por tabela sobre o **registro**: todo método que declare
+`memorial_spec` entra na bateria inteira sem editar o teste. Ele roda o método pelo
+caminho genérico do contrato (`case_input` → `size_equipment`), e o Pinch entrou com o
+caso de referência do livro, porque as correntes de uma rede são um grupo repetível e os
+defaults não descrevem nenhuma.
+
+`app/smoke.jl` acrescentou a guarda do **artefato**: todo método com memorial tem de
+EMITIR o documento — folhas montadas, zero token por resolver, quadro de revisões só na
+de rosto, seções obrigatórias presentes, título de resultados conforme a natureza, e
+seção de verificações existindo se e somente se há verificação. A lista de casos é
+comparada com o registro, para que um método novo não fique sem documento emitido em
+teste nenhum.

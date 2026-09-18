@@ -144,11 +144,28 @@ chama de personalização por equipamento — a sigla entra no número do docume
 relação à fonte publicada aparecem para quem assina. Num método que reproduz um artigo
 com erratas — e o separador trifásico é um — esconder isso no comentário do código seria
 publicar a conta sem a ressalva.
+
+`natureza` diz **que tipo de documento é este**, e existe porque nem todo módulo do
+programa dimensiona um equipamento:
+
+* `:dimensionamento` (o default) — o documento descreve um equipamento a construir. A
+  seção de resultados se chama "RESULTADOS DO DIMENSIONAMENTO";
+* `:metas` — o documento descreve **alvos de um processo**, não um equipamento. É o caso
+  da Análise Pinch, que devolve a utilidade quente e a fria mínimas de uma REDE de
+  correntes e a temperatura de pinch: não há casco, não há diâmetro, e chamar a seção de
+  "resultados do dimensionamento" prometeria um equipamento que ninguém dimensionou.
+
+`verificacoes` **pode ser vazia**, e a seção some do documento quando é. A regra é a
+mesma que vale para cada linha: uma VERIFICAÇÃO existe quando o motor de fato emite um
+veredito, e não existe quando não emite. Um módulo que só calcule metas pode
+legitimamente não ter nenhuma — o que não pode é imprimir a seção com travessões, que se
+lê como conferência feita.
 """
 struct MemorialSpec
     sigla::String                       # "SEP"
     equipamento::String                 # "SEPARADOR TRIFÁSICO"
     titulo::String                      # "DIMENSIONAMENTO DE SEPARADOR TRIFÁSICO"
+    natureza::Symbol                    # :dimensionamento | :metas
     premissas::Vector{PremissaDoc}
     hipoteses::Vector{String}
     equacoes::Vector{EquacaoDoc}
@@ -157,14 +174,33 @@ struct MemorialSpec
     conclusao::String
 end
 
-MemorialSpec(; sigla, equipamento, titulo, premissas = PremissaDoc[],
+MemorialSpec(; sigla, equipamento, titulo, natureza::Symbol = :dimensionamento,
+               premissas = PremissaDoc[],
                hipoteses = String[], equacoes = EquacaoDoc[],
                resultados = ResultadoDoc[], verificacoes = VerificacaoDoc[],
                conclusao = "") =
-    MemorialSpec(String(sigla), String(equipamento), String(titulo),
+    MemorialSpec(String(sigla), String(equipamento), String(titulo), natureza,
                  collect(PremissaDoc, premissas), collect(String, hipoteses),
                  collect(EquacaoDoc, equacoes), collect(ResultadoDoc, resultados),
                  collect(VerificacaoDoc, verificacoes), String(conclusao))
+
+"""
+    titulo_resultados(spec) -> String
+
+Como se chama a seção de resultados deste documento — ver `natureza` em
+[`MemorialSpec`](@ref).
+"""
+titulo_resultados(s::MemorialSpec) =
+    s.natureza === :metas ? "METAS DE ENERGIA DA REDE" : "RESULTADOS DO DIMENSIONAMENTO"
+
+"""
+    titulo_resumo(spec) -> String
+
+Como se chama o resumo da folha de rosto. Um documento de metas não resume um
+"dimensionamento" — resume as metas que calculou.
+"""
+titulo_resumo(s::MemorialSpec) =
+    s.natureza === :metas ? "RESUMO DAS METAS" : "RESUMO DO DIMENSIONAMENTO"
 
 # ---------------------------------------------------------------------------
 # O hook

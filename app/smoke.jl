@@ -390,6 +390,87 @@ end
         @test_throws ErrorException A.banda("AC")
     end
 
+    @testset "TODO método com memorial emite o documento inteiro" begin
+        # A bateria de `test/memorial.jl` verifica o CONTRATO (bijeção equação↔rastro,
+        # resultados e verificações casando com os campos do motor). Esta aqui verifica o
+        # ARTEFATO: que o documento de fato se monta, com as folhas todas, sem token por
+        # resolver e sem seção prometida em branco. Um `memorial_spec` pode estar
+        # perfeito e o documento não sair — foi assim que os quatro defeitos de
+        # composição de §11.2 chegaram até a conferência visual.
+        casos = ((:stewart_arnold,      "exemplo_alves_komesu.toml",
+                  FPSOSiz.Separator(), FPSOSiz.StewartArnold()),
+                 (:stewart_arnold_2f,   "exemplo_knockout.toml",
+                  FPSOSiz.KnockoutDrum(), FPSOSiz.StewartArnoldTwoPhase()),
+                 (:arnold_electrostatic, "exemplo_tratador.toml",
+                  FPSOSiz.ElectrostaticTreater(), FPSOSiz.ArnoldElectrostatic()),
+                 (:moran,               "exemplo_bomba.toml",
+                  FPSOSiz.CentrifugalPump(), FPSOSiz.MoranPumpSizing()),
+                 (:saari_lmtd,          "exemplo_trocador.toml",
+                  FPSOSiz.ShellTubeExchanger(), FPSOSiz.SaariLMTD()),
+                 (:pinch_kemp,          "exemplo_pinch_kemp.toml",
+                  FPSOSiz.PinchTarget(), FPSOSiz.PinchKemp()))
+
+        # A lista acima não pode envelhecer em silêncio: se um método novo declarar
+        # memorial e ninguém o acrescentar aqui, o documento dele nunca é emitido em
+        # teste nenhum.
+        com_memorial = Set(FPSOSiz.method_id(m) for eq in FPSOSiz.equipments()
+                           for m in FPSOSiz.methods_for(eq) if FPSOSiz.tem_memorial(m))
+        @test Set(c[1] for c in casos) == com_memorial
+
+        for (id, arquivo, eq, met) in casos
+            @testset "$id" begin
+                st = A.AppState(; case_file = arquivo, equipamento = eq, metodo = met)
+                A.dimensionar!(st)
+                @test st.status_ok
+
+                doc = A.memorial_documento(st)
+                spec = FPSOSiz.memorial_spec(met)
+
+                # Token não resolvido é erro de emissão, nunca célula vazia.
+                @test !occursin("{{", doc)
+                # O bloco de título se repete em todas as folhas; o quadro de revisões,
+                # só na de rosto.
+                folhas = count(_ -> true, eachmatch(r"<article class=\"folha\">", doc))
+                @test folhas >= 4
+                @test count(_ -> true, eachmatch(r"class=\"bloco-titulo\"", doc)) == folhas
+                @test count(_ -> true, eachmatch(r"class=\"quadro-revisoes\"", doc)) == 1
+                @test occursin("MC-SENAI-$(spec.sigla)-ENG-001-0", doc)
+
+                # As seções obrigatórias, e o título de resultados conforme a NATUREZA do
+                # documento: um módulo de metas não promete "dimensionamento".
+                for sec in ("PREMISSAS DE PROJETO", "DADOS DE ENTRADA",
+                            "HIPÓTESES E LIMITAÇÕES", "DESENVOLVIMENTO DO CÁLCULO",
+                            "CONCLUSÃO", FPSOSiz.titulo_resultados(spec))
+                    @test occursin(sec, doc)
+                end
+                if spec.natureza === :metas
+                    @test !occursin("RESULTADOS DO DIMENSIONAMENTO", doc)
+                end
+
+                # A seção de VERIFICAÇÕES existe se e somente se há verificação — e cada
+                # uma tem de trazer veredito REAL, nunca travessão.
+                campos = A.campos_resultado(st)
+                @test occursin("VERIFICAÇÕES", doc) == !isempty(spec.verificacoes)
+                for v in spec.verificacoes
+                    f = A._campo(campos, v.campo)
+                    @test f !== nothing
+                    @test A._situacao(f) in ("ATENDE", "NÃO ATENDE")
+                end
+
+                # Toda equação documentada que o motor RESOLVEU tem de aparecer com o seu
+                # valor; a que ele não resolveu (o caminho alternativo não tomado) sai em
+                # travessão, e isso é correto.
+                tr = A.rastro_governante(st)
+                @test tr !== nothing
+                resolvidas = Set(FPSOSiz.equacoes_do_rastro(tr))
+                for e in spec.equacoes
+                    valor = A._valor_rastro(tr, e.numero)
+                    @test (e.numero in resolvidas) == (valor != "—")
+                end
+            end
+        end
+    end
+
     @testset "a folha de fórmulas nunca parte um bloco ao meio" begin
         # A regra é do handoff, e o que ela protege é concreto: com contagem fixa de
         # quatro blocos por folha, o quarto era cortado pela borda inferior — a folha
@@ -940,7 +1021,13 @@ end
                 ("exemplo_bomba.toml", FPSOSiz.CentrifugalPump(),
                  FPSOSiz.MoranPumpSizing()),
                 ("exemplo_trocador.toml", FPSOSiz.ShellTubeExchanger(),
-                 FPSOSiz.SaariLMTD()))
+                 FPSOSiz.SaariLMTD()),
+                # O pinch estava FORA desta lista, e é onde o defeito se escondeu: ele
+                # citava "§3.9.1 p. 8" (11 caracteres) numa coluna de 10, e o `.txt` saía
+                # com `§3.9.1 p. 8QHmin` — a citação colada no nome da variável. Uma
+                # guarda que cobre cinco dos seis métodos é uma guarda que passa por não
+                # olhar.
+                ("exemplo_pinch_kemp.toml", FPSOSiz.PinchTarget(), FPSOSiz.PinchKemp()))
 
             st = A.AppState(; case_file = arquivo, equipamento = eq, metodo = met)
             A.dimensionar!(st)

@@ -109,6 +109,7 @@ include("memorial_specs/saari_lmtd.jl")
 # cita à vontade. Juntar os dois arquivos apagaria a única garantia estrutural que o
 # passo anterior deixou, e `test/pinch.jl` verifica que ela continua de pé.
 include("analysis/pinch_method.jl")
+include("memorial_specs/pinch_kemp.jl")
 
 # Adaptador do módulo dinâmico: a ponte entre o TOML (SI) e a física isolada de
 # `dynamics/`. Entra AQUI — depois de `config.jl`, `interfaces.jl` e do registro — porque
@@ -147,7 +148,7 @@ export size_single, sweep_row, ceiling_mechanism_of, grid_hint, trace_selection!
 # --- a camada documental (src/memorial.jl)
 export MemorialSpec, PremissaDoc, EquacaoDoc, VariavelDoc, ResultadoDoc, VerificacaoDoc
 export memorial_spec, tem_memorial, equacoes_do_rastro, equacoes_citadas
-export entradas_do_rastro, SEM_EQUACAO
+export entradas_do_rastro, SEM_EQUACAO, titulo_resultados, titulo_resumo
 
 # --- vasos registrados
 export AbstractVesselMethod, Separator, StewartArnold, VesselConstraints

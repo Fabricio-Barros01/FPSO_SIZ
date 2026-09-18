@@ -424,8 +424,46 @@ function result_fields(m::PinchKemp, r)
         ResultField("Carga quente disponível ΣQ", der(r, :q_hot); unit = "kW",
                     digits = 1),
         ResultField("Carga fria requerida ΣQ", der(r, :q_cold); unit = "kW", digits = 1),
+        ResultField("Resíduo do balanço de entalpia", _residuo_balanco(r); unit = "kW",
+                    digits = 3, status = _balanco_fecha(r, tem)),
         ResultField("Cenário governante", txt(_driver_case(r))),
     ]
+end
+
+"""
+    _residuo_balanco(r) -> Float64
+
+`(QCmin − QHmin) − (ΣQ_quente − ΣQ_frio)`, que tem de ser **nulo em qualquer ΔTmin**.
+
+É a conferência cruzada da p. 24 do livro, e é genuína: os dois lados vêm por rotas
+independentes. `QHmin` e `QCmin` saem da **cascata de calor** — o fluxo mais negativo
+levado a zero no topo, e o que sobra no pé —, enquanto `ΣQ_quente` e `ΣQ_frio` saem de
+somar as cargas corrente a corrente. Um erro de dado numa corrente, ou um erro na
+montagem da cascata, quebra a igualdade; o próprio texto do método a chama de "invariante
+barato que pega erro de dado e erro de cascata".
+
+Até aqui ela era **rastreada e não julgada**: aparecia como linha do memorial com o valor,
+e nada dizia se aquele valor era aceitável. Um número no documento sem o critério ao lado
+obriga quem confere a saber de cor qual deveria ser.
+"""
+function _residuo_balanco(r)
+    (r.feasible && isfinite(r.x)) || return NaN
+    return (der(r, :qcmin) - r.y) - (der(r, :q_hot) - der(r, :q_cold))
+end
+
+"""
+    _balanco_fecha(r, tem) -> Symbol
+
+O ✓/✗ do resíduo do balanço. A tolerância é **relativa à escala das cargas** da rede, e
+não absoluta: um resíduo de 1e-9 kW é ruído de ponto flutuante numa rede de 10 kW e numa
+de 10 MW, mas 1e-9 kW absoluto seria exigência impossível na segunda.
+"""
+function _balanco_fecha(r, tem::Bool)
+    tem || return :neutro
+    res = _residuo_balanco(r)
+    isfinite(res) || return :neutro
+    escala = max(1.0, abs(der(r, :q_hot)) + abs(der(r, :q_cold)))
+    return abs(res) <= 1e-6 * escala ? :ok : :erro
 end
 
 sweep_columns(::PinchKemp) = [
@@ -454,20 +492,25 @@ function trace_selection!(m::PinchKemp, tr::CalcTrace, best, p::AbstractDict)
     trace!(tr, :selection, "§3.7.3", "ΔTmin",
            "declarado pelo projetista ($(p[:dt_min_alvo]) °C); não há troca " *
            "energia × capital modelada, logo não há ótimo a procurar", best.x, "°C")
-    trace!(tr, :selection, "§3.9.1 p. 8", "QHmin", "o fluxo mais negativo da cascata, " *
+    # A citação é a SEÇÃO, e a página vai na forma — que é a última coluna e não tem
+    # largura fixa. "§3.9.1 p. 8" tem 11 caracteres e `linha_memorial` alinha a coluna de
+    # equação em 10: no `.txt` que vai anexo ao relatório a citação colava no nome da
+    # variável (`§3.9.1 p. 8QHmin`). A proveniência não se perde — muda de coluna.
+    trace!(tr, :selection, "§3.9.1", "QHmin", "(p. 8) o fluxo mais negativo da cascata, " *
            "levado a zero no topo", best.y, "kW")
-    trace!(tr, :selection, "§3.9.1 p. 9", "QCmin", "o que sobra no pé da cascata factível",
+    trace!(tr, :selection, "§3.9.1", "QCmin",
+           "(p. 9) o que sobra no pé da cascata factível",
            get(d, :qcmin, NaN), "kW")
     trace!(tr, :selection, "p. 24", "QCmin − QHmin",
            "balanço de entalpia: tem de igualar ΣQ_quente − ΣQ_frio " *
            "(= $(round(get(d, :q_hot, NaN) - get(d, :q_cold, NaN), digits = 3)) kW), " *
            "em qualquer ΔTmin",
            get(d, :qcmin, NaN) - best.y, "kW")
-    trace!(tr, :selection, "§3.9.1 p. 9", "T de pinch (deslocada)",
+    trace!(tr, :selection, "§3.9.1", "T de pinch (deslocada)",
            get(d, :threshold, 0.0) == 1.0 && !isfinite(get(d, :t_pinch_deslocada, NaN)) ?
                "problema-limiar (§3.3.2, p. 54): uma das utilidades zerou e não há " *
                "pinch interior" :
-               "fronteira em que o fluxo líquido é nulo",
+               "(p. 9) fronteira em que o fluxo líquido é nulo",
            get(d, :t_pinch_deslocada, NaN), "°C")
     return nothing
 end

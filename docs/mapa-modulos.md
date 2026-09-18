@@ -59,6 +59,7 @@ escolhe-se o x admissível que minimiza objective(…)
 | `slenderness_equation` | método | `"—"` | linha da seleção no rastro |
 | `cross_section` | método | vazio | desenho, camadas de fase |
 | **`memorial_spec`** | **método** | **`nothing`** | **documento A4** |
+| **`lss_trace`** | **método de vaso** | **`SEM_EQUACAO`** | **qual equação deu o `Lss`** |
 
 `requirement`/`governing_of`/`ceiling_of` despacham no **tipo das restrições**, não no do
 método: quem produzir um `VesselConstraints` ganha varredura, `Lss`, esbeltez, banda e
@@ -86,7 +87,7 @@ construção — e não por comparação.
 
 ```
 src/memorial.jl                      contrato: MemorialSpec + os cinco descritores
-src/memorial_specs/stewart_arnold.jl conteúdo do separador trifásico
+src/memorial_specs/*.jl              conteúdo de CADA método (seis arquivos)
 app/src/memorial/documento.jl        folha A4, bloco de título, tokens, paginação
 app/src/memorial/folhas.jl           rosto · premissas · fórmulas · resultados · figuras
 app/public/memorial.css              geometria e tipografia de impressão
@@ -173,3 +174,41 @@ pelo nome, e `app/smoke.jl` tem duas guardas que quebram se alguém tentar.
 | tela ↔ documento | `app/smoke.jl` | o PDF mostrar um vaso e a tela, outro |
 | nenhuma URL remota nos assets | `app/smoke.jl` | a tela abrir sem fonte, ou o 3D não montar, offline |
 | atributos 3D ↔ `geometry_from` | `app/smoke.jl` | o 3D e a elevação mostrarem vasos diferentes |
+
+---
+
+## 8. Memoriais por módulo
+
+Seis dos sete boxes têm memorial de cálculo documental. A infra é compartilhada; o
+conteúdo é de cada método, num arquivo por método em `src/memorial_specs/`.
+
+| box | sigla | natureza | fonte citada |
+|---|---|---|---|
+| `separador-3f` | SEP | dimensionamento | Alves & Komesu (2025) / Stewart & Arnold (2008) |
+| `knockout-2f` | VKO | dimensionamento | Stewart & Arnold (2008), cap. 3 |
+| `vaso-eletrostatico` | TRE | dimensionamento | Stewart & Arnold (2008), §4.7–4.9.6 |
+| `bomba-centrifuga` | BMB | dimensionamento | Moran (CEP, 2016) |
+| `trocador-calor` | TRC | dimensionamento | Saari (LUT) + Branan (2012) |
+| `analise-pinch` | PCH | **metas** | Kemp (2007) |
+| `controle-separador` | — | — | não emite: monitora no tempo, não dimensiona |
+
+**`natureza`** distingue os dois tipos de documento. `:dimensionamento` descreve um
+equipamento a construir; `:metas` descreve alvos de um processo — é o Pinch, cuja folha
+de resultados se chama "METAS DE ENERGIA DA REDE" porque não há casco a prometer. Ver
+`docs/validacao/08-memorial.md` §12.3.
+
+### A regra das citações
+
+| situação | o que se cita | exemplo |
+|---|---|---|
+| a fonte numera a equação | o número | `Eq. 14`, `Br. 2-18` |
+| a fonte não numera, mas localiza | seção, tabela, figura ou página | `§3.8.4`, `Tab. 2.2`, `Fig. 3`, `p. 24` |
+| a relação **não é da fonte** | o nome, **nunca** um número | `Hagen`, `Geom.` |
+| não é equação (continuidade, aritmética, critério de projeto) | `SEM_EQUACAO` (`—`) | `v = Q/A`, `H = h_est + h_atrito` |
+
+A última linha é decisão, não omissão: o travessão afirma que **não há onde conferir**, e
+a folha de fórmulas não imprime a linha. Inventar um número de equação para preenchê-la
+mandaria o revisor procurar na fonte algo que ela não tem.
+
+**Toda citação cabe em 10 caracteres**, porque `linha_memorial` alinha essa coluna no
+`.txt` exportado. `test/memorial.jl` e `app/smoke.jl` guardam os dois lados.

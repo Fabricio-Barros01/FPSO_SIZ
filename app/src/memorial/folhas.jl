@@ -107,7 +107,7 @@ function folha_rosto(spec::FPSOSiz.MemorialSpec, campos)
                     ["Data de emissão", "{{doc.data}}", ""],
                     ["Projeto", "{{projeto.nome}}", ""],
                     ["Programa emissor", "FPSO_Siz", ""]]),
-        secao(2, "RESUMO DO DIMENSIONAMENTO"),
+        secao(2, FPSOSiz.titulo_resumo(spec)),
         tabela_doc([("A:J", "GRANDEZA", "esq"), ("K:S", "VALOR", "dir"),
                     ("T:AB", "UNIDADE", "centro")], linhas),
         "<p class=\"aviso\">Este resumo repete, sem recalcular, os campos da folha de " *
@@ -285,16 +285,23 @@ function folha_resultados(spec::FPSOSiz.MemorialSpec, campos)
                 "<b class=\"$classe\">" * sit * "</b>"]
     end
 
-    return Folha(string(
-        secao(1, "RESULTADOS DO DIMENSIONAMENTO"),
-        tabela_doc([("A:J", "GRANDEZA CALCULADA", "esq"), ("K:N", "SÍMBOLO", "centro"),
-                    ("O:S", "VALOR", "dir"), ("T:V", "UNIDADE", "centro"),
-                    ("W:AB", "EQUAÇÃO", "centro")], res),
+    # A seção de VERIFICAÇÕES só existe quando há verificação. Imprimi-la vazia, ou com
+    # travessões, leria-se como conferência feita — e a numeração das seções seguintes
+    # acompanha, para que a conclusão não vire "3." num documento que tem duas seções.
+    tem_ver = !isempty(ver)
+    bloco_ver = tem_ver ? string(
         secao(2, "VERIFICAÇÕES"),
         tabela_doc([("A:J", "VERIFICAÇÃO", "esq"), ("K:N", "CALCULADO", "dir"),
                     ("O:S", "CRITÉRIO / LIMITE", "dir"), ("T:V", "UNIDADE", "centro"),
-                    ("W:AB", "SITUAÇÃO", "centro")], ver),
-        secao(3, "CONCLUSÃO"),
+                    ("W:AB", "SITUAÇÃO", "centro")], ver)) : ""
+
+    return Folha(string(
+        secao(1, FPSOSiz.titulo_resultados(spec)),
+        tabela_doc([("A:J", "GRANDEZA CALCULADA", "esq"), ("K:N", "SÍMBOLO", "centro"),
+                    ("O:S", "VALOR", "dir"), ("T:V", "UNIDADE", "centro"),
+                    ("W:AB", "EQUAÇÃO", "centro")], res),
+        bloco_ver,
+        secao(tem_ver ? 3 : 2, "CONCLUSÃO"),
         "<div class=\"conclusao\"><p>", escapa(spec.conclusao), "</p></div>"))
 end
 

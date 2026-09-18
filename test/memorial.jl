@@ -33,8 +33,21 @@ método com memorial é entrar nesta bateria; não há como escapar dela por omi
 Os defaults de corrente e de método, que é o caso que o programa dimensiona ao abrir a
 tela e clicar em Dimensionar — logo, o rastro que o memorial de fato imprime.
 """
-_valores(m) = merge(FPSOSiz.defaults(FPSOSiz.stream_parameters(m)),
-                    FPSOSiz.defaults(FPSOSiz.parameters(m)))
+const _CASO_EXEMPLO = Dict{Symbol,String}(
+    # A Análise Pinch descreve uma REDE: as correntes são um grupo repetível, e os
+    # defaults dos descritores não descrevem nenhuma ("o caso não descreve nenhuma
+    # corrente: não há rede a integrar"). O caso de referência é o exemplo do livro.
+    :pinch_kemp => "exemplo_pinch_kemp.toml")
+
+function _valores(m)
+    arq = get(_CASO_EXEMPLO, FPSOSiz.method_id(m), "")
+    isempty(arq) || return merge(
+        FPSOSiz.defaults(FPSOSiz.parameters(m)),
+        Dict{Symbol,Any}(first(FPSOSiz.expand(FPSOSiz.load_case_set(arq);
+                                              max_corners = 8))[2]))
+    return merge(FPSOSiz.defaults(FPSOSiz.stream_parameters(m)),
+                 FPSOSiz.defaults(FPSOSiz.parameters(m)))
+end
 
 """
     _dimensiona(m) -> SizingResult
@@ -78,10 +91,18 @@ const METODOS_COM_MEMORIAL = [m for eq in FPSOSiz.equipments()
                   fieldtypes(FPSOSiz.EquacaoDoc))
 
         # E o `MemorialSpec` só agrega os anteriores.
-        permitidos = (String, Vector{String}, Vector{FPSOSiz.PremissaDoc},
+        permitidos = (String, Symbol, Vector{String}, Vector{FPSOSiz.PremissaDoc},
                       Vector{FPSOSiz.EquacaoDoc}, Vector{FPSOSiz.ResultadoDoc},
                       Vector{FPSOSiz.VerificacaoDoc})
         @test all(ft -> ft in permitidos, fieldtypes(FPSOSiz.MemorialSpec))
+
+        # E a afirmação central, sobre TODOS os tipos de uma vez: nenhum campo é
+        # numérico. `natureza` é `Symbol` — diz que TIPO de documento é, não quanto vale
+        # nada —, e a lista acima a admite sem abrir a porta para um Float64.
+        for T in (FPSOSiz.PremissaDoc, FPSOSiz.VariavelDoc, FPSOSiz.ResultadoDoc,
+                  FPSOSiz.VerificacaoDoc, FPSOSiz.EquacaoDoc, FPSOSiz.MemorialSpec)
+            @test !any(ft -> ft <: Number, fieldtypes(T))
+        end
     end
 
     # -----------------------------------------------------------------------
