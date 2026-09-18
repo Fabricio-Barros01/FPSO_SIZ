@@ -111,11 +111,27 @@ body {
   font-weight: bold;
 }
 
+/*
+ * A faixa do título e os campos do bloco NÃO QUEBRAM LINHA.
+ *
+ * O handoff tabela 11 pt para esta faixa, mas esse corpo pressupõe o escalonamento
+ * global da planilha de referência (69 % numa aba, 66 % noutra) — e este documento é
+ * HTML impresso em A4 sem escala nenhuma, por decisão registrada no cabeçalho de
+ * documento.jl. Em tamanho real, "MEMÓRIA DE CÁLCULO" a 11 pt mede ~45 mm e a banda
+ * G:O tem ~41 mm: o texto quebrava em duas linhas e a segunda era cortada pelo
+ * `overflow: hidden`, num bloco de título que se repete em todas as folhas.
+ *
+ * `nowrap` + o corpo ajustado é a correção honesta: o mesmo texto, no tamanho que
+ * cabe. O alternativo seria alargar a banda, o que desalinharia todas as colunas em
+ * relação à referência.
+ */
+.bloco-titulo > div { white-space: nowrap; }
+
 .bloco-titulo .faixa-titulo {
   justify-content: center;
-  font-size: var(--corpo-titulo);
+  font-size: 9pt;
   font-weight: bold;
-  letter-spacing: .4pt;
+  letter-spacing: .2pt;
 }
 
 /* Os rótulos de 5 pt ficam no TOPO da célula, como na referência: eles etiquetam o
@@ -141,17 +157,21 @@ body {
   font-weight: bold;
 }
 
+/* `SEM ESCALA` numa banda de três colunas estreitas: 6 pt é o que cabe sem quebrar. */
 .bloco-titulo .campo-escala {
   justify-content: center;
-  font-size: 7.5pt;
+  font-size: 6pt;
 }
 
+/* O título do documento é a exceção que PODE quebrar: a banda I:AB é larga e o
+   handoff lhe reserva duas linhas (6–7) justamente para um título longo. */
 .bloco-titulo .campo-titulo {
   justify-content: center;
   text-align: center;
-  font-size: var(--corpo-titulo);
+  font-size: 10pt;
   font-weight: bold;
   line-height: 1.15;
+  white-space: normal;
 }
 
 /* ------------------------------------------------------ faixa de conteúdo */

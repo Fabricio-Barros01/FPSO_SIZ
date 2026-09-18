@@ -172,7 +172,8 @@ projeto é HTML → impressão do navegador → PDF, e aí não há planilha par
 | item | motivo |
 |---|---|
 | escala global de 69 % / 66 % | é o `fitToHeight` de uma planilha; em HTML os corpos tabelados são os tamanhos impressos diretos, e aplicar 69 % sobre eles daria 6,2 pt |
-| "quatro folhas" | são **quatro tipos** de folha; o separador tem 18 equações e a regra de paginação do próprio handoff abre folhas de fórmulas adicionais |
+| "quatro folhas" | são **quatro tipos** de folha; o separador tem 18 equações e a regra de paginação do próprio handoff abre folhas de fórmulas adicionais — são 12 no caso de referência |
+| os corpos de 11 pt do bloco de título | pressupõem o escalonamento global da planilha; em A4 sem escala não cabem na banda. Ver o defeito 1 em §11.2 |
 | XLSX como artefato final | decisão de projeto: HTML→PDF reaproveita as figuras SVG e não exige rasterizador nem dependência nova |
 
 A grade de 28 colunas existe **duas vezes** (em `COLUNAS`, no Julia, e no
@@ -291,10 +292,52 @@ o diâmetro estar escolhido.
 **0 defeitos de física.** Nenhuma equação, referência ou número foi alterado: este passo
 só documenta o que já estava implementado e verificado no [passo 4](04-separador-trifasico.md).
 
-Duas correções de **citação** foram feitas ao escrever o `memorial_spec`, e valem
-registro porque são exatamente o tipo de erro que a bijeção existe para pegar:
+### 11.1 Duas correções de citação, ao escrever o `memorial_spec`
+
+São exatamente o tipo de erro que a bijeção existe para pegar:
 
 1. o volume do casco havia sido citado como saindo da Eq. 24 (a esbeltez) — não sai;
    virou `Geom.`, com a referência dizendo que não consta da fonte;
 2. o diâmetro havia sido citado como saindo das Eq. 14/22 — elas dão o `Leff` exigido;
    o diâmetro sai do **critério de escolha**, que é a Eq. 24 sobre a grade admissível.
+
+### 11.2 Quatro defeitos de composição, achados na conferência visual
+
+Nenhum deles aparece em teste headless: são propriedades do documento **renderizado em
+A4**, e só se veem no papel. Foram encontrados abrindo o memorial no navegador e
+capturando as folhas.
+
+| # | defeito | causa | correção |
+|---|---|---|---|
+| 1 | `MEMÓRIA DE CÁLCULO` quebrava em duas linhas e a segunda era **cortada**, no bloco de título de **todas** as folhas | 11 pt na banda G:O mede ~45 mm; a banda tem ~41 mm. O corpo tabelado no handoff pressupõe o escalonamento global da planilha (69 %), que este documento não reproduz | `white-space: nowrap` no bloco de título e o corpo ajustado (9 pt) |
+| 2 | `SEM ESCALA` idem, na banda Z:AB | mesma causa | 6 pt, sem quebra |
+| 3 | `A DEFINIR` em REVISOR e APROVAÇÃO estourava a coluna | o campo não é "faltou preencher": é emissão inicial **ainda não revisada** | os dois saem em branco — que é o que um quadro de revisões deve mostrar |
+| 4 | O 4º bloco de equação era **cortado pela borda inferior**, saindo sem o `VALOR CALCULADO` | contagem fixa de 4 blocos por folha, mas os blocos não têm a mesma altura (2 variáveis na Eq. 9–11, 7 na Eq. 22) | repartição **por custo** — `paginar_por_custo`, com o custo em linhas de 13,5 pt |
+
+O defeito 4 é o grave: violava a regra do handoff ("um bloco nunca é partido entre
+folhas") justamente no elo que a folha 03 existe para mostrar. `app/smoke.jl` passou a
+guardar o repartidor — nada se perde, nada se reordena, e nenhuma folha com dois ou mais
+blocos estoura o orçamento.
+
+Um quinto ajuste, de conteúdo: o resumo da folha de rosto trazia **duas linhas**
+(o filtro por `highlight || status` é o de `fecho_memorial`, certo para resumir um caso
+numa linha de texto e pobre para uma folha de rosto). Agora traz os oito campos.
+
+Com a repartição por custo o documento do caso de referência passou de **11 para 12
+folhas**: rosto, 2 de premissas/hipóteses, **6** de fórmulas (3 equações cada), 1 de
+resultados e 2 de figuras.
+
+### 11.3 Conferido no navegador
+
+Com o servidor no ar e Firefox headless, sobre `exemplo_alves_komesu.toml`:
+
+* **folha de rosto** — bloco de título completo e sem corte, `folha 1 de 12`, quadro de
+  revisões só aqui, e o resumo com os oito campos batendo com o cartão da tela
+  (6300 mm · 18,59 m · 24,78 m · SR 3,93 · 772 m³ · capacidade de líquido · Fim de vida
+  · 9124 mm);
+* **folha de fórmulas** — três blocos inteiros, cada um com notação em Times itálico,
+  `ONDE:` com as variáveis e unidades, referência, validade e **valor calculado**
+  (`C_D = 1,81403`, `V_t = 0,18933 m/s`, `Re = 26,82240`);
+* **folha de resultados** — a coluna `EQUAÇÃO` amarrando cada valor ao bloco da folha 03,
+  e as verificações com o veredito **real**: `ATENDE` na esbeltez, `—` no teto de
+  decantação (ver §10.1).

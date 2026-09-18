@@ -279,11 +279,19 @@ function quadro_revisoes()
     cab = [("A:B", "Rev."), ("C:R", "DESCRIÇÃO"), ("S", "EXECUTOR"), ("T", "DATA EXEC."),
            ("U", "REVISOR"), ("V", "DATA REV."), ("W:Z", "APROVAÇÃO"),
            ("AA:AB", "DATA APROV.")]
+    # Revisor e aprovação saem EM BRANCO, e não com `A DEFINIR`.
+    #
+    # Não é a mesma coisa que o cliente ou a unidade do bloco de título, onde o dado
+    # existe e ninguém o informou. Aqui o dado não existe: esta é a emissão inicial, ela
+    # ainda não foi revisada nem aprovada, e um quadro de revisões com os campos de
+    # assinatura vazios é exatamente o que ele deve mostrar. Escrever `A DEFINIR` numa
+    # linha de aprovação sugere pendência de preenchimento onde o que há é pendência de
+    # REVISÃO — e, de quebra, não cabe na coluna.
     linha_atual = [("A:B", "{{doc.revisao}}"),
                    ("C:R", "EMISSÃO INICIAL — GERADA POR FPSO_Siz"),
                    ("S", "{{doc.executor}}"), ("T", "{{doc.data}}"),
-                   ("U", "$A_DEFINIR"), ("V", "&nbsp;"),
-                   ("W:Z", "$A_DEFINIR"), ("AA:AB", "&nbsp;")]
+                   ("U", "&nbsp;"), ("V", "&nbsp;"),
+                   ("W:Z", "&nbsp;"), ("AA:AB", "&nbsp;")]
 
     partes = String["<section class=\"quadro-revisoes\">"]
     for (b, t) in cab
@@ -363,8 +371,14 @@ lesse `tabela(cols, linhas)` procuraria a varredura.
 """
 function tabela_doc(colunas, linhas)
     partes = String["<div class=\"tabela\">"]
-    for (b, cab, al) in colunas
-        push!(partes, celula(b, escapa(cab); classe = "th al-$al"))
+    # Cabeçalho SÓ quando há cabeçalho. Os quadros de duas colunas da folha de fórmulas
+    # (rótulo / valor) não têm nenhum, e emitir a linha assim mesmo punha uma faixa
+    # vazia de 13,5 pt acima de cada "REFERÊNCIA DA EQUAÇÃO" — que se lê como célula que
+    # alguém esqueceu de preencher, exatamente o que este documento não pode ter.
+    if any(!isempty(cab) for (_, cab, _) in colunas)
+        for (b, cab, al) in colunas
+            push!(partes, celula(b, escapa(cab); classe = "th al-$al"))
+        end
     end
     for linha in linhas
         for ((b, _, al), valor) in zip(colunas, linha)
@@ -388,6 +402,36 @@ se parte entre páginas sem ficar ilegível.
 paginar(itens, por_folha::Integer) =
     [itens[i:min(i + por_folha - 1, length(itens))]
      for i in 1:por_folha:length(itens)]
+
+"""
+    paginar_por_custo(itens, custo, orcamento) -> Vector{Vector}
+
+Reparte os itens em folhas por **altura estimada**, e não por contagem fixa.
+
+É o que o handoff prescreve — *"contar linhas antes de escrever; ao estourar a faixa de
+conteúdo, abrir nova planilha"* — e é preciso porque os blocos de equação não têm todos
+a mesma altura: o da Eq. 9–11 define duas variáveis e o da Eq. 22 define sete, e a
+diferença entre eles é maior que o que sobra no pé da folha.
+
+Com contagem fixa de quatro por folha o quarto bloco era cortado pela borda inferior:
+a folha saía com "VALIDADE / CONDIÇÃO" pela metade e sem o valor calculado, que é
+justamente o elo que a folha existe para mostrar. Um item sozinho maior que o orçamento
+ganha a sua própria folha em vez de sumir.
+"""
+function paginar_por_custo(itens, custo, orcamento::Real)
+    folhas, atual, soma = Vector{eltype(itens)}[], eltype(itens)[], 0.0
+    for it in itens
+        c = custo(it)
+        if !isempty(atual) && soma + c > orcamento
+            push!(folhas, atual)
+            atual, soma = eltype(itens)[], 0.0
+        end
+        push!(atual, it)
+        soma += c
+    end
+    isempty(atual) || push!(folhas, atual)
+    return folhas
+end
 
 # ---------------------------------------------------------------------------
 # O documento

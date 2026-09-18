@@ -87,10 +87,14 @@ na montagem. Assim esta folha usa exatamente a mesma via do bloco de título, e 
 que sobre aqui quebra a emissão em vez de sair como célula vazia.
 """
 function folha_rosto(spec::FPSOSiz.MemorialSpec, campos)
-    destaque = filter(f -> f.highlight || f.status !== :neutro, campos)
-    isempty(destaque) && (destaque = campos[1:min(3, length(campos))])
-
-    linhas = [[escapa(f.label), escapa(_valor(f)), escapa(f.unit)] for f in destaque]
+    # TODOS os campos, e não só os de destaque.
+    #
+    # O filtro por `highlight || status !== :neutro` é o que `fecho_memorial` usa para
+    # resumir um caso numa LINHA de texto, e ali ele é certo. Numa folha de rosto ele
+    # deixava de fora o comprimento efetivo, o comprimento real, o volume e a restrição
+    # governante — o resumo ficava com duas linhas e o resto da folha em branco,
+    # escondendo justamente o que quem abre o documento procura primeiro.
+    linhas = [[escapa(f.label), escapa(_valor(f)), escapa(f.unit)] for f in campos]
 
     corpo = string(
         secao(1, "IDENTIFICAÇÃO"),
@@ -211,16 +215,26 @@ function bloco_equacao(eq::FPSOSiz.EquacaoDoc, n::Integer, tr)
 end
 
 """
-    folhas_formulas(spec, tr; por_folha) -> Vector{Folha}
+    folhas_formulas(spec, tr; orcamento) -> Vector{Folha}
 
 As folhas de fórmulas, com os blocos repartidos sem partir nenhum — ver
-[`paginar`](@ref). Quatro por folha é o que o protótipo do handoff mostra e o que cabe
-com a definição de variáveis inteira.
+[`paginar_por_custo`](@ref).
 
-A partir da segunda, o título da seção leva `(cont.)`, como a regra manda.
+O protótipo do handoff mostra quatro blocos por folha, mas ali os quatro têm o mesmo
+tamanho. Os reais não têm: a Eq. 9–11 define duas variáveis e a Eq. 22 define sete, e com
+contagem fixa o último bloco da folha era cortado pela borda — saía sem o valor calculado,
+que é o elo que a folha existe para mostrar.
+
+O custo é medido em linhas de 13,5 pt (a linha útil do handoff): uma base fixa para a
+barra de seção, a faixa da equação, o `ONDE:` e o quadro de três linhas, mais meia linha
+por variável — elas saem em duas colunas. O orçamento foi calibrado contra a folha
+renderizada em A4.
+
+A partir da segunda folha, o título da seção leva `(cont.)`, como a regra manda.
 """
-function folhas_formulas(spec::FPSOSiz.MemorialSpec, tr; por_folha::Int = 4)
-    grupos = paginar(spec.equacoes, por_folha)
+function folhas_formulas(spec::FPSOSiz.MemorialSpec, tr; orcamento::Real = 24)
+    custo(eq) = 5 + ceil(length(eq.variaveis) / 2)
+    grupos = paginar_por_custo(spec.equacoes, custo, orcamento)
     n = 0
     return map(enumerate(grupos)) do (k, grupo)
         blocos = String[]

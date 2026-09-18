@@ -390,6 +390,44 @@ end
         @test_throws ErrorException A.banda("AC")
     end
 
+    @testset "a folha de fórmulas nunca parte um bloco ao meio" begin
+        # A regra é do handoff, e o que ela protege é concreto: com contagem fixa de
+        # quatro blocos por folha, o quarto era cortado pela borda inferior — a folha
+        # saía com "VALIDADE / CONDIÇÃO" pela metade e SEM o valor calculado, que é
+        # justamente o elo que ela existe para mostrar. Os blocos não têm a mesma altura
+        # (duas variáveis na Eq. 9–11, sete na Eq. 22), então a repartição é por custo.
+        custo(n) = 5 + ceil(n / 2)
+
+        @testset "nenhuma folha estoura o orçamento" begin
+            for orcamento in (18, 24, 30)
+                grupos = A.paginar_por_custo([2, 5, 5, 5, 7, 3, 2], custo, orcamento)
+                @test sum(length.(grupos)) == 7          # nada se perde
+                @test vcat(grupos...) == [2, 5, 5, 5, 7, 3, 2]   # nem se reordena
+                for g in grupos
+                    # Um item sozinho pode passar do orçamento — ganha a folha dele em
+                    # vez de sumir. Dois ou mais, nunca.
+                    length(g) == 1 || @test sum(custo.(g)) <= orcamento
+                end
+            end
+        end
+
+        @testset "item maior que o orçamento ganha folha própria, não some" begin
+            grupos = A.paginar_por_custo([40, 2, 2], custo, 10)
+            @test vcat(grupos...) == [40, 2, 2]
+            @test length(first(grupos)) == 1
+        end
+
+        @testset "as 18 equações do separador cabem sem corte" begin
+            spec = FPSOSiz.memorial_spec(FPSOSiz.StewartArnold())
+            c(eq) = 5 + ceil(length(eq.variaveis) / 2)
+            grupos = A.paginar_por_custo(spec.equacoes, c, 24)
+            @test sum(length.(grupos)) == length(spec.equacoes)
+            for g in grupos
+                length(g) == 1 || @test sum(c.(g)) <= 24
+            end
+        end
+    end
+
     @testset "o memorial recusa token não resolvido, nunca célula vazia" begin
         # A regra do handoff, no ponto em que ela é aplicada. Um `{{cliente}}` que
         # ninguém ensinou a resolver não pode virar espaço em branco no documento
