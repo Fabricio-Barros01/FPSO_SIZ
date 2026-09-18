@@ -124,9 +124,28 @@
     bomba não tem seção transversal, e o `<div>` ficaria vazio sem nada denunciar. Quem
     declara o que vai em cada área é o método — ver `figuras` em app/src/desenho.
   -->
-  <section class="coluna equipamento">
-    <h2 id="titulo-figura">—</h2>
+  <section class="coluna equipamento blueprint">
+    <i class="corner tl"></i><i class="corner tr"></i>
+    <i class="corner bl"></i><i class="corner br"></i>
+    <div class="barra-figura">
+      <h2 id="titulo-figura">—</h2>
+      <!--
+        Alterna entre a elevação (que traz as COTAS) e a vista 3D da mesma geometria.
+        Nasce oculto e só aparece quando o método declara um modelo E o navegador tem
+        WebGL — ver `aplicar3d` em app.js. O rótulo é escrito pelo JS porque ele muda
+        conforme a vista corrente.
+      -->
+      <button id="btn-vista" class="btn btn-ghost" type="button" hidden
+              aria-pressed="false">Ver 3D</button>
+    </div>
     <div id="area-principal"></div>
+    <!--
+      O visor 3D fica FORA de `area-principal`, e não é um detalhe de arrumação:
+      `aplicarDesenho` troca os filhos de `area-principal` a cada movimento do cursor, e
+      um `<fpso-3d>` ali dentro seria desconectado e reconectado a cada troca —
+      reinicializando o contexto WebGL inteiro dezenas de vezes por arrasto.
+    -->
+    <div id="area-3d" hidden></div>
 
     <div class="figura-lado">
       <div id="area-secundaria"></div>

@@ -1,19 +1,27 @@
 /*
  * FPSO_Siz — folha de estilo.
  *
+ * Carregada DEPOIS de `ds/styles.css` (ver casca.html): o design system "Industry" traz
+ * os tokens e os componentes, e este arquivo traz o layout deste programa e consome os
+ * tokens dele.
+ *
  * ATENÇÃO: os valores de `:root` abaixo são os mesmos de app/src/formato.jl. A folha de
  * estilo não tem como importar Julia, então a duplicação é inevitável — e por isso é
  * vigiada: `app/smoke.jl` compara os dois lados e falha se divergirem. Ao trocar uma
  * cor, troque nos dois lugares.
+ *
+ * As cores de chrome são tokens do DS (anotadas abaixo); as das fases e dos status NÃO
+ * são, e o porquê está no cabeçalho da paleta em app/src/formato.jl — elas são tinta de
+ * dado, não de interface.
  */
 
 :root {
-  --fundo:       #f9f9f8;
+  --fundo:       #f2f2f3;   /* = --color-bg */
   --painel:      #ffffff;
-  --tinta:       #212327;
-  --tinta-fraca: #6b717a;
-  --linha:       #d6d8db;
-  --destaque:    #1e4fa0;
+  --tinta:       #1d1f20;   /* = --color-text */
+  --tinta-fraca: #5d5d60;   /* = --color-neutral-700 */
+  --linha:       #d4d4d7;   /* = --color-neutral-300 */
+  --destaque:    #416180;   /* = --color-accent-700 */
   --ok:          #16804a;
   --alerta:      #b47b0b;
   --erro:        #ba2929;
@@ -481,3 +489,80 @@ main.dinamico .parametros {
 }
 .graficos-dinamico .grafico svg { width: 100%; height: auto; }
 #resumo-dinamico { margin-bottom: 18px; }
+
+/* ===========================================================================
+ * Adoção do design system "Industry"
+ *
+ * O DS (ds/styles.css) já está carregado quando este arquivo roda. O que segue é a
+ * costura: tipografia do sistema sobre o layout que este programa já tinha, e o
+ * enquadramento "blueprint" nas colunas — moldura de fio de cabelo, cantos quadrados e
+ * as marcas de registro em `+`, sem preenchimento de superfície.
+ *
+ * O que NÃO se adota do DS, e por quê: as cores das fases e dos status. Ver o cabeçalho
+ * da paleta em app/src/formato.jl — o "Industry" é um esquema mono em azul-aço, e
+ * recolorir óleo e água nele apagaria o que essas cores dizem.
+ * =========================================================================== */
+
+body {
+  font-family: var(--font-body, system-ui), system-ui, sans-serif;
+}
+
+h1, h2, h3,
+.topo .equipamento,
+.tabela-varredura th {
+  font-family: var(--font-heading, system-ui), system-ui, sans-serif;
+}
+
+/* O primário é o único objeto sólido do quadro — é a exceção deliberada do sistema. */
+button.primario,
+#btn-dimensionar {
+  background: var(--color-accent, #5980a6);
+  color: #fff;
+  border-color: var(--color-accent, #5980a6);
+  border-radius: 0;
+}
+button.primario:hover,
+#btn-dimensionar:hover { background: var(--color-accent-600, #597ea3); }
+
+/* Foco de teclado tematizado — o sistema proíbe o anel azul padrão do navegador. */
+:focus-visible {
+  outline: 2px solid var(--color-accent, #5980a6);
+  outline-offset: 2px;
+}
+
+/* As colunas viram objetos de wireframe: quadradas, com fio de cabelo e sem fundo. */
+.coluna.blueprint {
+  position: relative;
+  border: 1px solid var(--linha);
+  border-radius: 0;
+  background: transparent;
+}
+
+/* --------------------------------------------------------- barra da figura */
+
+.barra-figura {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------- o visor 3D */
+
+/*
+ * Altura EXPLÍCITA, e não `aspect-ratio` nem `height:100%`: o `<fpso-3d>` mede a si
+ * mesmo com `clientHeight` para dimensionar o renderizador, e um contêiner de altura
+ * indeterminada o faria medir zero — a tela ficaria com um canvas de 0 px, sem erro
+ * nenhum no console.
+ */
+#area-3d {
+  height: 380px;
+  min-height: 240px;
+  border: 1px solid var(--linha);
+  background: var(--painel);
+}
+#area-3d[hidden] { display: none; }
+#area-principal[hidden] { display: none; }
+
+fpso-3d { width: 100%; height: 100%; display: block; cursor: grab; }
+fpso-3d:active { cursor: grabbing; }

@@ -255,6 +255,116 @@ end
         end
     end
 
+    @testset "o design system e o 3D abrem SEM INTERNET" begin
+        # A regra que este bloco protege é a mesma que mantém `Genie.Assets` fora do
+        # projeto: no computador de quem recebe o programa empacotado, um caminho remoto
+        # não falha com erro — ele só não resolve. A tela abre com a fonte errada, ou o
+        # visor 3D não monta, e não há nada no console que diga por quê.
+        publico = A.dir_publico()
+
+        # Comentários FORA da conferência, como já se faz com o HTML e o JS logo abaixo:
+        # o cabeçalho da folha vendorizada documenta justamente qual `@import` remoto foi
+        # substituído, e cita `fonts.googleapis.com` para dizer o que sumiu. Conferir o
+        # arquivo cru faria a guarda falhar por causa da própria explicação dela.
+        sem_comentario_css(t) = replace(t, r"/\*.*?\*/"s => "")
+
+        bruto = read(joinpath(publico, "ds", "styles.css"), String)
+        ds = sem_comentario_css(bruto)
+        # O `@import` do Google Fonts do handoff tem de ter virado `@font-face` local.
+        @test !occursin("fonts.googleapis.com", ds)
+        @test !occursin("@import url('http", ds)
+        @test occursin("@font-face", ds)
+        # E os arquivos que os `@font-face` apontam têm de existir de fato.
+        for m in eachmatch(r"url\((fonts/[^)]+\.woff2)\)", ds)
+            @test isfile(joinpath(publico, "ds", m.captures[1]))
+        end
+        # Nenhuma URL remota em lugar nenhum da folha vendorizada.
+        @test !occursin(r"url\(\s*['\"]?https?://", ds)
+
+        # O visor e os modelos importam `three` pelo mapa de importação, e o mapa aponta
+        # para `/vendor/` — não para um CDN.
+        casca = read(joinpath(publico, "casca.html"), String)
+        @test occursin("importmap", casca)
+        @test occursin("/vendor/three.module.min.js", casca)
+        @test !occursin("cdn.jsdelivr.net", casca)
+        @test !occursin("unpkg.com", casca)
+
+        for arq in ("viewer3d.js", joinpath("models", "separador.js"),
+                    joinpath("vendor", "three.module.min.js"),
+                    joinpath("vendor", "three-addons", "controls", "OrbitControls.js"))
+            @test isfile(joinpath(publico, arq))
+        end
+
+        # Os módulos só podem importar o que o mapa resolve. Um `import` de URL remota
+        # passaria pelos testes de rota (o arquivo existe) e falharia só na máquina do
+        # usuário, offline.
+        for arq in ("viewer3d.js", joinpath("models", "separador.js"))
+            js = read(joinpath(publico, arq), String)
+            for m in eachmatch(r"from\s+'([^']+)'", js)
+                especificador = m.captures[1]
+                @test !startswith(especificador, "http")
+                @test startswith(especificador, "three") ||
+                      startswith(especificador, "./") ||
+                      startswith(especificador, "/")
+            end
+        end
+    end
+
+    @testset "o 3D é dirigido pela geometria calculada, e não promete o que não tem" begin
+        st = A.AppState(; case_file = "exemplo_alves_komesu.toml")
+        A.dimensionar!(st)
+        principal = only(filter(f -> f["area"] == "principal", A.figuras(st)))
+
+        @testset "os números do modelo são os do motor" begin
+            m3 = principal["modelo3d"]
+            @test m3["modelo"] == "separador"
+            at = m3["atributos"]
+            # A MESMA geometria que a elevação SVG desenha — não um segundo cálculo.
+            g = A.geometry_from(st.resultado, st.d_sel, A.camadas_atual(st),
+                                A.beta_atual(st))
+            @test at["d"]    ≈ g.d_m
+            @test at["lss"]  ≈ g.lss_m
+            @test at["leff"] ≈ g.leff_m
+            @test at["beta"] ≈ g.beta
+            # `nivel` sai das camadas que o MÉTODO declara, não de um 0,5 escrito na mão:
+            # é isso que impede o tratador (cheio de líquido) de ganhar céu de gás.
+            @test at["nivel"] ≈ 0.5
+        end
+
+        @testset "a elevação SVG continua existindo — o 3D é acessório" begin
+            # Sem WebGL a tela fica com esta figura, e é ela que vai para o memorial.
+            @test occursin("<svg", principal["svg"])
+        end
+
+        @testset "o tratador é CHEIO: nível 1, sem céu de gás" begin
+            stt = A.AppState(; case_file = "exemplo_tratador.toml",
+                               equipamento = FPSOSiz.ElectrostaticTreater(),
+                               metodo = FPSOSiz.ArnoldElectrostatic())
+            A.dimensionar!(stt)
+            if stt.resultado !== nothing && stt.resultado.feasible
+                p = only(filter(f -> f["area"] == "principal", A.figuras(stt)))
+                @test p["modelo3d"]["modelo"] == "tratador"
+                @test p["modelo3d"]["atributos"]["nivel"] ≈ 1.0
+            end
+        end
+
+        @testset "quem não tem modelo conferido não ganha visor" begin
+            # Bomba e trocador têm arquivo de modelo no handoff, mas não foram
+            # conferidos contra o desenho deles. Prometer um 3D não validado é pior que
+            # não oferecê-lo — `modelo_3d` devolve "" e a figura fica só em SVG.
+            for m in (FPSOSiz.MoranPumpSizing(), FPSOSiz.SaariLMTD(), FPSOSiz.PinchKemp())
+                @test isempty(A.modelo_3d(m))
+            end
+            @test !isempty(A.modelo_3d(FPSOSiz.StewartArnold()))
+        end
+
+        @testset "sem resultado viável, não há modelo a montar" begin
+            vazio = A.AppState(; case_file = "nao-existe-nenhum.toml")
+            p = filter(f -> f["area"] == "principal", A.figuras(vazio))
+            @test isempty(p) || !haskey(only(p), "modelo3d")
+        end
+    end
+
     @testset "a grade do memorial no CSS não divergiu da do Julia" begin
         # As 28 colunas A…AB do handoff existem duas vezes: em `A.COLUNAS` (que põe cada
         # célula na sua banda) e no `grid-template-columns` de memorial.css (que lhes dá
@@ -1498,7 +1608,17 @@ end
         @test occursin("window.__INICIAL__", html)
 
         for (caminho, tipo) in ("/app.css" => "css", "/app.js" => "javascript",
-                                "/senai-cetiqt.webp" => "webp")
+                                "/senai-cetiqt.webp" => "webp",
+                                # O design system, as fontes e o visor 3D: todos SERVIDOS
+                                # DAQUI. Um 404 em qualquer um deles é a tela abrindo sem
+                                # o sistema (ou o visor sem montar) com status 200 na
+                                # página — a falha silenciosa que este arquivo caça.
+                                "/ds/styles.css" => "css",
+                                "/ds/fonts/barlow-400-latin.woff2" => "woff2",
+                                "/vendor/three.module.min.js" => "javascript",
+                                "/vendor/three-addons/controls/OrbitControls.js" => "javascript",
+                                "/viewer3d.js" => "javascript",
+                                "/models/separador.js" => "javascript")
             resp = HTTP.get(base * caminho; status_exception = false)
             @test resp.status == 200
             @test !isempty(resp.body)

@@ -29,9 +29,67 @@ Uma figura: onde vai, como se chama, o SVG e a legenda que a acompanha.
 três amostras de cor (gás, óleo, água) não fazem sentido sozinhas — e não fazem sentido
 nenhum numa bomba, que é por que elas deixaram de estar escritas em `index.html`.
 """
-figura(id, area, titulo, svg; legenda::AbstractString = "") = Dict{String,Any}(
-    "id" => String(id), "area" => String(area), "titulo" => String(titulo),
-    "svg" => svg, "legenda" => legenda)
+function figura(id, area, titulo, svg; legenda::AbstractString = "",
+                modelo3d = nothing)
+    f = Dict{String,Any}("id" => String(id), "area" => String(area),
+                         "titulo" => String(titulo), "svg" => svg,
+                         "legenda" => legenda)
+    modelo3d === nothing || (f["modelo3d"] = modelo3d)
+    return f
+end
+
+"""
+    modelo_3d(m) -> String
+
+Qual modelo o visor 3D constrói para este método — `""` quando não há nenhum.
+
+Despacha no método, como [`figuras`](@ref) logo abaixo, e pela mesma razão: quem sabe
+que um casco horizontal meio cheio com placa vertedora é um separador trifásico é o
+método, não a tela. O visor recebe o nome e constrói; `app.js` nunca o escreve.
+
+O default é `""`, e é o que faz um equipamento sem modelo continuar mostrando só a
+figura SVG em vez de montar um visor vazio. Os três vasos da família Stewart & Arnold
+têm modelo; a bomba e o trocador têm arquivo no handoff mas ainda não foram conferidos
+contra o desenho deles, então seguem sem — prometer um 3D que ninguém validou é pior que
+não oferecê-lo.
+"""
+modelo_3d(::FPSOSiz.AbstractSizingMethod) = ""
+modelo_3d(::FPSOSiz.StewartArnold) = "separador"
+modelo_3d(::FPSOSiz.StewartArnoldTwoPhase) = "knockout"
+modelo_3d(::FPSOSiz.ArnoldElectrostatic) = "tratador"
+
+"""
+    atributos_3d(m, g, camadas) -> Dict | nothing
+
+Os atributos que o visor 3D lê, **todos derivados do que o motor calculou**: o diâmetro,
+o comprimento entre costuras, o comprimento efetivo (onde fica a placa vertedora), o β
+da interface líquido-líquido e a fração de enchimento.
+
+`nivel` sai das [`FPSOSiz.PhaseLayer`](@ref) que o método declara em `cross_section` — é
+1 menos a fração de gás —, e não de um `0,5` escrito aqui. Era exatamente essa dedução
+("vaso meio cheio") que punha metade de céu de gás num tratador cheio de líquido, e que
+`cross_section` nasceu para corrigir; repeti-la no visor 3D reintroduziria o defeito em
+três dimensões.
+
+`nothing` sem resultado viável: o visor não monta e a figura SVG (que já sabe se
+desenhar vazia) fica no lugar.
+"""
+function atributos_3d(m::FPSOSiz.AbstractSizingMethod, g, camadas)
+    nome = modelo_3d(m)
+    (isempty(nome) || !g.ok) && return nothing
+    gasosa = sum(c.fracao for c in camadas if c.fase === :gas; init = 0.0)
+    return Dict{String,Any}(
+        "modelo" => nome,
+        # Chaves minúsculas porque viram ATRIBUTO de elemento HTML, que é
+        # case-insensitive e chega em minúsculas do outro lado.
+        "atributos" => Dict{String,Any}(
+            "d"     => g.d_m,
+            "lss"   => g.lss_m,
+            "leff"  => g.leff_m,
+            "beta"  => isfinite(g.beta) ? g.beta : 0.0,
+            "nivel" => clamp(1.0 - gasosa, 0.0, 1.0),
+            "fases" => isempty(camadas) ? "false" : "true"))
+end
 
 """
     legenda_fases(g) -> String
@@ -159,10 +217,17 @@ A banda do segundo gráfico vem de `st.globais`, que são os ajustes que o usuá
 controla — e não de constantes daqui. Se ele apertar a banda, o sombreado acompanha.
 """
 function figuras(m::FPSOSiz.AbstractVesselMethod, st::AppState)
-    g = geometry_from(st.resultado, st.d_sel, camadas_atual(st), beta_atual(st))
+    camadas = camadas_atual(st)
+    g = geometry_from(st.resultado, st.d_sel, camadas, beta_atual(st))
     banda = (st.globais[:sr_min], st.globais[:sr_max])
     return [
-        figura("vaso", "principal", titulo_elevacao(g), svg_elevacao(g)),
+        # A elevação SVG continua sendo a figura — é ela que carrega as COTAS, e é ela
+        # que vai para o memorial impresso. O modelo 3D viaja ao lado, como melhoria
+        # progressiva: a tela monta o visor quando o navegador tem WebGL e fica com o
+        # SVG quando não tem. Nenhum dos dois é recalculado — os dois leem a mesma
+        # geometria de `geometry_from`.
+        figura("vaso", "principal", titulo_elevacao(g), svg_elevacao(g);
+               modelo3d = atributos_3d(m, g, camadas)),
         figura("corte", "secundaria", "Seção transversal", svg_corte(g);
                legenda = legenda_fases(g)),
         figura("envelope", "grafico", "", svg_grafico_envelope(

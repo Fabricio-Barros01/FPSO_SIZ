@@ -16,6 +16,7 @@ casos-ouro com desvio e tolerância justificada, defeitos classificados, e lacun
 | 6 | [Análise Pinch](06-pinch-kemp.md) | `PinchAnalysis` — não dimensiona | Kemp 2ª ed., caps. 2–3 | 0 |
 | 7 | [Separador dinâmico](07-separador-dinamico-song.md) | `dynamics` — não dimensiona | Song et al., ACS Omega 2023 | 0 |
 | 8 | [Memorial de cálculo](08-memorial.md) | `memorial` — camada documental | handoff de design + Alves & Komesu (2025) | 0 |
+| 9 | [Design system e visor 3D](09-ui-industry-3d.md) | camada de tela — não toca em física | handoff de design "Industry" | 0 |
 
 ## Resultado global
 

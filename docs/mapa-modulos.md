@@ -111,7 +111,7 @@ arquivo do seu método.
 | `api.jl` | estado ↔ JSON; `esquema`, `cartao`, `tabela`, `memorial` (rastro), `estado` |
 | `report.jl` | exportação: CSV da varredura, memorial `.txt`, SVG das figuras |
 | `desenho/` | `geometria.jl` + `vaso.jl` (elevação, corte), `graficos.jl` (envelope, banda), `linha.jl` (bomba, trocador) |
-| `desenho/figuras.jl` | qual figura vai em qual área — despacha no método |
+| `desenho/figuras.jl` | qual figura vai em qual área, e qual modelo 3D — despacha no método |
 | `memorial/` | o documento A4 |
 | `server.jl` | rotas, trava, conferência de origem, subida |
 | `dinamico.jl` | o subapp do separador dinâmico (não passa por `AppState`) |
@@ -147,6 +147,7 @@ abre para consulta.
 | uma constante de correlação | o mesmo TOML, em `[constants]` |
 | um equipamento novo | `src/sizing/<eq>/`, `register!` no `__init__`, box no `catalogo.toml` |
 | uma figura nova | `figuras(::MeuMetodo, st)` em `desenho/figuras.jl` |
+| **um modelo 3D** | `models/<nome>.js` + `modelo_3d(::MeuMetodo)` em `desenho/figuras.jl` |
 | um campo no cartão | `result_fields(::MeuMetodo, r)` |
 | um bloco no rastro | `trace!` dentro de `sizing_constraints` + `trace_blocks` |
 | **o memorial de um equipamento** | **`memorial_spec(::MeuMetodo)`** |
@@ -170,3 +171,5 @@ pelo nome, e `app/smoke.jl` tem duas guardas que quebram se alguém tentar.
 | paleta CSS ↔ Julia | `app/smoke.jl` | cor da legenda divergir da do desenho |
 | grade do memorial CSS ↔ Julia | `app/smoke.jl` | colunas do documento fora da banda do handoff |
 | tela ↔ documento | `app/smoke.jl` | o PDF mostrar um vaso e a tela, outro |
+| nenhuma URL remota nos assets | `app/smoke.jl` | a tela abrir sem fonte, ou o 3D não montar, offline |
+| atributos 3D ↔ `geometry_from` | `app/smoke.jl` | o 3D e a elevação mostrarem vasos diferentes |

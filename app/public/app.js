@@ -500,6 +500,91 @@ const AREAS = {
   grafico:    () => q("area-grafico"),
 };
 
+/* --------------------------------------------------------------- o visor 3D
+ *
+ * MELHORIA PROGRESSIVA, e a palavra é literal: a tela inteira funciona sem ele. A
+ * elevação SVG continua sendo a figura — é ela que carrega as cotas e é ela que vai
+ * para o memorial impresso —, e o 3D é uma segunda vista da MESMA geometria, que o
+ * servidor manda junto da figura (`modelo3d`).
+ *
+ * Três motivos para não depender dele:
+ *
+ *   1. WebGL não existe em toda máquina. Este programa trocou GLMakie por navegador
+ *      justamente porque uma VM sem OpenGL 3.3 derrubava o programa ANTES da física
+ *      (ver o topo de app/src/FPSOSizApp.jl). Repetir a dependência em WebGL desfaria
+ *      metade dessa decisão;
+ *   2. o smoke test roda headless, sem navegador nenhum;
+ *   3. o Three.js são 690 kB que não têm por que ser baixados por quem nunca abriu a
+ *      vista 3D — daí o `import()` dinâmico, e não uma tag de script.
+ *
+ * Nada aqui escreve o nome de uma grandeza: os atributos chegam do servidor como um
+ * dicionário e são repassados em laço. Quem sabe que um vaso tem β é
+ * `atributos_3d`, em app/src/desenho/figuras.jl.
+ */
+
+let modulo3d = null;     // a promessa do import() — uma só, por mais que se alterne
+let visor3d = null;      // o <fpso-3d>, criado uma vez e reusado
+let quer3d = false;      // a vista que o usuário escolheu
+let ultimo3d = null;     // o último `modelo3d` recebido, para o botão poder alternar
+
+/** Se este navegador consegue criar um contexto WebGL. Perguntado uma vez. */
+let _webgl = null;
+function temWebGL() {
+  if (_webgl !== null) return _webgl;
+  try {
+    const c = document.createElement("canvas");
+    _webgl = !!(c.getContext("webgl2") || c.getContext("webgl"));
+  } catch {
+    _webgl = false;
+  }
+  return _webgl;
+}
+
+/** Carrega o visor sob demanda e devolve o elemento, ou `null` se não der. */
+async function garantirVisor3d() {
+  if (visor3d) return visor3d;
+  try {
+    if (!modulo3d) modulo3d = import("/viewer3d.js");
+    await modulo3d;
+    visor3d = document.createElement("fpso-3d");
+    q("area-3d").replaceChildren(visor3d);
+    return visor3d;
+  } catch (e) {
+    // Falhar aqui não pode derrubar a tela: o 3D é o acessório, a figura é o SVG.
+    modulo3d = null;
+    status(`Não consegui carregar a vista 3D (${e.message}). A figura continua em 2D.`,
+           false);
+    return null;
+  }
+}
+
+/**
+ * Reflete no visor o `modelo3d` que veio com a figura principal, e ajusta o botão de
+ * vista. `undefined` = este equipamento não tem modelo declarado.
+ */
+async function aplicar3d(fig) {
+  ultimo3d = fig ? fig.modelo3d : null;
+  const botao = q("btn-vista");
+  const disponivel = !!ultimo3d && temWebGL();
+  botao.hidden = !disponivel;
+  if (!disponivel) quer3d = false;
+
+  q("area-3d").hidden = !quer3d;
+  q("area-principal").hidden = quer3d;
+  botao.textContent = quer3d ? "Ver 2D" : "Ver 3D";
+  botao.setAttribute("aria-pressed", String(quer3d));
+  if (!quer3d || !ultimo3d) return;
+
+  const el = await garantirVisor3d();
+  if (!el) { quer3d = false; q("area-3d").hidden = true; q("area-principal").hidden = false; return; }
+  el.setAttribute("modelo", ultimo3d.modelo);
+  // Em laço, sem citar nenhuma chave: quais grandezas o modelo precisa é decisão do
+  // método, e ela chega pronta do servidor.
+  for (const [k, v] of Object.entries(ultimo3d.atributos)) {
+    el.setAttribute(k, String(v));
+  }
+}
+
 /** As figuras vão para a área que cada uma declara; áreas sem figura ficam vazias. */
 function aplicarDesenho(d) {
   const conteudo = { principal: [], secundaria: [], grafico: [] };
@@ -524,6 +609,11 @@ function aplicarDesenho(d) {
   for (const [nome, filhos] of Object.entries(conteudo)) {
     AREAS[nome]().replaceChildren(...filhos);
   }
+  // O visor 3D NÃO está em `conteudo`: ele vive em `area-3d`, que este laço não toca.
+  // Se estivesse, o `replaceChildren` acima o desconectaria e reconectaria a cada
+  // movimento do cursor — e cada reconexão reinicializa o contexto WebGL inteiro.
+  // Fora dele, mover o cursor só reescreve atributos, e o visor reconstrói a geometria.
+  aplicar3d(d.figuras.find((f) => f.area === "principal" && f.modelo3d));
   q("legenda-casos").innerHTML = d.legenda;
 }
 
@@ -1024,6 +1114,13 @@ async function iniciar() {
   q("btn-dimensionar").addEventListener("click", dimensionar);
   q("btn-exportar").addEventListener("click", exportar);
   q("btn-sair").addEventListener("click", sair);
+  // Alterna entre a elevação SVG (com as cotas) e a vista 3D da mesma geometria. O
+  // botão só aparece quando há modelo declarado E o navegador tem WebGL — ver
+  // `aplicar3d`.
+  q("btn-vista").addEventListener("click", () => {
+    quer3d = !quer3d;
+    aplicar3d(ultimo3d ? { modelo3d: ultimo3d } : null);
+  });
   q("slider-d").addEventListener("input", moverCursor);
 
   // Carrega ao abrir pela primeira vez, e de novo se o rastro tiver sido invalidado

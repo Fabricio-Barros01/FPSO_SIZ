@@ -4,8 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><!--TITULO--></title>
+<!--
+  O design system "Industry" vem PRIMEIRO e `app.css` depois, nesta ordem e por esta
+  razão: o DS define os tokens (`--color-*`, `--font-*`, `--space-*`) e os componentes,
+  e `app.css` consome os tokens e ajusta o que é layout deste programa. Invertida, a
+  ordem faria o DS sobrescrever os ajustes de layout.
+-->
+<link rel="stylesheet" href="/ds/styles.css">
 <link rel="stylesheet" href="/app.css">
 <link rel="icon" href="data:,">
+<!--
+  Mapa de importação do visor 3D. Fica aqui, na casca, porque um `<script type="module">`
+  só resolve `import ... from 'three'` se o mapa já estiver no documento quando o módulo
+  carrega — e o módulo é carregado sob demanda por `app.js` (`import()` dinâmico), que
+  roda bem depois.
+
+  Os dois caminhos são LOCAIS. O programa empacotado abre sem internet, e um `three` vindo
+  de CDN não falharia com erro: a figura simplesmente não montaria, sem nada no console
+  que dissesse por quê. Ver a nota sobre `Genie.Assets` no topo de app/src/server.jl —
+  é a mesma regra.
+-->
+<script type="importmap">
+{"imports": {"three": "/vendor/three.module.min.js",
+             "three/addons/": "/vendor/three-addons/"}}
+</script>
 <!--ESTADO-INICIAL--></head>
 <!--
   A casca de todas as páginas do programa. Ver `pagina` em app/src/server.jl.

@@ -17,13 +17,30 @@ using Printf
 
 # ---------------------------------------------------------------------------
 # Paleta
+#
+# Há DUAS paletas aqui, e a distinção é deliberada:
+#
+# * **Chrome** (`FUNDO`…`DESTAQUE`) — a tinta da interface. Desde a adoção do design
+#   system "Industry" estes valores são tokens dele (`--color-bg`, `--color-text`,
+#   `--color-neutral-300/700`, `--color-accent-700`), para que a figura e a página em
+#   volta dela não fiquem em dois azuis diferentes.
+#
+# * **Fases e status** (`OK`…`AGUA_ZONA`) — tinta de DADO, e por isso NÃO vêm do DS.
+#   O "Industry" é um esquema mono em azul-aço; recolorir óleo e água nele apagaria a
+#   única coisa que essas cores existem para dizer, que é qual fase é qual. Do mesmo
+#   jeito, verde/vermelho de status significam aprovado/reprovado, não decoração.
+#
+# O `DESTAQUE` é o passo 700 da rampa do acento, e não o acento base: o próprio guia do
+# sistema manda usar um passo profundo para texto em corpo de parágrafo, porque o acento
+# base contra este fundo dá ~3:1 — suficiente para ícone e chrome, não para número que
+# se lê.
 # ---------------------------------------------------------------------------
-const FUNDO       = "#f9f9f8"
-const PAINEL      = "#ffffff"
-const TINTA       = "#212327"
-const TINTA_FRACA = "#6b717a"
-const LINHA       = "#d6d8db"
-const DESTAQUE    = "#1e4fa0"   # azul institucional
+const FUNDO       = "#f2f2f3"   # DS --color-bg
+const PAINEL      = "#ffffff"   # fundo do desenho: papel branco sob traço técnico
+const TINTA       = "#1d1f20"   # DS --color-text
+const TINTA_FRACA = "#5d5d60"   # DS --color-neutral-700
+const LINHA       = "#d4d4d7"   # DS --color-neutral-300
+const DESTAQUE    = "#416180"   # DS --color-accent-700
 
 const OK     = "#16804a"
 const ALERTA = "#b47b0b"
