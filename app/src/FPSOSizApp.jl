@@ -54,6 +54,12 @@ include("state.jl")
 include("desenho/figuras.jl")
 include("report.jl")
 include("api.jl")
+# O memorial de cálculo documental. Depois de `api.jl` (usa `campos_resultado`, a mesma
+# fonte do cartão da tela) e de `figuras.jl` (reaproveita as SVG), antes de `server.jl`,
+# que o serve. A infra da folha A4 não sabe qual equipamento está documentando: o
+# conteúdo vem do `FPSOSiz.memorial_spec` do método.
+include("memorial/documento.jl")
+include("memorial/folhas.jl")
 # A tela dinâmica (Song 2023) — subapp isolado: não passa pelo AppState nem por api.jl.
 # Depois de graficos.jl (usa svg_serie_temporal) e antes de server.jl (que a serve).
 include("dinamico.jl")

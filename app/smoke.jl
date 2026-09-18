@@ -255,6 +255,39 @@ end
         end
     end
 
+    @testset "a grade do memorial no CSS não divergiu da do Julia" begin
+        # As 28 colunas A…AB do handoff existem duas vezes: em `A.COLUNAS` (que põe cada
+        # célula na sua banda) e no `grid-template-columns` de memorial.css (que lhes dá
+        # largura). Divergir não quebra nada visivelmente — o documento só sai com as
+        # colunas deslocadas em relação à referência, que é o tipo de erro que ninguém
+        # nota até comparar com a planilha original. Mesma vigilância da paleta acima.
+        css = read(joinpath(A.dir_publico(), "memorial.css"), String)
+        bloco = match(r"grid-template-columns:([^;]+);", css)
+        @test bloco !== nothing
+        larguras = [parse(Float64, m.captures[1])
+                    for m in eachmatch(r"([0-9]+(?:\.[0-9]+)?)fr", bloco.captures[1])]
+        @test length(larguras) == 28
+        @test length(larguras) == length(A.COLUNAS)
+        @test larguras ≈ A.COLUNAS
+        # A soma é o total que o handoff publica (≈ 118,7 caracteres).
+        @test sum(A.COLUNAS) ≈ 118.71 atol = 0.02
+        # E os nomes de coluna acompanham as larguras: `banda("A:J")` tem de continuar
+        # apontando para as dez primeiras.
+        @test length(A.NOMES_COLUNAS) == 28
+        @test A.banda("A:J") == (1, 10)
+        @test A.banda("W:AB") == (23, 28)
+        @test A.banda("P") == (16, 16)
+        @test_throws ErrorException A.banda("AC")
+    end
+
+    @testset "o memorial recusa token não resolvido, nunca célula vazia" begin
+        # A regra do handoff, no ponto em que ela é aplicada. Um `{{cliente}}` que
+        # ninguém ensinou a resolver não pode virar espaço em branco no documento
+        # assinado: tem de impedir a emissão.
+        @test A.resolver("Nº {{doc.numero}}", Dict("doc.numero" => "X-1")) == "Nº X-1"
+        @test_throws ErrorException A.resolver("{{nao.existe}}", Dict("a" => "b"))
+    end
+
     @testset "o JavaScript e o HTML falam dos mesmos elementos" begin
         # `document.getElementById` devolve `null` para id inexistente, e o
         # `addEventListener` seguinte lança — o que aborta a montagem inteira da tela.
@@ -1635,6 +1668,107 @@ end
                 @test !isempty(d.esquema.campos)
                 @test d.esquema.equipamento ==
                       FPSOSiz.label(FPSOSiz.box_equipamento(b)[1])
+            end
+        end
+
+        @testset "o memorial documental sai em folhas A4 imprimíveis" begin
+            api = "$base/api/separador-3f"
+            # Pelo caminho da TELA: abrir o exemplo do artigo dimensiona, e é esse
+            # resultado que o documento tem de estar descrevendo.
+            ab = JSON3.read(String(HTTP.post("$api/casos/abrir",
+                ["Content-Type" => "application/json", "Origin" => base],
+                JSON3.write(Dict("arquivo" => "exemplo_alves_komesu.toml"))).body))
+            @test ab.status_ok
+
+            r = HTTP.get("$base/app/separador-3f/memorial"; status_exception = false)
+            @test r.status == 200
+            @test occursin("text/html", lowercase(HTTP.header(r, "Content-Type", "")))
+            doc = String(r.body)
+
+            conta(re) = count(_ -> true, eachmatch(re, doc))
+            folhas = conta(r"<article class=\"folha\">")
+
+            @testset "os quatro tipos de folha do handoff estão lá" begin
+                for secao in ("IDENTIFICAÇÃO", "PREMISSAS DE PROJETO", "DADOS DE ENTRADA",
+                              "HIPÓTESES E LIMITAÇÕES", "DESENVOLVIMENTO DO CÁLCULO",
+                              "RESULTADOS DO DIMENSIONAMENTO", "VERIFICAÇÕES",
+                              "CONCLUSÃO")
+                    @test occursin(secao, doc)
+                end
+                # Mais de quatro PÁGINAS é o esperado — são dezoito equações, e a regra
+                # de paginação do handoff manda abrir folha nova em vez de partir um
+                # bloco. O que não pode é faltar folha.
+                @test folhas >= 4
+            end
+
+            @testset "o bloco de título se repete, o quadro de revisões não" begin
+                @test conta(r"class=\"bloco-titulo\"") == folhas
+                @test conta(r"class=\"nota-propriedade\"") == folhas
+                # Só a folha de rosto leva o quadro de revisões — é o que o handoff fixa.
+                @test conta(r"class=\"quadro-revisoes\"") == 1
+            end
+
+            @testset "nenhum token fica por resolver" begin
+                # A regra do handoff: token não resolvido é ERRO de exportação, nunca
+                # célula vazia. Se um sobrasse, `resolver` teria lançado e a rota teria
+                # devolvido a página de recusa — mas a guarda fica aqui também, porque
+                # um `{{` que escapasse viraria texto impresso no documento assinado.
+                @test !occursin("{{", doc)
+                @test occursin("MC-SENAI-SEP-ENG-001-0", doc)
+                @test occursin("SENAI CETIQT", doc)
+                @test occursin("$folhas", doc)      # o total de folhas foi gravado
+            end
+
+            @testset "a página monta sem JavaScript — e portanto sem WebGL" begin
+                # O documento é HTML e CSS e mais nada: nenhum script externo, nenhum
+                # canvas, nenhum 3D. É o que faz o memorial imprimir igual em qualquer
+                # máquina, inclusive nas que não têm aceleração gráfica — a mesma razão
+                # pela qual a interface inteira desenha em SVG.
+                @test !occursin("<script src", doc)
+                @test !occursin("<canvas", doc)
+                @test occursin("/memorial.css", doc)
+                css = HTTP.get("$base/memorial.css"; status_exception = false)
+                @test css.status == 200
+                @test occursin("css", lowercase(HTTP.header(css, "Content-Type", "")))
+            end
+
+            @testset "os números do documento são os MESMOS do cartão da tela" begin
+                # A garantia de fundo é estrutural — o documento e o cartão chamam
+                # `campos_resultado`, a mesma função —, mas o que o usuário compara é o
+                # PDF ao lado da tela. Então compara-se o texto: o valor formatado que a
+                # tela mostra tem de aparecer como conteúdo de célula no documento.
+                est = JSON3.read(String(HTTP.get("$api/estado").body))
+                so_numero(txt) = String(first(split(
+                    replace(String(txt), " ✓" => "", " ✗" => ""), ' ')))
+                for rotulo in ("Diâmetro d", "Comprimento efetivo Leff",
+                               "Comprimento real Lss", "Esbeltez SR")
+                    v = so_numero(valor_cartao_json(est, rotulo))
+                    @test !isempty(v) && v != "—"
+                    @test occursin(">$v<", doc)
+                end
+            end
+
+            @testset "as verificações trazem o veredito que o motor calculou" begin
+                # Nunca `ATENDE` sem que o `status` do campo o diga. O caso do artigo
+                # fecha com a esbeltez na banda, então tem de sair ATENDE — e a string
+                # `NÃO ATENDE` não pode aparecer num dimensionamento viável.
+                @test occursin("ATENDE", doc)
+                @test !occursin("NÃO ATENDE", doc)
+            end
+
+            @testset "o box dinâmico não emite memorial de dimensionamento" begin
+                # Ele monitora no tempo; não dimensiona equipamento nenhum. Servir-lhe um
+                # memorial de dimensionamento seria emitir um documento sobre um cálculo
+                # que não aconteceu.
+                rd = HTTP.get("$base/app/controle-separador/memorial";
+                              status_exception = false)
+                @test rd.status == 404
+                @test occursin("não emitido", String(rd.body))
+            end
+
+            @testset "box inexistente não emite nada" begin
+                ri = HTTP.get("$base/app/nao-existe/memorial"; status_exception = false)
+                @test ri.status == 404
             end
         end
 

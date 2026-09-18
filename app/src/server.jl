@@ -299,6 +299,57 @@ pagina_menu() = pagina(;
                                     "ativo" => b.ativo, "motivo" => b.motivo)
                                for b in FPSOSiz.catalogo()]))
 
+"""
+    _pagina_recusa(motivo) -> String
+
+A página que a rota do memorial devolve quando não há documento a emitir.
+
+Existe porque o memorial é servido como PÁGINA: uma falha ali não pode virar JSON (o
+navegador baixaria um arquivo) nem uma aba em branco. O motivo aparece escrito, com o
+caminho de volta — é o mesmo contrato do resto do programa, onde inviabilidade é
+mensagem e não exceção.
+"""
+_pagina_recusa(motivo::AbstractString) = string(
+    "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\">",
+    "<title>Memorial de cálculo — não emitido</title></head>",
+    "<body style=\"font:14px system-ui;padding:32px;max-width:60ch;line-height:1.5\">",
+    "<h1 style=\"font-size:18px\">Memorial de cálculo não emitido</h1><p>",
+    escapa(motivo), "</p><p><a href=\"/\">Voltar ao menu</a></p></body></html>")
+
+"""
+    meta_da_consulta() -> Dict{String,String}
+
+Os metadados do documento que vierem na consulta da rota — `?cliente=…&projeto=…`.
+
+Cliente, unidade, executor e o sequencial do documento **não** são coisas que o programa
+calcule ou guarde; sem isto eles saem como `A DEFINIR`, que é a resposta honesta (ver
+`DocMeta`). Esta função é a porta para quem quiser preenchê-los sem que o programa
+invente nada.
+
+Defensiva de propósito: se a versão do Genie expuser os parâmetros de consulta sob outra
+chave, o `catch` devolve vazio e o documento sai com os defaults — um memorial com
+`A DEFINIR` no cliente é utilizável; uma rota que responde 500 por causa do nome de um
+campo opcional não é.
+"""
+function meta_da_consulta()
+    aceitas = ("cliente", "projeto", "unidade", "executor", "seq", "rev")
+    bruto = try
+        p = Genie.Router.params()
+        get(p, :GET, get(p, :query, Dict{Symbol,Any}()))
+    catch
+        Dict{Symbol,Any}()
+    end
+    out = Dict{String,String}()
+    for (k, v) in bruto
+        chave = String(k)
+        chave in aceitas || continue
+        # Limitado em tamanho: o valor vai para dentro do bloco de título, que tem
+        # largura fixa, e um texto de 10 kB vindo da URL viraria uma folha ilegível.
+        out[chave] = String(first(strip(string(v)), 120))
+    end
+    return out
+end
+
 # ---------------------------------------------------------------------------
 # Rotas
 # ---------------------------------------------------------------------------
@@ -341,6 +392,38 @@ function rotas!()
                 @error "falha ao montar a aplicação" exception = (err, catch_backtrace())
                 HTTP.Response(500, ["Content-Type" => "text/plain; charset=utf-8"];
                               body = "Falha ao montar a tela: " * sprint(showerror, err))
+            end
+        end
+    end
+
+    # O memorial de cálculo DOCUMENTAL — as folhas A4 imprimíveis.
+    #
+    # É `/app/...`, e não `/api/...`, porque devolve uma PÁGINA, não JSON: o usuário abre
+    # noutra aba e manda imprimir. A rota `/api/:box/memorial`, logo abaixo, continua
+    # servindo o rastro de cálculo que o painel da tela mostra — são dois artefatos
+    # diferentes sobre o mesmo cálculo, e nenhum dos dois recalcula nada.
+    #
+    # Não usa `protegido`: aquele caminho responde em JSON, e uma falha aqui tem de virar
+    # uma página legível em vez de um objeto que o navegador baixaria como arquivo.
+    Genie.Router.route("/app/:box/memorial") do
+        box = box_da_rota()
+        box === nothing && return HTTP.Response(
+            404, ["Content-Type" => "text/html; charset=utf-8"];
+            body = _pagina_recusa("Essa aplicação não existe."))
+        # O box dinâmico monitora no tempo; não dimensiona equipamento nenhum, e por isso
+        # não tem memorial de dimensionamento a emitir. Ver `_e_dinamico`.
+        _e_dinamico(box) && return HTTP.Response(
+            404, ["Content-Type" => "text/html; charset=utf-8"];
+            body = _pagina_recusa("O simulador dinâmico não dimensiona um equipamento, " *
+                                  "então não emite memorial de dimensionamento."))
+        lock(TRAVA) do
+            try
+                html(memorial_documento(estado_atual(box);
+                                        meta_extra = meta_da_consulta()))
+            catch err
+                @error "falha ao emitir o memorial" exception = (err, catch_backtrace())
+                HTTP.Response(500, ["Content-Type" => "text/html; charset=utf-8"];
+                              body = _pagina_recusa(sprint(showerror, err)))
             end
         end
     end

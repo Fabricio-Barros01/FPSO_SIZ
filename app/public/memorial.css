@@ -1,0 +1,377 @@
+/*
+ * Memorial de cálculo — folha A4 imprimível.
+ *
+ * Geometria e tipografia do handoff de design (References/design_handoff_memorial_calculo):
+ * A4 retrato, margens 0,7 pol à esquerda, 0,3 à direita, 0,4 em cima e embaixo; Arial em
+ * tudo, Times New Roman itálico nas equações; contorno e divisões estruturais `medium`,
+ * grade de tabela `thin`; sem preenchimento de fundo colorido e sem linhas de grade
+ * impressas.
+ *
+ * UMA FOLHA = UMA PÁGINA. É o que `page-break-after` garante, e é a regra que faz o PDF
+ * impresso ter o mesmo número de folhas que o documento diz no bloco de título.
+ *
+ * A lista de `grid-template-columns` de `.grade` é a das 28 colunas A…AB do handoff, em
+ * caracteres. Ela existe DUAS vezes no programa — aqui e em `COLUNAS`, no
+ * app/src/memorial/documento.jl — porque uma é CSS e a outra é Julia. Um teste em
+ * app/smoke.jl compara as duas listas, pelo mesmo motivo que já compara a paleta: duas
+ * cópias de um dado divergem, e a divergência aqui põe cada coluna do documento num
+ * lugar diferente do que o handoff especifica.
+ */
+
+:root {
+  --tinta: #000;
+  --linha-fina: 0.5pt solid #000;
+  --linha-media: 1pt solid #000;
+  --linha-clara: 0.4pt solid #9a9a9a;
+
+  /* Os corpos que o handoff tabela. */
+  --corpo-rotulo: 5pt;    /* rótulos do bloco de título */
+  --corpo-cab: 7pt;       /* cabeçalhos de tabela */
+  --corpo-dado: 7.5pt;    /* dados */
+  --corpo-secao: 8.5pt;   /* barras de seção, valores */
+  --corpo-campo: 9pt;     /* campos do bloco de título */
+  --corpo-titulo: 11pt;   /* título do documento e revisão */
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #6e6e6e;
+  color: var(--tinta);
+  font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
+  font-size: var(--corpo-dado);
+  line-height: 1.25;
+}
+
+/* ------------------------------------------------------------------ a folha */
+
+.folha {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* Área imprimível do A4 com as margens do handoff:
+     210 − 0,7in − 0,3in = 184,6 mm de largura; 297 − 0,4in − 0,4in = 276,7 mm de altura.
+     Fica 1 mm abaixo na altura para absorver o arredondamento de cada navegador — um
+     milímetro a mais gera uma página em branco entre cada folha. */
+  width: 184.6mm;
+  height: 275.7mm;
+  margin: 8mm auto;
+  padding: 0;
+  background: #fff;
+  border: var(--linha-media);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .35);
+  overflow: hidden;
+}
+
+.folha:last-child { page-break-after: auto; break-after: auto; }
+
+/* --------------------------------------------------- a grade de 28 colunas */
+
+.bloco-titulo,
+.tabela,
+.quadro-revisoes {
+  display: grid;
+  grid-template-columns:
+    3fr 3fr 3fr 2.29fr 3fr 2.86fr 3.28fr 3fr 3.57fr 1.86fr 3fr
+    3fr 2.57fr 2.86fr 3fr 2.71fr 3.28fr 2fr 14.14fr 9.57fr 7.43fr 8.57fr
+    8.72fr 3fr 4.57fr 3fr 2.14fr 6.29fr;
+}
+
+/* ------------------------------------------------------- bloco de título */
+
+.bloco-titulo {
+  grid-template-rows: 9.75pt 9.75pt 17.25pt 17.25pt 17.25pt 27.75pt 16.5pt 16.5pt;
+  border-bottom: var(--linha-media);
+  flex: none;
+}
+
+.bloco-titulo > div {
+  border-right: var(--linha-fina);
+  border-bottom: var(--linha-fina);
+  padding: 0 2pt;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+.bloco-titulo .marca {
+  justify-content: center;
+  padding: 2pt;
+}
+.bloco-titulo .marca img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;   /* proporção preservada, como o handoff exige */
+}
+
+.bloco-titulo .emitente {
+  justify-content: center;
+  font-size: var(--corpo-campo);
+  font-weight: bold;
+}
+
+.bloco-titulo .faixa-titulo {
+  justify-content: center;
+  font-size: var(--corpo-titulo);
+  font-weight: bold;
+  letter-spacing: .4pt;
+}
+
+/* Os rótulos de 5 pt ficam no TOPO da célula, como na referência: eles etiquetam o
+   campo ao lado, e centrá-los verticalmente os faria competir com o valor. */
+.bloco-titulo .rotulo-min {
+  font-size: var(--corpo-rotulo);
+  align-items: flex-start;
+  padding-top: 1pt;
+}
+
+.bloco-titulo .campo,
+.bloco-titulo .campo-numero,
+.bloco-titulo .campo-arquivo {
+  justify-content: center;
+  font-size: var(--corpo-campo);
+}
+.bloco-titulo .campo-numero,
+.bloco-titulo .campo-arquivo { font-size: 8.5pt; }
+
+.bloco-titulo .campo-revisao {
+  justify-content: center;
+  font-size: var(--corpo-titulo);
+  font-weight: bold;
+}
+
+.bloco-titulo .campo-escala {
+  justify-content: center;
+  font-size: 7.5pt;
+}
+
+.bloco-titulo .campo-titulo {
+  justify-content: center;
+  text-align: center;
+  font-size: var(--corpo-titulo);
+  font-weight: bold;
+  line-height: 1.15;
+}
+
+/* ------------------------------------------------------ faixa de conteúdo */
+
+.conteudo {
+  flex: 1 1 auto;
+  padding: 3pt 0 0;
+  overflow: hidden;
+}
+
+.barra-secao {
+  margin: 5pt 0 2pt;
+  padding: 1.5pt 2pt;
+  font-size: var(--corpo-secao);
+  font-weight: bold;
+  border-top: var(--linha-fina);
+  border-bottom: var(--linha-fina);
+  /* SEM `text-transform: uppercase`. Os títulos de seção já vêm em caixa alta do Julia,
+     onde se pode escolher o que NÃO virar caixa alta — e há um caso concreto: o bloco da
+     Fig. 3 calcula o coeficiente `β`, e maiusculizar a grandeza o transformaria em `Β`
+     (beta maiúsculo grego), indistinguível de um B latino na fonte impressa. */
+}
+.conteudo > .barra-secao:first-child { margin-top: 0; }
+
+/* ---------------------------------------------------------------- tabelas */
+
+.tabela { border-top: var(--linha-fina); }
+
+.tabela > div {
+  border-right: var(--linha-fina);
+  border-bottom: var(--linha-clara);
+  border-left: var(--linha-fina);
+  padding: 1.5pt 2pt;
+  min-height: 13.5pt;          /* a altura de linha útil do handoff */
+  overflow-wrap: anywhere;
+}
+
+.tabela > .th {
+  font-size: var(--corpo-cab);
+  font-weight: bold;
+  border-bottom: var(--linha-fina);
+  text-transform: uppercase;
+}
+
+.tabela > .td { font-size: var(--corpo-dado); }
+
+.al-esq    { text-align: left; }
+.al-dir    { text-align: right; }
+.al-centro { text-align: center; }
+
+.atende     { letter-spacing: .3pt; }
+.nao-atende { letter-spacing: .3pt; text-decoration: underline; }
+
+/* ---------------------------------------------------------------- fórmulas */
+
+.faixa-equacao {
+  height: 36pt;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Times New Roman", Times, serif;
+  font-style: italic;
+  font-size: 13px;
+  text-align: center;
+  border-bottom: var(--linha-clara);
+  padding: 0 4pt;
+}
+
+.barra-onde {
+  font-size: var(--corpo-cab);
+  font-weight: bold;
+  padding: 1.5pt 2pt 0;
+}
+
+.variaveis {
+  margin: 1pt 0 3pt;
+  padding: 0 0 0 14pt;
+  list-style: none;
+  font-size: var(--corpo-dado);
+  columns: 2;
+  column-gap: 10pt;
+}
+.variaveis li { margin: 0 0 .5pt; break-inside: avoid; }
+.variaveis .sim {
+  font-family: "Times New Roman", Times, serif;
+  font-style: italic;
+}
+
+/* ------------------------------------------------- hipóteses e conclusão */
+
+.hipoteses p,
+.conclusao p {
+  margin: 0 0 4pt;
+  padding: 0 2pt;
+  font-size: var(--corpo-dado);
+  text-align: justify;
+}
+
+.aviso {
+  margin: 3pt 0 0;
+  padding: 0 2pt;
+  font-size: var(--corpo-rotulo);
+}
+
+/* ---------------------------------------------------------------- figuras */
+
+.figura {
+  margin: 0 0 6pt;
+  padding: 0 2pt;
+  text-align: center;
+  break-inside: avoid;
+}
+.figura .svg svg { max-width: 100%; height: auto; }
+.legenda-figura {
+  margin: 0 0 2pt;
+  font-size: var(--corpo-cab);
+  font-weight: bold;
+}
+.figura .legenda-fases {
+  list-style: none;
+  display: flex;
+  gap: 8pt;
+  justify-content: center;
+  margin: 2pt 0 0;
+  padding: 0;
+  font-size: var(--corpo-rotulo);
+}
+.figura .amostra {
+  display: inline-block;
+  width: 7pt;
+  height: 7pt;
+  margin-right: 2pt;
+  vertical-align: -1pt;
+}
+
+/* ------------------------------------------------------ quadro de revisões */
+
+.quadro-revisoes {
+  flex: none;
+  border-top: var(--linha-media);
+}
+.quadro-revisoes > div {
+  border-right: var(--linha-fina);
+  border-bottom: var(--linha-fina);
+  padding: 1pt 2pt;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+.quadro-revisoes > .rev-cab {
+  font-size: var(--corpo-cab);
+  font-weight: bold;
+  justify-content: center;
+  min-height: 12pt;
+}
+.quadro-revisoes > .rev-atual {
+  font-size: 7.5pt;
+  justify-content: center;
+  min-height: 24pt;
+}
+.quadro-revisoes > .rev-vazia { min-height: 14.25pt; }
+
+.nota-propriedade {
+  flex: none;
+  min-height: 12pt;
+  display: flex;
+  align-items: center;
+  padding: 0 2pt;
+  font-size: var(--corpo-rotulo);
+  border-top: var(--linha-media);
+}
+
+/* ------------------------------------------------- barra de tela (não imprime) */
+
+.barra-tela {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #212327;
+  color: #f2f2f2;
+  font-size: 13px;
+}
+.barra-tela button {
+  font: inherit;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: #1e4fa0;
+  color: #fff;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------- impressão */
+
+@page {
+  size: A4 portrait;
+  margin: 0.4in 0.3in 0.4in 0.7in;
+}
+
+@media print {
+  body { background: #fff; }
+  .barra-tela { display: none; }
+  .folha {
+    width: auto;
+    height: auto;
+    /* A altura livre na impressão, e não a fixa da tela: o navegador já recortou a
+       página pelas margens de `@page`, e repetir a altura aqui produz uma folha 1 mm
+       maior que a caixa — e uma página em branco atrás de cada uma. */
+    min-height: 0;
+    margin: 0;
+    border: var(--linha-media);
+    box-shadow: none;
+    page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .folha:last-child { page-break-after: auto; break-after: auto; }
+}

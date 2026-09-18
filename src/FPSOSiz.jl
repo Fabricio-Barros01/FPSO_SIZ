@@ -65,6 +65,12 @@ include("types/results.jl")
 include("types/stream.jl")
 include("types/cases.jl")
 
+# A camada DOCUMENTAL do contrato: quais equações o método usa, como elas se escrevem e
+# o que se verifica. Entra aqui porque precisa de `AbstractSizingMethod` (interfaces) e
+# de `CalcTrace` (results), e de mais nada — é puro dado/texto, sem dependência nova, e
+# por isso não toca na guarda de duas dependências de `test/architecture.jl`.
+include("memorial.jl")
+
 # depois dos tipos: o carregador de casos constrói `Case`
 include("config.jl")
 
@@ -76,6 +82,9 @@ include("sizing/separator/drag.jl")
 # Bloco de capacidade de gás: idêntico nos dois vasos, então mora fora de ambos.
 include("sizing/gas_capacity.jl")
 include("sizing/separator/stewart_arnold.jl")
+# O memorial documental do separador. Separado do método por tamanho — ver o cabeçalho
+# do arquivo. Depois dele, porque despacha em `StewartArnold`.
+include("memorial_specs/stewart_arnold.jl")
 include("sizing/knockout/two_phase.jl")
 # Terceiro vaso da família: sem fase gasosa, e com a generalização de §4.9.4-4.9.6.
 include("sizing/treater/electrostatic.jl")
@@ -130,6 +139,11 @@ export per_constraint, requirement_spec
 export result_fields, sweep_columns, trace_blocks, governing_label, global_keys
 export PhaseLayer, cross_section
 export size_single, sweep_row, ceiling_mechanism_of, grid_hint, trace_selection!
+
+# --- a camada documental (src/memorial.jl)
+export MemorialSpec, PremissaDoc, EquacaoDoc, VariavelDoc, ResultadoDoc, VerificacaoDoc
+export memorial_spec, tem_memorial, equacoes_do_rastro, equacoes_citadas
+export entradas_do_rastro, SEM_EQUACAO
 
 # --- vasos registrados
 export AbstractVesselMethod, Separator, StewartArnold, VesselConstraints

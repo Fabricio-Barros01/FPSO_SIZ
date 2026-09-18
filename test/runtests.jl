@@ -40,6 +40,11 @@ end
     grupo("fisica",             "fisica.jl")
     grupo("envelope",           "envelope.jl")
     grupo("registro",           "registry.jl")
+    # A camada documental do memorial: a bijeção equação↔rastro e o casamento dos
+    # resultados/verificações com os campos que o motor declara. Depois do registro
+    # porque percorre os métodos registrados, e antes da arquitetura porque é contrato
+    # de método, não de módulo.
+    grupo("memorial",           "memorial.jl")
     grupo("arquitetura",        "architecture.jl")
     # Homogeneidade dimensional (E.5) e qualidade (Aqua/JET/AllocCheck). Guardado: os
     # blocos se pulam se a ferramenta não estiver instalada, então `julia --project=.

@@ -502,6 +502,55 @@ function restricoes_governantes(st::AppState, cs, res)
 end
 
 """
+    valores_governantes(st) -> Dict{Symbol,Float64} | nothing
+
+Os valores de entrada do **canto governante** — o caso que, no diâmetro escolhido,
+impôs a maior exigência.
+
+É o que a folha de dados de entrada do memorial tabula. Tem de ser o canto, e não o caso
+como o usuário o digitou: um caso dado em faixa (`mín ≠ máx`) vira vários cantos, e o que
+dimensionou o vaso foi **um** deles. Tabular os limites da faixa faria o documento
+mostrar entradas que não produzem os resultados impressos na folha seguinte — e quem
+refizesse a conta à mão não chegaria no mesmo vaso.
+
+`nothing` quando não há resultado viável ou o canto não foi reencontrado; o documento
+prefere não ser emitido a ser emitido com entradas de outro caso.
+"""
+function valores_governantes(st::AppState)
+    r = st.resultado
+    (r === nothing || !r.feasible) && return nothing
+    cs = FPSOSiz.CaseSet([to_case(c, st.globais) for c in st.casos])
+    # `continue`, e não desistir no primeiro que não casa: `expand` devolve os cantos na
+    # ordem em que os monta, e o governante raramente é o primeiro. É a mesma forma de
+    # `restricoes_governantes`, logo acima.
+    for (nome, vals) in FPSOSiz.expand(cs; max_corners = 512)
+        nome == r.driver_case || continue
+        return Dict{Symbol,Float64}(Symbol(k) => float(v)
+                                    for (k, v) in vals if v isa Real)
+    end
+    return nothing
+end
+
+"""
+    rastro_governante(st) -> CalcTrace | nothing
+
+O rastro de cálculo do canto governante — o desenvolvimento equação por equação que a
+folha de fórmulas do memorial imprime.
+
+Sai de `r.per_case`, alinhado com `r.case_names` por construção do motor de envelope, e
+não de um recálculo: reavaliar a física aqui abriria a porta para o documento mostrar
+números que a tela não mostrou.
+"""
+function rastro_governante(st::AppState)
+    r = st.resultado
+    (r === nothing || isempty(r.per_case)) && return nothing
+    for (nome, res) in zip(r.case_names, r.per_case)
+        nome == r.driver_case && return res.trace
+    end
+    return nothing
+end
+
+"""
     beta_atual(st) -> Float64
 
 β do caso governante, para o desenho — ou `NaN` quando não há.

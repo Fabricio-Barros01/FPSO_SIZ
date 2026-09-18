@@ -14,6 +14,8 @@ casos-ouro com desvio e tolerância justificada, defeitos classificados, e lacun
 | 4 | [Separador trifásico](04-separador-trifasico.md) | `:stewart_arnold` | Alves & Komesu (2025) + S&A cap. 4 | 0 |
 | 5 | [Vaso flash / knockout](05-vaso-flash-knockout.md) | `:stewart_arnold_2f` | Stewart & Arnold cap. 3 | 0 |
 | 6 | [Análise Pinch](06-pinch-kemp.md) | `PinchAnalysis` — não dimensiona | Kemp 2ª ed., caps. 2–3 | 0 |
+| 7 | [Separador dinâmico](07-separador-dinamico-song.md) | `dynamics` — não dimensiona | Song et al., ACS Omega 2023 | 0 |
+| 8 | [Memorial de cálculo](08-memorial.md) | `memorial` — camada documental | handoff de design + Alves & Komesu (2025) | 0 |
 
 ## Resultado global
 

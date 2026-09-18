@@ -72,6 +72,11 @@ function esquema(st::AppState)
                       for g in FPSOSiz.parameter_groups(st.metodo)],
     "equipamento" => FPSOSiz.label(st.equipamento),
     "metodo"      => FPSOSiz.label(st.metodo),
+    # Se este método declara memorial de cálculo documental. Viaja como DADO, e não é
+    # deduzido na tela de uma lista de métodos escrita em JavaScript: quem sabe se há
+    # equação documentada é o core (`FPSOSiz.memorial_spec`), e a tela só obedece — a
+    # mesma regra do `caixa_unica` acima.
+    "memorial"    => FPSOSiz.tem_memorial(st.metodo),
     # O rótulo do cursor: "diâmetro (mm)" num vaso, "diâmetro nominal (mm)" numa bomba.
     # Estava escrito à mão em index.html, o que fazia a tela conhecer a grandeza.
     "eixo"        => Dict{String,Any}("label" => eixo.label, "unit" => eixo.unit),
@@ -134,11 +139,35 @@ estendida ao resultado: a tela itera e desenha, sem saber que existe uma grandez
 chamada esbeltez.
 """
 function cartao(st::AppState)
+    return [campo_json(f) for f in campos_resultado(st)]
+end
+
+"""
+    alvo_cartao(st) -> resultado no ponto do cursor
+
+O que o cartão descreve: a linha da varredura sob o cursor, vestida de resultado, ou o
+vazio quando ainda não se dimensionou.
+
+Extraída de [`cartao`](@ref) para que o **memorial documental** aponte para exatamente o
+mesmo ponto. Não é economia de duas linhas: se o documento montasse o seu próprio alvo,
+bastaria o usuário arrastar o cursor para a tela mostrar um vaso e o PDF impresso ao
+lado mostrar outro — com o mesmo cabeçalho, o mesmo número de documento e a mesma
+assinatura. `test/memorial.jl` e o smoke amarram os dois a esta função.
+"""
+function alvo_cartao(st::AppState)
     r = st.resultado
     l = linha_sel(r, st.d_sel)
-    alvo = l === nothing ? _vazio_para_cartao(r) : _no_cursor(r, l)
-    return [campo_json(f) for f in FPSOSiz.result_fields(st.metodo, alvo)]
+    return l === nothing ? _vazio_para_cartao(r) : _no_cursor(r, l)
 end
+
+"""
+    campos_resultado(st) -> Vector{ResultField}
+
+Os campos de resultado no ponto do cursor, ainda **não** formatados — a fonte única de
+que saem tanto o cartão da tela quanto a seção de resultados do memorial.
+"""
+campos_resultado(st::AppState) =
+    FPSOSiz.result_fields(st.metodo, alvo_cartao(st))
 
 # Sem varredura ainda: o cartão precisa existir com os rótulos certos e travessão nos
 # valores, senão a coluna da direita muda de altura entre "antes" e "depois" de

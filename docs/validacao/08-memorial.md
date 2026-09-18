@@ -1,0 +1,300 @@
+# Passo 8 — Memorial de cálculo documental (fatia vertical: Separador trifásico)
+
+**Módulo:** `memorial` · **Não é um método de dimensionamento** — é a camada documental
+do contrato método↔motor.
+**Fonte do documento:** handoff de design
+`References/design_handoff_memorial_calculo/` (README + protótipo `.dc.html` +
+`referencia/MC-SENAI-SEP-ENG-001-0.xlsx`).
+**Fonte da física documentada:** Alves & Komesu (2025), Lajer v.12 n.1 p.16-29, sobre
+Stewart & Arnold (2008) — a mesma do [passo 4](04-separador-trifasico.md).
+**Arquivos:** [memorial.jl](../../src/memorial.jl),
+[memorial_specs/stewart_arnold.jl](../../src/memorial_specs/stewart_arnold.jl),
+[app/src/memorial/documento.jl](../../app/src/memorial/documento.jl),
+[app/src/memorial/folhas.jl](../../app/src/memorial/folhas.jl),
+[app/public/memorial.css](../../app/public/memorial.css),
+[test/memorial.jl](../../test/memorial.jl).
+
+Até aqui o programa exportava um memorial: um `.txt` com o rastro de cálculo em colunas
+de largura fixa. Ele é honesto e é **insuficiente** — traz os números e não traz a conta.
+Quem recebe o arquivo lê `settling  Eq. 17     (h_o)max  1130,30000  mm` e não tem como
+saber qual é a Eq. 17, de onde ela vem, o que `(h_o)max` significa nem sob que hipótese
+ela vale. Este passo acrescenta a camada que faltava, **sem duplicar nenhuma física**.
+
+---
+
+## 1. O que foi acrescentado, e onde
+
+| camada | o que declara | arquivo |
+|---|---|---|
+| Contrato | `MemorialSpec`, `EquacaoDoc`, `VariavelDoc`, `PremissaDoc`, `ResultadoDoc`, `VerificacaoDoc` | `src/memorial.jl` |
+| Conteúdo (SEP) | as 18 equações, 6 premissas, 4 hipóteses, 8 resultados, 2 verificações | `src/memorial_specs/stewart_arnold.jl` |
+| Infra documental | folha A4, bloco de título, quadro de revisões, grade de 28 colunas, tokens, paginação | `app/src/memorial/documento.jl` |
+| Folhas | rosto, premissas, fórmulas, resultados, figuras | `app/src/memorial/folhas.jl` |
+| Impressão | geometria A4 e tipografia do handoff | `app/public/memorial.css` |
+| Rota | `GET /app/:box/memorial` → documento HTML imprimível | `app/src/server.jl` |
+
+Nenhuma dependência nova. O `MemorialSpec` é puro dado/texto e o documento é HTML +
+CSS: a geração do PDF é a impressão do navegador, que é o que o projeto já decidiu ao
+trocar PNG por SVG (não há rasterizador no programa).
+
+---
+
+## 2. A regra dura: a camada documental não guarda número
+
+Nenhum tipo de `src/memorial.jl` tem campo numérico — todos são `String` ou vetores de
+`String`/descritores. **Não existe onde escrever um valor calculado.** Em consequência:
+
+* todo número do documento vem de um `TraceEntry` (o rastro) ou de um `ResultField` (os
+  campos que o método declara), que são o cálculo que de fato correu;
+* o documento não pode discordar da tela;
+* não nasce uma segunda matemática em `app/`.
+
+`test/memorial.jl` verifica isso sobre os `fieldtypes` dos seis tipos — é guarda
+estrutural, não disciplina.
+
+Os coeficientes dentro da notação (`34,5` na Eq. 14, `0,033` na Eq. 17) **não** são
+exceção: são parte da equação, não resultado dela. É a mesma distinção que faz
+`config/equipment/*/*.toml` guardar constante de correlação e não guardar resposta.
+
+---
+
+## 3. Rastreabilidade: o caminho que o documento percorre
+
+```
+entrada          ParameterSpec + valor do canto governante        folha 02
+  ↓
+variável         VariavelDoc — símbolo, descrição, unidade        folha 03
+  ↓
+equação          EquacaoDoc.numero ≡ TraceEntry.eq                folha 03
+  ↓
+intermediário    TraceEntry.value  (linha "VALOR CALCULADO")      folha 03
+  ↓
+final            ResultField.value                                folha 04
+  ↓
+verificação      ResultField.status + VerificacaoDoc.criterio     folha 04
+```
+
+Os dois `≡` do meio são o elo frágil, e são testados nos **dois sentidos**:
+
+| guarda | o que ela impede |
+|---|---|
+| toda `TraceEntry.eq` tem `EquacaoDoc` | número órfão no documento assinado |
+| toda `EquacaoDoc` está no rastro **ou** é citada por um `ResultadoDoc` | equação decorativa que ninguém resolve |
+| todo `ResultadoDoc.rotulo` casa com um `ResultField.label` | linha da folha 04 que sai em travessão |
+| todo `VerificacaoDoc.campo` casa com um `ResultField.label` | verificação sem veredito calculado |
+
+A coluna `EQUAÇÃO` da folha 04 é o elo visível: ela amarra cada resultado ao bloco da
+folha 03 que o produziu.
+
+---
+
+## 4. As 18 equações documentadas
+
+Na ordem do cálculo — a mesma em que `sizing_constraints` as resolve, não a numérica.
+
+| # | bloco | equação | grandeza | no rastro |
+|---|---|---|---|---|
+| 1 | A | Eq. 9–11 | coeficiente de arrasto `C_D` | sim |
+| 2 | A | Eq. 11 | velocidade terminal `V_t` | sim |
+| 3 | A | Eq. 10 | Reynolds da gotícula | sim |
+| 4 | A | Eq. 13 | constante de Souders–Brown `K` | sim |
+| 5 | A | Eq. 14 | capacidade de gás — `d·Leff` | sim |
+| 6 | B | Eq. 16 | `ΔSG` | sim |
+| 7 | B | Eq. 17 | `(h_o)max` | sim |
+| 8 | B | Eq. 20 | `(h_w)max` | sim |
+| 9 | B | Eq. 18 | `Aw/A` | sim |
+| 10 | B | Fig. 3 | coeficiente `β` | sim |
+| 11 | B | Eq. 19 | teto por água em óleo | sim |
+| 12 | B | Eq. 21 | teto por óleo em água (forma publicada) | sim |
+| 13 | B | Eq. 21\* | variante geométrica — **não adotada** | sim |
+| 14 | C | Eq. 22 | capacidade de líquido — `d²·Leff` | sim |
+| 15 | — | Eq. 15 | `Lss` quando o gás governa | citada |
+| 16 | — | Eq. 23 | `Lss` quando o líquido governa | citada |
+| 17 | — | Eq. 24 | esbeltez `SR` | sim |
+| 18 | — | Geom. | volume do casco entre costuras | citada |
+
+**`Geom.` não é numerada como equação do artigo de propósito.** O volume é cilindro reto
+sobre `Lss` e não consta da fonte; chamá-la de "Eq. 25" mandaria o revisor procurar na
+referência uma equação que ela não tem. A célula de referência diz, literalmente,
+*"Geometria do cilindro reto — não consta da fonte"*.
+
+O marcador `"—"` que `trace_selection!` carimba na linha do diâmetro escolhido fica
+**fora** da bijeção nos dois sentidos: é decisão de projeto (menor `|SR − alvo|` dentro
+da banda), não equação da fonte.
+
+---
+
+## 5. As quatro hipóteses, agora no documento e não no comentário
+
+As divergências em relação ao texto publicado estavam documentadas no cabeçalho de
+`src/sizing/separator/stewart_arnold.jl` — isto é, para quem lê o código. O memorial é
+o que vai anexo ao relatório, e agora elas estão na folha 02:
+
+| # | o que diverge | decisão |
+|---|---|---|
+| H1 | Eq. 22 — o artigo imprime `4,12×10⁴`, inconsistente com a própria Tabela 3 | adotado o coeficiente derivado de S&A (0,35 % contra 1,9 %) |
+| H2 | Tabela 1 — os `0,6 cP` de viscosidade do gás são de líquido (colunas trocadas) | `µ_g` exposto como entrada explícita |
+| H3 | Eq. 21 — o artigo divide `(h_w)max` por `β`, que é a cota do **óleo** | **segue-se o publicado**; a variante geométrica sai como Eq. 21\* |
+| H4 | Eq. 15/23 — S&A mandam o **maior** entre as duas folgas; o artigo usa a do bloco governante | segue-se o artigo |
+
+A H3 é a que mais custa e está escrita no documento com o número: sob a leitura
+geométrica o teto cairia de 16508 para 3810 mm e o mecanismo governante se inverteria —
+ou seja, **o método publicado é não-conservador nesse ponto**. Um memorial que omitisse
+isso publicaria a conta sem a ressalva.
+
+---
+
+## 6. Fidelidade ao handoff — o que se reproduz e o que não
+
+O handoff descreve como reproduzir a referência **numa planilha** (XLSX). A decisão deste
+projeto é HTML → impressão do navegador → PDF, e aí não há planilha para escalar.
+
+**Reproduzido:**
+
+* grade de **28 colunas** `A…AB` com as larguras exatas em caracteres (soma 118,71) —
+  é ela que põe cada campo e cada coluna de tabela na banda da referência
+  (`A:J` parâmetro, `K:N` símbolo, `O:S` valor, `T:V` unidade, `W:AB` fonte/equação);
+* A4 retrato, margens 0,7 / 0,3 / 0,4 / 0,4 pol; **uma folha = uma página**;
+* bloco de título (linhas 1–8) em **todas** as folhas, escrito por uma função só;
+* quadro de revisões (linhas 73–79) **só** na folha de rosto; nota de propriedade em todas;
+* tipografia: Arial em tudo, Times New Roman itálico nas equações, e os corpos tabelados
+  (5 / 7 / 7,5 / 8,5 / 9 / 11 pt);
+* bordas `medium` no contorno e nas divisões estruturais, `thin` nas grades de tabela,
+  sem preenchimento de fundo colorido;
+* número do documento `MC-SENAI-SEP-ENG-001-0` e título
+  `MEMÓRIA DE CÁLCULO – DIMENSIONAMENTO DE SEPARADOR TRIFÁSICO`;
+* **token não resolvido é erro de emissão**, nunca célula vazia;
+* regra de paginação: bloco nunca partido, folha nova com o bloco de título repetido e
+  `(cont.)` no título da seção.
+
+**Não reproduzido, e por quê:**
+
+| item | motivo |
+|---|---|
+| escala global de 69 % / 66 % | é o `fitToHeight` de uma planilha; em HTML os corpos tabelados são os tamanhos impressos diretos, e aplicar 69 % sobre eles daria 6,2 pt |
+| "quatro folhas" | são **quatro tipos** de folha; o separador tem 18 equações e a regra de paginação do próprio handoff abre folhas de fórmulas adicionais |
+| XLSX como artefato final | decisão de projeto: HTML→PDF reaproveita as figuras SVG e não exige rasterizador nem dependência nova |
+
+A grade de 28 colunas existe **duas vezes** (em `COLUNAS`, no Julia, e no
+`grid-template-columns` do CSS). `app/smoke.jl` compara as duas listas, pela mesma razão
+que já comparava a paleta de cores.
+
+---
+
+## 7. Consistência tela ↔ documento
+
+Não é verificada por comparação: é **estrutural**. O cartão da tela e a folha de
+resultados chamam a mesma função.
+
+```
+cartao(st)            ─┐
+                       ├─► campos_resultado(st) ─► FPSOSiz.result_fields(metodo, alvo_cartao(st))
+folha_resultados(...) ─┘
+```
+
+`alvo_cartao` é o ponto do **cursor**, não o ótimo da varredura. É deliberado: quem
+arrasta o cursor e manda imprimir recebe o documento do vaso que está vendo. Se o
+documento apontasse sempre para o ótimo, a tela mostraria um vaso e o PDF ao lado mostraria
+outro — com o mesmo número de documento e a mesma assinatura.
+
+O smoke test fecha isso também pelo texto: o valor formatado que a rota `/api/:box/estado`
+devolve no cartão tem de aparecer como conteúdo de célula no HTML do documento.
+
+---
+
+## 8. O que o documento mostra que a tela não mostra
+
+| folha | conteúdo que só existe aqui |
+|---|---|
+| 02 | as 6 premissas com referência; as 4 hipóteses/limitações; a `note` de proveniência de cada entrada |
+| 03 | a equação por extenso, a definição de cada variável com unidade, a referência e a **faixa de validade** |
+| 04 | a coluna `EQUAÇÃO` ligando cada resultado à conta; o critério textual de cada verificação |
+
+E o que a tela mostra e o documento repete sem recalcular: o resumo na folha de rosto, os
+valores da folha 04 e as figuras (elevação, seção transversal e os dois gráficos de
+varredura — as mesmas SVG, vetoriais, que imprimem na resolução da impressora).
+
+---
+
+## 9. Verificação
+
+```sh
+julia --project=.   test/runtests.jl memorial     # contrato + bijeção equação↔rastro
+julia --project=app app/smoke.jl                  # rota, 4 tipos de folha, tela↔documento
+```
+
+Manual, com o servidor no ar:
+
+1. abrir **Separador trifásico**, abrir `exemplo_alves_komesu.toml`, **Dimensionar**;
+2. clicar em **📄 Memorial** — abre noutra aba;
+3. conferir: bloco de título em todas as folhas, quadro de revisões só na primeira,
+   `folha X de Y` coerente, nenhum `{{token}}` visível;
+4. **Ctrl+P → Salvar como PDF**: uma folha por página, sem página em branco entre elas;
+5. comparar os valores da folha 04 com o cartão da tela — têm de ser idênticos.
+
+O caso-ouro do separador (`d = 6300 mm`, `Leff = 18,59 m`, `Lss = 24,78 m`, `SR = 3,93`
+no exemplo do app) atravessa engine → tela → documento com os mesmos valores.
+
+---
+
+## 10. Lacunas declaradas
+
+| # | lacuna | consequência | encaminhamento |
+|---|---|---|---|
+| 1 | **Só o separador tem `memorial_spec`.** Os outros cinco métodos devolvem `nothing` | o botão Memorial não aparece neles — não há documento vazio | um `memorial_spec` por método, reusando toda a infra |
+| 2 | Cliente, unidade e executor saem como `A DEFINIR` | o documento precisa ser completado à mão (ou pela consulta `?cliente=…&unidade=…`) | um formulário de metadados do estudo |
+| 3 | O quadro de revisões só registra a emissão inicial | revisões seguintes não são rastreadas pelo programa | exigiria persistir histórico de revisão por estudo |
+| 4 | `meta_da_consulta` lê os parâmetros de forma defensiva | se a versão do Genie expuser a consulta sob outra chave, os campos caem nos defaults em vez de falhar | confirmar a chave na máquina do usuário e fixá-la |
+| 5 | O documento é do **caso governante**; os demais cantos não aparecem | o `.txt` exportado continua trazendo o rastro de todos | manter os dois artefatos, que respondem a perguntas diferentes |
+| 6 | Não há visor 3D nem design system "Industry" nesta entrega | a tela continua com o layout e o SVG 2D atuais | fase seguinte do plano de UI |
+| 7 | A verificação do **teto de decantação** sai em `—`, não em `ATENDE` | ver §10.1 | decisão do usuário: alterar `result_fields` no core |
+| 8 | Eq. 15 e Eq. 23 saem sem `VALOR CALCULADO` na folha 03 | ver §10.2 | um `trace!` em `lss_from`, se se quiser |
+
+### 10.1 Por que o teto de decantação não diz ATENDE
+
+O motor **impõe** `d ≤ d_max` — é assim que a admissibilidade funciona, e é por isso que
+o vaso escolhido respeita o teto. Mas o `ResultField` "Teto de decantação" que
+`result_fields` declara em `src/sizing/constraints.jl` tem `status = :neutro`: ele
+informa o valor do teto, não um veredito sobre ele.
+
+O documento **não converte isso em `ATENDE`**. Escrever ali um "atende" que o motor não
+calculou é exatamente a falha que a regra existe para impedir — uma verificação que passa
+por feita sem ter sido. Sai travessão, e o travessão é verdadeiro.
+
+Corrigir isso é uma mudança no **core**, não no memorial: dar `status` ao campo do teto
+em `result_fields`. Ela tem efeito colateral visível fora daqui — o cartão da tela
+passaria a mostrar um ✓ no teto, e `fecho_memorial` (que filtra por
+`status !== :neutro`) passaria a imprimi-lo em toda linha de fecho do `.txt`. Por isso
+fica registrada como decisão, e não feita de passagem numa entrega de memorial.
+
+Verificado com os números: para o exemplo do artigo o teto é 9124 mm e o vaso escolhido
+tem 6300 mm — folga de 2824 mm. A informação está no documento; o que falta é o motor
+declarar o veredito.
+
+### 10.2 Por que Eq. 15 e Eq. 23 não trazem valor calculado
+
+`lss_from` não emite linha de rastro: ela é chamada dentro de `derived`, uma vez por
+ponto da varredura, e carimbar o `CalcTrace` ali encheria o memorial com uma linha por
+diâmetro da grade. O `Lss` resultante aparece **na folha 04**, ligado às duas equações
+pela coluna `EQUAÇÃO`.
+
+O efeito é que a folha 03 mostra as duas regras (a do gás e a do líquido) com a notação e
+a referência, e travessão no valor. É consistente com a regra da camada documental — não
+há número onde o motor não registrou um —, e a rastreabilidade continua fechada pelo
+outro lado. Quem quiser o valor na folha 03 precisa de um `trace!` na seleção, depois de
+o diâmetro estar escolhido.
+
+---
+
+## 11. Defeitos encontrados nesta passagem
+
+**0 defeitos de física.** Nenhuma equação, referência ou número foi alterado: este passo
+só documenta o que já estava implementado e verificado no [passo 4](04-separador-trifasico.md).
+
+Duas correções de **citação** foram feitas ao escrever o `memorial_spec`, e valem
+registro porque são exatamente o tipo de erro que a bijeção existe para pegar:
+
+1. o volume do casco havia sido citado como saindo da Eq. 24 (a esbeltez) — não sai;
+   virou `Geom.`, com a referência dizendo que não consta da fonte;
+2. o diâmetro havia sido citado como saindo das Eq. 14/22 — elas dão o `Leff` exigido;
+   o diâmetro sai do **critério de escolha**, que é a Eq. 24 sobre a grade admissível.

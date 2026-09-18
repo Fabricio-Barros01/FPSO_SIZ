@@ -386,6 +386,15 @@ function montarFormulario() {
   const eixo = esquema.eixo || { label: "", unit: "" };
   unidadeEixo = eixo.unit;
   q("rotulo-cursor").textContent = eixo.label;
+
+  // O memorial documental só é oferecido quando o MÉTODO declara um (`memorial_spec`
+  // no core, `esquema.memorial` aqui). Um link que abrisse quatro folhas com o carimbo
+  // do SENAI e nenhuma equação seria pior que link nenhum — a decisão está registrada
+  // em `memorial_spec`, e esta é a ponta dela na tela.
+  const memorial = q("link-memorial");
+  memorial.href = `/app/${encodeURIComponent(box)}/memorial`;
+  memorial.hidden = !esquema.memorial;
+
   aplicarLimitesGrupo();
 }
 

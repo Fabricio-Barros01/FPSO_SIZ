@@ -28,6 +28,13 @@
     <a id="link-menu" class="voltar" href="/" title="Voltar ao menu">←&nbsp; Menu</a>
     <button id="btn-dimensionar" class="primario" type="button">▶&nbsp; Dimensionar</button>
     <button id="btn-exportar" type="button">⬇&nbsp; Exportar</button>
+    <!-- O memorial de cálculo documental: quatro tipos de folha A4, imprimíveis em PDF
+         pelo próprio navegador. É um <a>, e não um <button>, porque abre um DOCUMENTO
+         noutra aba — o meio do botão seria um `window.open` escrito à mão para obter o
+         que o navegador já faz, e sem o clique do meio nem o "abrir em nova aba".
+         Fica oculto nos métodos que não declaram `memorial_spec`: ver `esquema.memorial`. -->
+    <a id="link-memorial" class="voltar" target="_blank" rel="noopener" hidden
+       href="#" title="Memorial de cálculo em folhas A4, pronto para imprimir">📄&nbsp; Memorial</a>
     <!-- Fechar a aba não encerraria o servidor: ele é um processo à parte, e o
          usuário ficaria com o programa rodando sem nada na tela. -->
     <button id="btn-sair" class="sair" type="button" title="Encerra o programa">Sair</button>
