@@ -101,6 +101,7 @@ include("memorial_specs/moran.jl")
 # jeito que `hydraulics.jl` está fora de `moran.jl`.
 include("sizing/exchanger/bell_delaware.jl")
 include("sizing/exchanger/shell_and_tube.jl")
+include("memorial_specs/saari_lmtd.jl")
 
 # O envoltório da Análise Pinch — e repare ONDE ele está: aqui embaixo, a ~140 linhas do
 # `include("analysis/pinch.jl")` lá em cima. A distância é o ponto. O núcleo entra antes
