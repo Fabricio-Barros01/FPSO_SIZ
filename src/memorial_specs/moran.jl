@@ -101,6 +101,7 @@ function memorial_spec(::MoranPumpSizing)
         equacoes = [
             EquacaoDoc("Eq. 5", "Pressão de vapor do líquido",
                 "log₁₀ P_v [bar] = A − B / (T + C)",
+                raw"\log_{10} P_v = A - \frac{B}{T + C}",
                 [VariavelDoc("P_v", "pressão de vapor do líquido", "Pa"),
                  VariavelDoc("A", "coeficiente de Antoine", "–"),
                  VariavelDoc("B", "coeficiente de Antoine", "K"),
@@ -114,6 +115,7 @@ function memorial_spec(::MoranPumpSizing)
 
             EquacaoDoc("Eq. 6", "NPSH disponível na sucção",
                 "NPSH_d = P₀/(ρ·g) + h₀ − h_f,suc − P_v/(ρ·g)",
+                raw"NPSH_d = \frac{P_0}{\rho \cdot g} + h_0 - h_{f,suc} - \frac{P_v}{\rho \cdot g}",
                 [VariavelDoc("NPSH_d", "carga líquida positiva de sucção disponível", "m"),
                  VariavelDoc("P₀", "pressão no reservatório de sucção", "Pa"),
                  VariavelDoc("ρ", "massa específica do líquido", "kg/m³"),
@@ -128,6 +130,7 @@ function memorial_spec(::MoranPumpSizing)
 
             EquacaoDoc("Eq. 3", "Número de Reynolds do escoamento na linha",
                 "Re = ρ · v · D / µ",
+                raw"Re = \frac{\rho \cdot v \cdot D}{\mu}",
                 [VariavelDoc("Re", "número de Reynolds", "–"),
                  VariavelDoc("ρ", "massa específica do líquido", "kg/m³"),
                  VariavelDoc("v", "velocidade superficial na linha", "m/s"),
@@ -140,6 +143,8 @@ function memorial_spec(::MoranPumpSizing)
             EquacaoDoc("§ regime", "Classificação do regime de escoamento",
                 "laminar: Re ≤ 2.300    transição: 2.300 < Re < 4.000    " *
                 "turbulento: Re ≥ 4.000",
+                raw"\text{laminar} : Re \le 2.300 \quad \text{transição} : 2.300 < Re < 4.000 " *
+                raw"\quad \text{turbulento} : Re \ge 4.000",
                 [VariavelDoc("Re", "número de Reynolds", "–")];
                 referencia = "Moran (2016), p. 41 — a Eq. (2) é declarada para Re > 4.000; " *
                              "as fronteiras estão nas constantes do método",
@@ -150,6 +155,8 @@ function memorial_spec(::MoranPumpSizing)
 
             EquacaoDoc("Eq. 2", "Fator de atrito de Darcy — regime turbulento",
                 "1/√f = −2 · log₁₀ [ ε/(3,7·D) + 2,51/(Re·√f) ]",
+                raw"\frac{1}{\sqrt{f}} = -2 \cdot \log_{10} \left[ \frac{\varepsilon}{3,7 \cdot D} + " *
+                raw"\frac{2,51}{Re \cdot \sqrt{f}} \right]",
                 [VariavelDoc("f", "fator de atrito de Darcy", "–"),
                  VariavelDoc("ε", "rugosidade absoluta da parede", "m"),
                  VariavelDoc("D", "diâmetro interno da tubulação", "m"),
@@ -163,6 +170,7 @@ function memorial_spec(::MoranPumpSizing)
 
             EquacaoDoc("Hagen", "Fator de atrito de Darcy — regime laminar",
                 "f = 64 / Re",
+                raw"f = \frac{64}{Re}",
                 [VariavelDoc("f", "fator de atrito de Darcy", "–"),
                  VariavelDoc("Re", "número de Reynolds", "–")];
                 referencia = "Hagen-Poiseuille — NÃO CONSTA do artigo; acréscimo " *
@@ -174,6 +182,7 @@ function memorial_spec(::MoranPumpSizing)
 
             EquacaoDoc("Eq. 1/4", "Perda de carga por atrito — trecho reto e acessórios",
                 "h_f = f · (L/D) · v²/(2g)  +  Σk · v²/(2g)",
+                raw"h_f = f \cdot \frac{L}{D} \cdot \frac{v^2}{2g} + \Sigma k \cdot \frac{v^2}{2g}",
                 [VariavelDoc("h_f", "perda de carga por atrito", "m"),
                  VariavelDoc("f", "fator de atrito de Darcy", "–"),
                  VariavelDoc("L", "comprimento de trecho reto", "m"),
@@ -191,6 +200,7 @@ function memorial_spec(::MoranPumpSizing)
 
             EquacaoDoc("Eq. 7", "Potência hidráulica de eixo",
                 "P = Q · ρ · g · H / (3,6×10⁶ · η)",
+                raw"P = \frac{Q \cdot \rho \cdot g \cdot H}{3,6 \times 10^6 \cdot \eta}",
                 [VariavelDoc("P", "potência de eixo", "kW"),
                  VariavelDoc("Q", "vazão bombeada", "m³/h"),
                  VariavelDoc("ρ", "massa específica do líquido", "kg/m³"),

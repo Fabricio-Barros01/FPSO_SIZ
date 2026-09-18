@@ -71,9 +71,27 @@ end
 """
     exportar!(st) -> NamedTuple
 
-Grava a varredura envelope (uma coluna por caso), o memorial de cálculo e as duas
-figuras. Escreve o resultado na barra de status em vez de lançar — exportação falhando
-não pode derrubar a interface.
+Grava a varredura envelope (uma coluna por caso), o memorial de cálculo e as figuras
+que o método declara. Escreve o resultado na barra de status em vez de lançar —
+exportação falhando não pode derrubar a interface.
+
+## Os dois memoriais, e por que são dois
+
+* `_memorial.txt` — o **rastro**, em colunas de largura fixa, de TODOS os casos de canto
+  do envelope. Responde "que contas o programa fez, em cada canto".
+* `_memorial.html` — o **documento** de quatro folhas A4 do caso governante, com bloco de
+  título, equações em simbologia e quadro de revisões. Responde "o que se assina".
+
+São perguntas diferentes, e nenhum dos dois substitui o outro — é a mesma distinção que
+`docs/validacao/08-memorial.md` §10 registra na lacuna 5.
+
+O `.html` sai **autocontido** (`css = :embutido`): ele é gravado para ser aberto por
+duplo clique, com o programa já fechado, e um `href="/memorial.css"` ali não resolveria
+para nada. Sai também **editável**, que é o default do documento — quem imprime corrige
+cliente e executor na tela antes do Ctrl+P.
+
+Só sai quando o método declara `memorial_spec`. Um método sem spec não perde a
+exportação por isso: o CSV, o `.txt` e as figuras saem como sempre.
 
 Devolve `(; ok, arquivos, dir)`.
 """
@@ -107,7 +125,16 @@ function exportar!(st::AppState)
             push!(caminhos_svg, caminho)
         end
 
-        arquivos = [csv, memorial, caminhos_svg...]
+        # O documento A4. `tem_memorial` é a mesma guarda que a rota usa para esconder o
+        # link na tela: onde não há spec, não há documento a gravar — e isso não é falha.
+        doc = String[]
+        if FPSOSiz.tem_memorial(st.metodo)
+            caminho = base * "_memorial.html"
+            write(caminho, memorial_documento(st; css = :embutido))
+            push!(doc, caminho)
+        end
+
+        arquivos = [csv, memorial, doc..., caminhos_svg...]
         st.status = "Exportado em $(dir): " * join(basename.(arquivos), ", ")
         st.status_ok = true
         return (; ok = true, arquivos, dir)

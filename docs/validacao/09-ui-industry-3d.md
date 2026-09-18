@@ -120,6 +120,9 @@ dele, mover o cursor só reescreve atributos.
 `modelo_3d` devolve `""` para os três últimos. Prometer um 3D que ninguém validou é pior
 que não oferecê-lo — a mesma regra do `memorial_spec` no passo 8.
 
+> **Atualizado em §6.1.** A bomba e o trocador foram conferidos e ligados; a Análise
+> Pinch continua sem modelo, por não dimensionar equipamento nenhum.
+
 ### A tela não nomeia nenhuma grandeza
 
 Os atributos chegam do servidor como dicionário e são repassados em laço
@@ -145,7 +148,7 @@ Guardas novas (todas em `app/smoke.jl`):
 | `viewer3d.js` e `models/*` só importam `three`/relativo | idem, mas por dentro do módulo |
 | atributos 3D ≡ `geometry_from` | o 3D e a elevação mostrarem vasos diferentes |
 | `nivel` do tratador = 1,0 | céu de gás num vaso cheio de líquido |
-| `modelo_3d` vazio para bomba/trocador/pinch | oferecer 3D não conferido |
+| `modelo_3d` vazio para bomba/trocador/pinch (→ só pinch, a partir de §6.1) | oferecer 3D não conferido |
 | rotas servem DS, fontes, three, viewer, modelo | 404 silencioso num asset |
 
 ### Verificado no navegador, aqui
@@ -171,9 +174,108 @@ usuário.
 
 | # | lacuna | encaminhamento |
 |---|---|---|
-| 1 | Bomba e trocador não têm modelo 3D ligado | conferir `models/{bomba,trocador}.js` contra `linha.jl` e ligar |
-| 2 | O layout das três colunas é o anterior; os artboards por box não foram replicados | fase de generalização (plano §4) |
-| 3 | A página de menu não seguiu o artboard | idem |
-| 4 | Ícones Lucide (o DS pede stroke 1.5) não foram adotados — `icones.js` continua o de antes | trocar quando os artboards forem replicados |
+| ~~1~~ | ~~Bomba e trocador não têm modelo 3D ligado~~ | **fechada** — ver §6.1 |
+| ~~2~~ | ~~O layout das três colunas é o anterior; os artboards por box não foram replicados~~ | **fechada, e o enunciado estava torto** — ver §6.2 |
+| ~~3~~ | ~~A página de menu não seguiu o artboard~~ | **fechada** — e havia um defeito real atrás dela; ver §6.3 |
+| ~~4~~ | ~~Ícones Lucide (o DS pede stroke 1.5) não foram adotados~~ | **fechada em parte, e o resto recusado** — ver §6.4 |
 | 5 | O memorial A4 **não** usa o DS, de propósito | é documento formal com tipografia própria (Arial/Times), especificada no handoff do memorial |
 | 6 | `three.module.min.js` são 690 kB no repositório | é o custo de abrir offline; carregado só sob demanda |
+
+---
+
+## 6. A passagem dos artboards
+
+Comparação tela a tela contra `References/FPSO SIZ UI mockups/*.dc.html`, com o servidor
+no ar. O que se segue é o que mudou e o que deliberadamente não mudou.
+
+### 6.1 Bomba e trocador ganharam o visor 3D
+
+A lacuna dizia "conferir e ligar", e a conferência é o ponto. Os dois modelos do handoff
+(`models/bomba.js`, `models/trocador.js`) já estavam vendorizados e o `viewer3d.js` já
+despachava para eles; o que faltava era o lado Julia — `modelo_3d` devolvia `""`.
+
+Conferido: **o 3D lê exatamente as grandezas que a elevação SVG cota**, do mesmo ponto do
+cursor, e nenhum dos dois recalcula nada.
+
+| método | a elevação desenha | o visor recebe |
+|---|---|---|
+| `MoranPumpSizing` | `svg_linha_bomba(d, dn, h)` | `dn` |
+| `SaariLMTD` | `svg_trocador(d, l, passes)` | `n-tubos`, `l`, `passes` |
+
+`modelo3d_de` é o envelope para quem **não** é vaso: a bomba e o trocador não têm
+`geometry_from`, `PhaseLayer` nem β, então `atributos_3d` não os serviria.
+
+A Análise Pinch continua sem 3D, e a razão mudou de "não conferido" para a verdadeira:
+ela não dimensiona equipamento nenhum — não há o que mostrar em três dimensões.
+
+Verificado com o servidor no ar: `/api/bomba-centrifuga/desenho` traz
+`modelo3d = {bomba, dn 250.0}`, que é o DN que o cartão anuncia. **A aparência do 3D
+continua sendo conferência no navegador do usuário**, pela mesma razão do §4: o
+`--screenshot` do Firefox não compõe WebGL em software.
+
+### 6.2 Os artboards por box — o enunciado estava torto
+
+A lacuna prometia "replicar os artboards por box", e replicá-los ao pé da letra seria
+**regressão**: os sete artboards são sete telas porque um mockup desenha cada caso, mas
+no app é **uma** página genérica, e o que muda entre boxes já vem de `esquema`,
+`result_fields`, `sweep_columns` e `figuras`. Sete páginas com campos escritos à mão
+quebrariam a regra do Sprint 7 — a interface nunca cita um parâmetro pelo nome — que a
+guarda de vocabulário do smoke existe para impor.
+
+O que a lacuna de fato pedia é o **chrome compartilhado**, e a comparação mostrou que ele
+já estava replicado desde este passo:
+
+| medida | artboard | `app.css` |
+|---|---|---|
+| grade das colunas | `23.5% minmax(0,1fr) 23.5%` | idem (`--col-lado`) |
+| `gap` do `main` | 12px | 12px |
+| altura do cabeçalho | 42px | 40px |
+| marca | 22px, largura automática | idem |
+| coluna de casos | seletor de arquivo + Abrir/Salvar/Salvar como | idem |
+
+A diferença é de 2 px numa altura de cabeçalho. Não se mexeu: o artboard é gabarito
+visual, não medida de fabricação, e trocar 40 por 42 reflui a barra de status e os
+gráficos para ganhar nada.
+
+### 6.3 O menu — e o defeito que estava atrás dele
+
+O menu saía em **coluna única**, com a tela inteira vazia à direita, quando a folha de
+estilo pedia `repeat(auto-fill, minmax(min(250px, 100%), 1fr))`.
+
+A causa não estava em nada que o menu declarasse. `align-items: start` vem do seletor
+`main`, onde é o certo — lá as três colunas do dimensionamento não podem esticar até a
+mais alta. Em `main.menu`, que é flex-**coluna**, a mesma declaração passa a significar
+"encolha cada filho até o conteúdo": a grade media a largura de um cartão só, e
+`auto-fill` concluía, corretamente, que cabia uma coluna.
+
+`main.menu { align-items: stretch; }` — sete cartões em cinco colunas, como o artboard.
+
+É a classe de defeito que teste de rota nenhum pega (o HTML sempre esteve correto) e que
+só aparece com a tela aberta. A guarda nova é a **declaração explícita**: se ela sumir, a
+herança volta a valer em silêncio.
+
+### 6.4 Ícones: a gramática do Lucide, não o acervo
+
+Adotado o que o DS de fato especifica: `stroke-width` **1.5** (estava 1.6), caixa 24×24,
+pontas e junções redondas.
+
+**Não** se trocaram os desenhos por ícones do Lucide, e não é preguiça: o Lucide não tem
+separador trifásico, vaso knockout, tratador eletrostático nem curva composta de Pinch.
+O que existiria seria uma engrenagem para a bomba e um cilindro para os cinco vasos —
+sete cartões que o usuário não distingue de relance, que é exatamente o trabalho que o
+ícone faz no menu. Trocar melhoraria a aderência ao acervo e pioraria a tela.
+
+### 6.5 Verificação
+
+```sh
+julia --project=.   test/runtests.jl     # 5319 passam, 4 broken (pré-existentes)
+julia --project=app app/smoke.jl         # 3634 passam
+```
+
+| guarda nova | o que impede |
+|---|---|
+| `main.menu` declara `align-items: stretch`, e `.grade-boxes` segue em `auto-fill` | o menu voltar a colapsar em coluna única |
+| o 3D da bomba e do trocador recebe as grandezas do cursor, iguais às da elevação | o visor e o desenho mostrarem equipamentos diferentes |
+
+Conferido no navegador: o menu monta em cinco colunas; a tela do separador monta com o
+caso-ouro correto (6300 mm · 18,59 m · 24,78 m · SR 3,93).

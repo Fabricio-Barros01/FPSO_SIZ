@@ -7,15 +7,25 @@
  * menos que essa classe de falha.
  *
  * Todos partilham a mesma caixa (24×24), traço `currentColor` e nenhum preenchimento,
- * para que o CSS controle cor e tamanho num lugar só. `stroke-width` 1.6 é o que
- * mantém o traço visível quando o cartão encolhe.
+ * para que o CSS controle cor e tamanho num lugar só.
+ *
+ * `stroke-width` 1.5 é o que o design system "Industry" especifica (é a espessura do
+ * Lucide, que ele adota) — estes desenhos estavam em 1.6, e a diferença aparecia quando
+ * um ícone ficava ao lado de um traço do sistema.
+ *
+ * O que NÃO se faz é trocar estes desenhos por ícones do Lucide, e a razão é que não há
+ * por quê trocar: o Lucide não tem separador trifásico, vaso knockout, tratador
+ * eletrostático nem curva composta de Pinch. O que existiria seria uma engrenagem para
+ * a bomba e um cilindro para os cinco vasos — sete cartões que o usuário não distingue
+ * de relance, que é exatamente o trabalho que o ícone faz aqui. Do Lucide se adota a
+ * GRAMÁTICA (caixa 24×24, traço 1.5, pontas e junções redondas), não o acervo.
  */
 
 "use strict";
 
 const _svg = (corpo) =>
   `<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor"
-        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${corpo}</svg>`;
+        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${corpo}</svg>`;
 
 const ICONES = {
   // Vaso horizontal com duas interfaces: as três fases do separador trifásico.

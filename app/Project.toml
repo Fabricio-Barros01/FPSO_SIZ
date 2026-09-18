@@ -15,6 +15,7 @@ version = "0.1.0"
 # usam direto — e no Julia dependência indireta não é importável.
 
 [deps]
+Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 FPSOSiz = "4f13f718-4653-46cc-8e94-84be0defd37a"
 Genie = "c43c736e-a2d1-11e8-161f-af95117fbd1e"

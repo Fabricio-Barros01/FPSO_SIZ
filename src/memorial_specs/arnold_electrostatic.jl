@@ -94,6 +94,9 @@ function memorial_spec(::ArnoldElectrostatic)
         equacoes = [
             EquacaoDoc("Eq. 4.16", "Diferença de densidades e fração de área da água",
                 "ΔSG = (SG)_w − (SG)_o,   a_w = α · Q_w·(t_r)_w / ( (t_r)_o·Q_o + (t_r)_w·Q_w )",
+                raw"\Delta SG = \left( SG \right)_w - \left( SG \right)_o \quad " *
+                raw"a_w = \alpha \cdot \frac{Q_w \cdot \left( t_r \right)_w}" *
+                raw"{\left( t_r \right)_o \cdot Q_o + \left( t_r \right)_w \cdot Q_w}",
                 [VariavelDoc("ΔSG", "diferença de densidades relativas", "–"),
                  VariavelDoc("(SG)_w", "densidade relativa da água", "–"),
                  VariavelDoc("(SG)_o", "densidade relativa do óleo", "–"),
@@ -111,6 +114,7 @@ function memorial_spec(::ArnoldElectrostatic)
 
             EquacaoDoc("Eq. 4.2b", "Ganho de decantação da coalescência eletrostática",
                 "ganho = ( d_m / 500 µm )²",
+                raw"\text{ganho} = \left( \frac{d_m}{500} \right)^2",
                 [VariavelDoc("ganho", "razão de velocidade de decantação em relação à emulsão sem tratamento", "×"),
                  VariavelDoc("d_m", "diâmetro da gotícula de água após coalescência", "µm")];
                 referencia = "Stewart & Arnold (2008), Eq. 4.2b e §4.7.2",
@@ -120,6 +124,7 @@ function memorial_spec(::ArnoldElectrostatic)
 
             EquacaoDoc("Eq. 4.5b", "Espessura máxima da camada de óleo (água em óleo)",
                 "(h_o)_max = 0,033 · (t_r)_o · ΔSG · d_m² / µ_o",
+                raw"\left( h_o \right)_{max} = 0,033 \cdot \frac{\left( t_r \right)_o \cdot \Delta SG \cdot d_m^2}{\mu_o}",
                 [VariavelDoc("(h_o)_max", "espessura máxima da camada de óleo", "mm"),
                  VariavelDoc("(t_r)_o", "tempo de retenção do óleo", "min"),
                  VariavelDoc("ΔSG", "diferença de densidades relativas", "–"),
@@ -131,6 +136,7 @@ function memorial_spec(::ArnoldElectrostatic)
 
             EquacaoDoc("Eq. 4.9b", "Espessura máxima da camada de água (óleo em água)",
                 "(h_w)_max = 0,033 · (t_r)_w · ΔSG · d_m² / µ_w",
+                raw"\left( h_w \right)_{max} = 0,033 \cdot \frac{\left( t_r \right)_w \cdot \Delta SG \cdot d_m^2}{\mu_w}",
                 [VariavelDoc("(h_w)_max", "espessura máxima da camada de água", "mm"),
                  VariavelDoc("(t_r)_w", "tempo de retenção da água", "min"),
                  VariavelDoc("ΔSG", "diferença de densidades relativas", "–"),
@@ -143,6 +149,9 @@ function memorial_spec(::ArnoldElectrostatic)
             EquacaoDoc("Eq. 4.17", "Altura fracionária do segmento ocupado pela água",
                 "β_w : A_seg(β_w) = a_w · A,   com  A_seg = R²·[ arccos(1 − h/R) − " *
                 "(1 − h/R)·√(2h/R − (h/R)²) ]",
+                raw"\beta_w : A_{seg} \left( \beta_w \right) = a_w \cdot A \quad A_{seg} = R^2 " *
+                raw"\left[ \arccos \left( 1 - \frac{h}{R} \right) - \left( 1 - \frac{h}{R} \right) " *
+                raw"\sqrt{\frac{2h}{R} - \left( \frac{h}{R} \right)^2} \right]",
                 [VariavelDoc("β_w", "altura fracionária da camada de água", "–"),
                  VariavelDoc("a_w", "fração da seção ocupada pela água", "–"),
                  VariavelDoc("A_seg", "área do segmento circular inferior", "mm²"),
@@ -156,6 +165,7 @@ function memorial_spec(::ArnoldElectrostatic)
 
             EquacaoDoc("Eq. 4.18", "Teto de diâmetro pela decantação de água em óleo",
                 "(d_max)_{w/o} = (h_o)_max / (β_l − β_w)",
+                raw"\left( d_{max} \right)_{w/o} = \frac{\left( h_o \right)_{max}}{\beta_l - \beta_w}",
                 [VariavelDoc("(d_max)_{w/o}", "diâmetro máximo admissível pela fase óleo", "mm"),
                  VariavelDoc("(h_o)_max", "espessura máxima da camada de óleo", "mm"),
                  VariavelDoc("β_l", "altura fracionária de toda a fase líquida (vale 1)", "–"),
@@ -167,6 +177,7 @@ function memorial_spec(::ArnoldElectrostatic)
             EquacaoDoc("Eq. 4.18*", "Teto de diâmetro pela decantação de óleo em água — " *
                                     "contraparte geométrica",
                 "(d_max)_{o/w} = (h_w)_max / β_w",
+                raw"\left( d_{max} \right)_{o/w} = \frac{\left( h_w \right)_{max}}{\beta_w}",
                 [VariavelDoc("(d_max)_{o/w}", "diâmetro máximo admissível pela fase água", "mm"),
                  VariavelDoc("(h_w)_max", "espessura máxima da camada de água", "mm"),
                  VariavelDoc("β_w", "altura fracionária da camada de água", "–")];
@@ -179,6 +190,8 @@ function memorial_spec(::ArnoldElectrostatic)
 
             EquacaoDoc("Eq. 4.15b", "Capacidade de líquido — produto d²·Leff exigido",
                 "d² · L_eff = 21000 · [ (t_r)_o·Q_o + (t_r)_w·Q_w ] / α",
+                raw"d^2 \cdot L_{eff} = 21000 \cdot \frac{\left( t_r \right)_o \cdot Q_o + " *
+                raw"\left( t_r \right)_w \cdot Q_w}{\alpha}",
                 [VariavelDoc("d", "diâmetro interno do vaso", "mm"),
                  VariavelDoc("L_eff", "comprimento efetivo de separação", "m"),
                  VariavelDoc("(t_r)_o", "tempo de retenção do óleo", "min"),
@@ -193,6 +206,7 @@ function memorial_spec(::ArnoldElectrostatic)
 
             EquacaoDoc("§4.9.1", "Comprimento entre costuras — o MAIOR das duas",
                 "L_ss = max( L_eff + d/1000 ; (4/3) · L_eff )",
+                raw"L_{ss} = \max \left( L_{eff} + \frac{d}{1000} ; \frac{4}{3} \cdot L_{eff} \right)",
                 [VariavelDoc("L_ss", "comprimento entre costuras", "m"),
                  VariavelDoc("L_eff", "comprimento efetivo de separação", "m"),
                  VariavelDoc("d", "diâmetro interno do vaso", "mm")];
@@ -202,6 +216,7 @@ function memorial_spec(::ArnoldElectrostatic)
 
             EquacaoDoc("§4.9.2", "Esbeltez do vaso",
                 "SR = L_ss / (d/1000)",
+                raw"SR = \frac{L_{ss}}{d/1000}",
                 [VariavelDoc("SR", "esbeltez (slenderness ratio)", "–"),
                  VariavelDoc("L_ss", "comprimento entre costuras", "m"),
                  VariavelDoc("d", "diâmetro interno do vaso", "mm")];
@@ -211,6 +226,7 @@ function memorial_spec(::ArnoldElectrostatic)
 
             EquacaoDoc("Geom.", "Volume do casco entre costuras",
                 "V = π · (d/1000)² / 4 · L_ss",
+                raw"V = \frac{\pi \cdot \left( d/1000 \right)^2}{4} \cdot L_{ss}",
                 [VariavelDoc("V", "volume do casco entre costuras", "m³"),
                  VariavelDoc("d", "diâmetro interno do vaso", "mm"),
                  VariavelDoc("L_ss", "comprimento entre costuras", "m")];

@@ -203,7 +203,7 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    bloco_titulo() -> String
+    bloco_titulo(css) -> String
 
 O bloco de título (linhas 1–8 do handoff), em gabarito com tokens: o mesmo HTML serve a
 todas as folhas, e o que muda entre elas — o número da folha e o total — entra por
@@ -211,15 +211,18 @@ todas as folhas, e o que muda entre elas — o número da folha e o total — en
 
 Uma função só, chamada ao abrir cada folha, como o handoff manda. Escrever o bloco em
 cada folha seria oito oportunidades de a revisão de uma delas divergir das outras.
+
+`css` chega aqui pela **marca do emitente**, e por nada mais: ela é o único recurso
+externo do documento, e no arquivo exportado precisa vir embutida — ver
+[`marca_emitente`](@ref).
 """
-function bloco_titulo()
+function bloco_titulo(css::Symbol = :link)
     partes = String[]
     push!(partes, "<header class=\"bloco-titulo\">")
 
     # Marca do emitente (linhas 1–5) e o nome (linha 8), na banda A:F. As linhas 6–7
     # ficam reservadas à marca do cliente, e por isso vazias — é o que o handoff manda.
-    push!(partes, celula("A:F",
-        "<img src=\"/senai-cetiqt.webp\" alt=\"SENAI CETIQT\">";
+    push!(partes, celula("A:F", marca_emitente(css);
         classe = "marca", linha = (1, 5)))
     push!(partes, celula("A:F", "SENAI CETIQT"; classe = "emitente", linha = 8))
 
@@ -444,21 +447,49 @@ Monta o documento completo: o gabarito de cada folha, o bloco de título repetid
 quadro de revisões na primeira e a numeração `folha X de Y` resolvida na segunda
 passagem — o total só se conhece depois de montar todas, que é o que o handoff prescreve.
 
-Sai um HTML **autocontido e imprimível**: a folha de estilo é `/memorial.css`, servida
-do mesmo `public/` de sempre, e não há script nenhum. Imprimir esta página no navegador
+Sai um HTML **imprimível e sem script nenhum**. Imprimir esta página no navegador
 (Ctrl+P → Salvar como PDF) produz o documento paginado, uma folha por página.
+
+## `css`: de onde vem a folha de estilo
+
+* `:link` (o default) — `<link rel="stylesheet" href="/memorial.css">`. É o da **rota**:
+  o arquivo é servido do mesmo `public/` de sempre, o navegador o guarda em cache entre
+  as folhas, e editá-lo em desenvolvimento não exige regerar o documento.
+* `:embutido` — o conteúdo de `memorial.css` dentro de um `<style>`. É o da
+  **exportação**: o arquivo gravado em `saida/` tem de abrir por duplo clique, com o
+  programa fechado, e um `href="/memorial.css"` ali não resolve para nada — o documento
+  abriria sem uma borda, sem a grade e sem a paginação, que é o mesmo que não abrir.
+
+## `editavel`: por que o documento se deixa escrever
+
+O que o programa não tem como saber — cliente, unidade, quem executou — sai `A DEFINIR`,
+nunca num nome plausível. A consulta preenche esses campos quando quem gera os conhece
+(`?cliente=…&executor=…`), mas quem imprime nem sempre é quem gera.
+
+Com `editavel = true` cada folha recebe `contenteditable`, e o campo se preenche na tela
+antes de imprimir — que é o que o protótipo do handoff faz
+(`References/memorial-de-calculo-editavel.html`). Não há script: `contenteditable` é do
+navegador, a edição vive na aba e **não volta para o programa**. É deliberado — um
+memorial editado à mão não é o memorial que o motor calculou, e gravá-lo de volta
+apagaria a distinção entre o que foi computado e o que foi digitado.
 """
 function documento_html(meta::DocMeta, folhas::Vector{Folha};
-                        titulo_pagina::AbstractString = "")
+                        titulo_pagina::AbstractString = "",
+                        css::Symbol = :link,
+                        editavel::Bool = true)
     total = length(folhas)
     corpo = String[]
     for (i, f) in enumerate(folhas)
         tab = tokens(meta, i, total)
         # O gabarito (bloco de título e quadro de revisões) é resolvido SEMPRE; o
         # conteúdo, só quando a folha o pede — ver a nota de `Folha` sobre as figuras.
+        # `contenteditable` vai na FOLHA, e não no `<body>`: assim a barra de tela
+        # continua fora da edição (ninguém apaga o próprio botão de imprimir sem querer),
+        # e cada folha é uma região de edição independente.
+        edicao = editavel ? " contenteditable=\"true\" spellcheck=\"false\"" : ""
         push!(corpo, string(
-            "<article class=\"folha\">",
-            resolver(bloco_titulo(), tab),
+            "<article class=\"folha\"", edicao, ">",
+            resolver(bloco_titulo(css), tab),
             "<main class=\"conteudo\">",
             f.tokens ? resolver(f.conteudo, tab) : f.conteudo,
             "</main>",
@@ -472,13 +503,70 @@ function documento_html(meta::DocMeta, folhas::Vector{Folha};
         "<meta charset=\"utf-8\">\n",
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n",
         "<title>", escapa(titulo), "</title>\n",
-        "<link rel=\"stylesheet\" href=\"/memorial.css\">\n",
+        folha_de_estilo(css), "\n",
         "</head>\n<body>\n",
         # A barra não é impressa (`@media print` a esconde): é só o atalho para quem
-        # abriu o documento na tela e quer o PDF.
+        # abriu o documento na tela e quer o PDF, mais a instrução de edição — sem ela
+        # nada na página denuncia que os campos se deixam escrever.
         "<div class=\"barra-tela\">",
         "<button type=\"button\" onclick=\"window.print()\">Imprimir / salvar em PDF</button>",
+        editavel ? "<span>Clique em qualquer campo para corrigi-lo antes de imprimir.</span>" : "",
         "<span>", escapa(numero_documento(meta)), " — ", escapa(string(total)),
         " folhas</span>", "</div>\n",
         join(corpo, "\n"), "\n</body>\n</html>\n")
+end
+
+"""
+    marca_emitente(modo) -> String
+
+A marca do SENAI CETIQT do bloco de título.
+
+Pela rota (`:link`) é `/senai-cetiqt.webp`, servida do `public/`. No documento exportado
+(`:embutido`) o caminho absoluto não resolve para nada — o arquivo é aberto por duplo
+clique, de `saida/`, e o navegador procuraria a marca na raiz do disco. Então ela vai
+**dentro do HTML**, como `data:` URI.
+
+O handoff põe a marca na primeira célula de **todas** as folhas, então ela entra uma vez
+por folha: ~20 kB em base64 cada, e um separador de doze folhas passa de 124 kB a 365 kB.
+A repetição é do gabarito, não desta função — o bloco de título inteiro se repete, e é
+essa repetição que faz cada folha ser um documento completo se destacada das outras.
+
+Daria para gravar a imagem uma vez só, numa regra `content:` do CSS embutido. Não se faz:
+`content:` sobre `<img>` é substituição de renderização, e apostar a marca de um documento
+assinado nela — na impressão, que é onde o arquivo é usado — troca 240 kB por um risco.
+Num arquivo escrito em disco uma vez, os 240 kB não custam nada.
+
+Marca ausente do `public/` não derruba a exportação: o documento sai com o texto
+alternativo, que é o que o `<img>` já faria. Um memorial sem logotipo ainda é o
+memorial; uma exportação que falha inteira por causa dele, não.
+"""
+function marca_emitente(modo::Symbol)
+    modo === :link && return "<img src=\"/senai-cetiqt.webp\" alt=\"SENAI CETIQT\">"
+
+    caminho = joinpath(dir_publico(), "senai-cetiqt.webp")
+    isfile(caminho) || return "<img alt=\"SENAI CETIQT\">"
+    dados = base64encode(read(caminho))
+    return "<img src=\"data:image/webp;base64,$dados\" alt=\"SENAI CETIQT\">"
+end
+
+"""
+    folha_de_estilo(modo) -> String
+
+O `<link>` da rota ou o `<style>` embutido da exportação — ver `css` em
+[`documento_html`](@ref).
+
+O CSS embutido é lido de `dir_publico()`, que é a **mesma** origem que o servidor usa
+para servi-lo. É a propriedade que importa: não há uma segunda cópia do estilo a
+divergir, e o arquivo exportado imprime exatamente como a rota.
+"""
+function folha_de_estilo(modo::Symbol)
+    modo === :link && return "<link rel=\"stylesheet\" href=\"/memorial.css\">"
+    if modo === :embutido
+        caminho = joinpath(dir_publico(), "memorial.css")
+        isfile(caminho) ||
+            error("memorial.css não encontrado em $(caminho): o documento exportado " *
+                  "sairia sem borda, sem grade e sem paginação.")
+        return string("<style>\n", read(caminho, String), "\n</style>")
+    end
+    throw(ArgumentError("modo de folha de estilo desconhecido: $modo (use :link ou :embutido)"))
 end

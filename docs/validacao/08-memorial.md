@@ -472,3 +472,128 @@ de rosto, seções obrigatórias presentes, título de resultados conforme a nat
 seção de verificações existindo se e somente se há verificação. A lista de casos é
 comparada com o registro, para que um método novo não fique sem documento emitido em
 teste nenhum.
+
+---
+
+## 13. Simbologia matemática, edição e o documento em disco
+
+Três pontas que o passo 8 deixou abertas, e que se fecham juntas porque são a mesma
+pergunta: **o que sai do programa quando alguém pede o memorial.**
+
+### 13.1 As equações deixaram de ser uma linha de texto
+
+Até aqui `EquacaoDoc.notacao` era tudo o que existia, e a faixa da folha 03 imprimia a
+string escapada dentro de uma `<div>` em Times itálico — a tipografia do handoff sem a
+notação do handoff, que pede a equação "por extenso, em notação matemática, nunca em
+sintaxe de código". Em uma linha não há fração empilhada nem radical, e a Eq. 11 do
+separador saía assim:
+
+```
+V_t = 0,0036 · [ ((ρ_l − ρ_g)/ρ_g) · (d_m/C_D) ]^(1/2)
+```
+
+O `^(1/2)` é sintaxe de código. Agora `EquacaoDoc` carrega **duas** colunas da mesma
+equação, e ambas são obrigatórias — `tex` é argumento **posicional** do construtor, então
+não há como registrar equação sem simbologia:
+
+| coluna | para quê | onde aparece |
+|---|---|---|
+| `notacao` | uma linha de texto | o `.txt` exportado, o painel da tela |
+| `tex` | subconjunto de LaTeX | a faixa da folha 03, convertida em MathML |
+
+**As 74 equações dos seis métodos foram autoradas**, uma a uma, sem alterar nenhuma
+`notacao`, nenhuma referência e nenhum número.
+
+### 13.2 MathML gerado em Julia, e por que não uma biblioteca
+
+`app/src/memorial/mathml.jl` converte o subconjunto em MathML. **Nenhuma dependência,
+nenhum script no documento, nenhuma fonte nova.**
+
+Uma biblioteca de renderização (KaTeX, MathJax) desfaria a propriedade que faz este
+documento ser um arquivo: hoje ele não tem script nenhum, e é por isso que abre de
+`saida/` com o programa fechado e imprime igual em qualquer navegador. Passaria a exigir
+JavaScript para que a equação aparecesse, mais ~1 MB de fontes próprias dentro do bundle
+do PackageCompiler. MathML Core é nativo nos três motores desde 2023, não pede fonte
+própria e imprime.
+
+O subconjunto é **fechado e declarado** (frações, radicais, scripts, delimitadores
+escaláveis, grego, operadores, funções, texto). Comando ou caractere fora dele **lança** —
+a mesma regra de `resolver` com token não resolvido, e pela mesma razão: uma faixa vazia
+num documento assinado é pior que uma exportação que falha.
+
+Duas divergências deliberadas em relação ao LaTeX, ambas por causa do idioma e do
+domínio: `0,0036` é um número só (em LaTeX seria `0{,}0036`), e letras seguidas são um
+identificador só (`Re`, e não *R·e*) — a notação de engenharia é cheia de símbolos de
+duas letras, e a multiplicação nestas equações é sempre explícita.
+
+**Onde o MathML não entra:** a lista `ONDE:`. O handoff a especifica como
+`símbolo = descrição (unidade)`, e `VariavelDoc.simbolo` é escrito na convenção da
+`notacao` (`ρ_l`, `(h_o)_max`, `A_w/A`), não em LaTeX. Passá-la pelo conversor exigiria
+autorar `tex` para ~300 variáveis, e até lá o conversor leria `d_max` como *d* subscrito
+*m* seguido de *ax*: simbologia **errada**, que é pior que simbologia simples.
+
+### 13.3 O documento se deixa corrigir antes de imprimir
+
+Cada folha recebe `contenteditable`. É o que o protótipo do handoff já fazia
+(`References/memorial-de-calculo-editavel.html`), e fecha por caminho manual a **lacuna
+nº 2** do §10: cliente, unidade e executor saem `A DEFINIR` quando a consulta não os
+traz, e quem imprime nem sempre é quem gera.
+
+Continua **sem script** — `contenteditable` é do navegador. A edição vive na aba e **não
+volta para o programa**, de propósito: um memorial editado à mão não é o memorial que o
+motor calculou, e gravá-lo de volta apagaria a distinção entre o que foi computado e o
+que foi digitado. O realce de edição é regra de tela, desfeita em `@media print`.
+
+### 13.4 O memorial A4 agora chega ao disco
+
+`exportar!` passou a gravar `<base>_memorial.html` ao lado do CSV, do `.txt` e das
+figuras. São **dois memoriais, e continuam sendo dois** — é a lacuna nº 5 do §10, que
+segue valendo:
+
+| arquivo | o que responde |
+|---|---|
+| `_memorial.txt` | o **rastro**, de todos os casos de canto do envelope |
+| `_memorial.html` | o **documento** de quatro folhas do caso governante — o que se assina |
+
+O `.html` é **autocontido**: o `memorial.css` vai embutido em `<style>` (no lugar do
+`<link href="/memorial.css">`, que de `saida/` não resolveria para nada), e a marca do
+emitente vai como `data:` URI. Abre por duplo clique, com o programa fechado, e o
+Ctrl+P produz o PDF paginado.
+
+O CSS embutido é lido de `dir_publico()` — a **mesma** origem que o servidor usa. Não há
+segunda cópia do estilo a divergir, e o arquivo exportado imprime exatamente como a rota.
+
+**O formato XLSX do handoff não entra.** `app/src/memorial/documento.jl` registra desde o
+passo 8 a escolha de HTML → impressão no lugar da planilha; retomá-la seria dependência
+nova e a grade de 28 colunas reimplementada em mesclagens. Não é lacuna, é a decisão.
+
+### 13.5 O que ficou em aberto
+
+| # | observação | por que não se mexeu |
+|---|---|---|
+| 1 | As folhas de fórmulas sobram ~25 % no pé | O custo de paginação (`5 + ⌈nvars/2⌉`) cobra altura fixa por faixa, e as faixas agora variam: a Eq. 11 ocupa o triplo de `F = 1`. O modelo subestima a equação alta e superestima a baixa — mas erra para o lado **seguro**, e nenhuma folha estoura. Retunar o orçamento sem um custo sensível à altura trocaria papel em branco por risco de corte. |
+| 2 | A lista `ONDE:` não é MathML | §13.2 |
+
+### 13.6 Verificação
+
+```sh
+julia --project=.   test/runtests.jl     # 5319 passam, 4 broken (pré-existentes)
+julia --project=app app/smoke.jl         # 3634 passam
+```
+
+Guardas novas:
+
+| guarda | o que impede |
+|---|---|
+| `tex` não-vazio em toda equação (core) | faixa muda no documento |
+| toda `tex` dos seis métodos converte (smoke) | o subconjunto testado só contra si mesmo |
+| uma `<math>` por faixa, nenhum `<merror>`, `]^(1/2)` ausente | a notação de uma linha voltar à faixa |
+| o conversor lança em comando/caractere/chave desconhecidos | símbolo desconhecido sair em silêncio |
+| `contenteditable` em toda folha servida | o documento deixar de se corrigir |
+| o `.html` exportado sem `href="/memorial.css"`, sem `{{`, com `@page` e com a marca embutida | o arquivo em `saida/` não abrir fora do servidor |
+| a exportação grava exatamente sete arquivos, um por sufixo | o total mudar sem que se saiba qual arquivo mudou |
+
+Conferido no navegador, com o arquivo aberto de `file://` e o servidor derrubado: as doze
+folhas do separador montam, a Eq. 11 sai com o radical cobrindo a fração, a Fig. 4.3 do
+trocador (fração dentro de fração, dois radicais) cabe na faixa sem corte, e o caso-ouro
+continua **6300 mm · 18,59 m · 24,78 m · SR 3,93**.

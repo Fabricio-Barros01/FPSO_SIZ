@@ -227,8 +227,13 @@ body {
 
 /* ---------------------------------------------------------------- fórmulas */
 
+/* A faixa da equação. O conteúdo é MathML gerado em Julia — ver `mathml` em
+   app/src/memorial/mathml.jl —, e não texto, então a altura é MÍNIMA e não fixa: uma
+   fração empilhada dentro de um radical (a Eq. 11, a Fig. 4.3) é mais alta que os 36 pt
+   que o handoff tabela para uma equação de uma linha, e altura fixa a cortaria pela
+   borda. O orçamento de paginação em `folhas_formulas` já reserva a folga. */
 .faixa-equacao {
-  height: 36pt;
+  min-height: 36pt;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -237,7 +242,16 @@ body {
   font-size: 13px;
   text-align: center;
   border-bottom: var(--linha-clara);
-  padding: 0 4pt;
+  padding: 2pt 4pt;
+}
+
+/* O MathML herda a família da faixa (é o Times do handoff), mas NÃO o itálico do bloco:
+   quem decide o que é itálico é a própria marcação — `<mi>` sai itálico por ser
+   variável, `<mn>` e `<mo>` saem retos por serem número e operador. Um itálico aplicado
+   por fora inclinaria também os números e os sinais. */
+.faixa-equacao math {
+  font-style: normal;
+  font-size: 13.5px;
 }
 
 .barra-onde {
@@ -368,6 +382,25 @@ body {
   cursor: pointer;
 }
 
+/* --------------------------------------------------------------- edição */
+
+/* A folha se deixa escrever antes de imprimir — ver `editavel` em `documento_html`.
+   O realce é só na tela: as regras de `@media print` abaixo o desfazem, para que o
+   campo corrigido saia no papel como qualquer outro e não com fundo amarelo. */
+
+.folha[contenteditable="true"] { outline: none; }
+
+.folha[contenteditable="true"] :hover {
+  background: rgba(30, 79, 160, .05);
+}
+
+/* `:focus-within` e não `:focus`: quem recebe o foco é a folha inteira (é ela que tem o
+   atributo), então marcar `:focus` acenderia a página toda de amarelo. */
+.folha[contenteditable="true"] *:focus,
+.folha[contenteditable="true"] td:focus-within {
+  background: rgba(255, 244, 180, .45);
+}
+
 /* ------------------------------------------------------------- impressão */
 
 @page {
@@ -378,6 +411,10 @@ body {
 @media print {
   body { background: #fff; }
   .barra-tela { display: none; }
+  /* O realce de edição é ajuda de tela: no papel, um campo corrigido é um campo. */
+  .folha[contenteditable="true"] :hover,
+  .folha[contenteditable="true"] *:focus,
+  .folha[contenteditable="true"] td:focus-within { background: none; }
   .folha {
     width: auto;
     height: auto;

@@ -82,6 +82,7 @@ function memorial_spec(::StewartArnoldTwoPhase)
         equacoes = [
             EquacaoDoc("Eq. 3.6", "Coeficiente de arrasto da gotícula de líquido no gás",
                 "C_D = 24/Re + 3/√Re + 0,34",
+                raw"C_D = \frac{24}{Re} + \frac{3}{\sqrt{Re}} + 0,34",
                 [VariavelDoc("C_D", "coeficiente de arrasto", "–"),
                  VariavelDoc("Re", "número de Reynolds da gotícula", "–")];
                 referencia = "Stewart & Arnold (2008), Eq. 3.6",
@@ -91,6 +92,7 @@ function memorial_spec(::StewartArnoldTwoPhase)
 
             EquacaoDoc("Eq. 3.7b", "Velocidade terminal de decantação da gotícula",
                 "V_t = 0,0036 · [ ((ρ_l − ρ_g)/ρ_g) · (d_m/C_D) ]^(1/2)",
+                raw"V_t = 0,0036 \cdot \sqrt{\frac{\rho_l - \rho_g}{\rho_g} \cdot \frac{d_m}{C_D}}",
                 [VariavelDoc("V_t", "velocidade terminal da gotícula", "m/s"),
                  VariavelDoc("ρ_l", "massa específica da fase líquida", "kg/m³"),
                  VariavelDoc("ρ_g", "massa específica do gás", "kg/m³"),
@@ -102,6 +104,7 @@ function memorial_spec(::StewartArnoldTwoPhase)
 
             EquacaoDoc("S&A §3.7", "Número de Reynolds da gotícula",
                 "Re = 0,001 · ρ_g · d_m · V_t / µ_g",
+                raw"Re = 0,001 \cdot \frac{\rho_g \cdot d_m \cdot V_t}{\mu_g}",
                 [VariavelDoc("Re", "número de Reynolds da gotícula", "–"),
                  VariavelDoc("ρ_g", "massa específica do gás", "kg/m³"),
                  VariavelDoc("d_m", "diâmetro da gotícula de líquido no gás", "µm"),
@@ -112,6 +115,7 @@ function memorial_spec(::StewartArnoldTwoPhase)
 
             EquacaoDoc("Eq. 3.1", "Constante de Souders–Brown",
                 "K = [ (ρ_g/(ρ_l − ρ_g)) · (C_D/d_m) ]^(1/2)",
+                raw"K = \sqrt{\frac{\rho_g}{\rho_l - \rho_g} \cdot \frac{C_D}{d_m}}",
                 [VariavelDoc("K", "constante de Souders–Brown", "–"),
                  VariavelDoc("ρ_g", "massa específica do gás", "kg/m³"),
                  VariavelDoc("ρ_l", "massa específica da fase líquida", "kg/m³"),
@@ -122,6 +126,7 @@ function memorial_spec(::StewartArnoldTwoPhase)
 
             EquacaoDoc("Eq. 3.8b", "Capacidade de gás — produto d·Leff exigido",
                 "d · L_eff = 34,5 · [ (T · Z · Q_g) / P ] · K",
+                raw"d \cdot L_{eff} = 34,5 \cdot \left[ \frac{T \cdot Z \cdot Q_g}{P} \right] \cdot K",
                 [VariavelDoc("d", "diâmetro interno do vaso", "mm"),
                  VariavelDoc("L_eff", "comprimento efetivo de separação", "m"),
                  VariavelDoc("T", "temperatura de operação", "K"),
@@ -136,6 +141,7 @@ function memorial_spec(::StewartArnoldTwoPhase)
 
             EquacaoDoc("Eq. 3.9b", "Capacidade de líquido — produto d²·Leff exigido",
                 "d² · L_eff = 42441 · t_r · Q_l",
+                raw"d^2 \cdot L_{eff} = 42441 \cdot t_r \cdot Q_l",
                 [VariavelDoc("d", "diâmetro interno do vaso", "mm"),
                  VariavelDoc("L_eff", "comprimento efetivo de separação", "m"),
                  VariavelDoc("t_r", "tempo de retenção do líquido", "min"),
@@ -146,6 +152,7 @@ function memorial_spec(::StewartArnoldTwoPhase)
 
             EquacaoDoc("§3.8.4", "Comprimento entre costuras — o MAIOR das duas",
                 "L_ss = max( L_eff + d/1000 ; (4/3) · L_eff )",
+                raw"L_{ss} = \max \left( L_{eff} + \frac{d}{1000} ; \frac{4}{3} \cdot L_{eff} \right)",
                 [VariavelDoc("L_ss", "comprimento entre costuras", "m"),
                  VariavelDoc("L_eff", "comprimento efetivo de separação", "m"),
                  VariavelDoc("d", "diâmetro interno do vaso", "mm")];
@@ -157,6 +164,7 @@ function memorial_spec(::StewartArnoldTwoPhase)
 
             EquacaoDoc("§3.8.5", "Esbeltez do vaso",
                 "SR = L_ss / (d/1000)",
+                raw"SR = \frac{L_{ss}}{d/1000}",
                 [VariavelDoc("SR", "esbeltez (slenderness ratio)", "–"),
                  VariavelDoc("L_ss", "comprimento entre costuras", "m"),
                  VariavelDoc("d", "diâmetro interno do vaso", "mm")];
@@ -167,6 +175,7 @@ function memorial_spec(::StewartArnoldTwoPhase)
 
             EquacaoDoc("Geom.", "Volume do casco entre costuras",
                 "V = π · (d/1000)² / 4 · L_ss",
+                raw"V = \frac{\pi \cdot \left( d/1000 \right)^2}{4} \cdot L_{ss}",
                 [VariavelDoc("V", "volume do casco entre costuras", "m³"),
                  VariavelDoc("d", "diâmetro interno do vaso", "mm"),
                  VariavelDoc("L_ss", "comprimento entre costuras", "m")];

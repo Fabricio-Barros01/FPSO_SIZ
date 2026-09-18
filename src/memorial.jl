@@ -78,6 +78,17 @@ verifica nos dois sentidos.
 `notacao` é a equação **por extenso**, em notação matemática — nunca em sintaxe de
 código. É o que o revisor lê para decidir se a conta certa foi feita.
 
+`tex` é a **mesma** equação num subconjunto de LaTeX, e é dela que sai a simbologia
+impressa: a folha 03 a converte em MathML (ver `mathml` em `app/src/memorial/mathml.jl`),
+que é o que produz fração empilhada, radical cobrindo o radicando e expoente sobrescrito
+de verdade.
+
+As duas convivem porque respondem a meios diferentes, e nenhuma substitui a outra:
+`notacao` é uma linha de texto, e é o que o `.txt` exportado grava e o painel da tela
+mostra, onde não há como desenhar fração; `tex` só existe onde há tipografia. Manter as
+duas custa escrevê-las juntas — e é por isso que `test/memorial.jl` exige as duas em toda
+equação, e que o conversor lança em símbolo desconhecido em vez de imprimir faixa vazia.
+
 `validade` é a condição sob a qual a correlação vale (faixa de Reynolds, tamanho de
 gotícula, geometria). Vazio significa "a fonte não declara nenhuma", e é uma resposta
 honesta; um palpite não é.
@@ -85,14 +96,22 @@ honesta; um palpite não é.
 struct EquacaoDoc
     numero::String                  # "Eq. 14" — casa com TraceEntry.eq
     grandeza::String                # o que esta equação calcula
-    notacao::String                 # a equação por extenso
+    notacao::String                 # a equação por extenso, em texto
+    tex::String                     # a mesma equação, em LaTeX → MathML
     variaveis::Vector{VariavelDoc}
     referencia::String
     validade::String
 end
 
-EquacaoDoc(numero, grandeza, notacao, variaveis; referencia = "", validade = "") =
-    EquacaoDoc(String(numero), String(grandeza), String(notacao),
+"""
+`tex` é **posicional**, logo depois de `notacao`, e não um `referencia = …` opcional. É
+de propósito: uma equação nova não tem como nascer sem simbologia, porque o construtor
+não a aceita sem. A alternativa — argumento nomeado com default vazio mais um teste que
+o exige — deixa a folha 03 sair com faixa vazia entre escrever a equação e rodar a
+suíte, e é o tipo de janela que o resto deste arquivo fecha no tipo.
+"""
+EquacaoDoc(numero, grandeza, notacao, tex, variaveis; referencia = "", validade = "") =
+    EquacaoDoc(String(numero), String(grandeza), String(notacao), String(tex),
                collect(VariavelDoc, variaveis), String(referencia), String(validade))
 
 """

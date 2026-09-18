@@ -57,6 +57,8 @@ modelo_3d(::FPSOSiz.AbstractSizingMethod) = ""
 modelo_3d(::FPSOSiz.StewartArnold) = "separador"
 modelo_3d(::FPSOSiz.StewartArnoldTwoPhase) = "knockout"
 modelo_3d(::FPSOSiz.ArnoldElectrostatic) = "tratador"
+modelo_3d(::FPSOSiz.MoranPumpSizing) = "bomba"
+modelo_3d(::FPSOSiz.SaariLMTD) = "trocador"
 
 """
     atributos_3d(m, g, camadas) -> Dict | nothing
@@ -89,6 +91,30 @@ function atributos_3d(m::FPSOSiz.AbstractSizingMethod, g, camadas)
             "beta"  => isfinite(g.beta) ? g.beta : 0.0,
             "nivel" => clamp(1.0 - gasosa, 0.0, 1.0),
             "fases" => isempty(camadas) ? "false" : "true"))
+end
+
+"""
+    modelo3d_de(m, atributos) -> Dict | nothing
+
+O envelope que o visor 3D recebe, para os métodos que **não** são vaso: a bomba e o
+trocador não têm `geometry_from`, `PhaseLayer` nem β, então [`atributos_3d`](@ref) não
+os serve.
+
+`nothing` quando o método não declara modelo, e é assim que a bomba e o trocador ficavam
+até aqui: prometer um 3D que ninguém conferiu contra a elevação é pior que não oferecê-lo.
+
+O que os liberou foi a conferência, e ela é simples de enunciar: **o 3D lê exatamente as
+mesmas grandezas que a elevação SVG desenha**, do mesmo ponto do cursor. Na bomba é o DN
+(`svg_linha_bomba(d, dn, h)`); no trocador são os tubos por passe, o comprimento e o
+número de passes (`svg_trocador(d, l, passes)`). Nenhum dos dois recalcula nada, que é a
+mesma regra do vaso — e é ela que impede o 3D e a elevação de mostrarem equipamentos
+diferentes.
+"""
+function modelo3d_de(m::FPSOSiz.AbstractSizingMethod, atributos::AbstractDict)
+    nome = modelo_3d(m)
+    isempty(nome) && return nothing
+    return Dict{String,Any}("modelo" => nome,
+                            "atributos" => Dict{String,Any}(atributos))
 end
 
 """
@@ -163,8 +189,10 @@ function figuras(m::FPSOSiz.MoranPumpSizing, st::AppState; larg_principal = 900.
     banda = (st.globais[:v_min], st.globais[:v_max])
     alvo = (banda[1] + banda[2]) / 2
     return [
+        # O 3D lê o MESMO DN que a elevação cota — ver `modelo3d_de`.
         figura("linha", "principal", _titulo_bomba(x, y),
-               svg_linha_bomba(d, x, y; larg = larg_principal)),
+               svg_linha_bomba(d, x, y; larg = larg_principal);
+               modelo3d = isfinite(x) ? modelo3d_de(m, Dict("dn" => x)) : nothing),
         figura("envelope", "grafico", "", svg_grafico_envelope(
             st.resultado, st.d_sel;
             titulo = "Carga do sistema exigida por caso, e a envelope",
@@ -191,8 +219,13 @@ function figuras(m::FPSOSiz.SaariLMTD, st::AppState; larg_principal = 900.0)
     banda = (st.globais[:v_min], st.globais[:v_max])
     passes = clamp(round(Int, get(d, :passes, 1.0)), 1, 2)
     return [
+        # As mesmas três grandezas do corte SVG: tubos por passe, comprimento e passes.
+        # A chave é `n-tubos` com hífen porque vira ATRIBUTO de elemento HTML.
         figura("trocador", "principal", _titulo_trocador(x, y),
-               svg_trocador(d, y, passes; larg = larg_principal)),
+               svg_trocador(d, y, passes; larg = larg_principal);
+               modelo3d = isfinite(x) && isfinite(y) ?
+                          modelo3d_de(m, Dict("n-tubos" => x, "l" => y,
+                                              "passes" => passes)) : nothing),
         figura("envelope", "grafico", "", svg_grafico_envelope(
             st.resultado, st.d_sel;
             titulo = "Comprimento de tubo exigido por caso, e a envelope",

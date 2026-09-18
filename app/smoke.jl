@@ -255,6 +255,25 @@ end
         end
     end
 
+    @testset "a grade do menu se espalha em colunas" begin
+        # O menu saía em COLUNA ÚNICA com a tela inteira vazia à direita, e nada na
+        # folha de estilo do menu estava errado: `align-items: start` vinha do seletor
+        # `main`, onde é o certo (as três colunas do dimensionamento não podem esticar
+        # até a mais alta). Em `main.menu`, que é flex-COLUNA, a mesma declaração manda
+        # encolher cada filho até o conteúdo — e `auto-fill` passava a calcular a grade
+        # sobre a largura de um cartão só.
+        #
+        # É defeito que nenhum teste de rota pega (o HTML está correto) e que só se vê
+        # com a tela aberta. A guarda é a declaração explícita: se ela sumir, a herança
+        # volta a valer em silêncio.
+        css = read(joinpath(A.dir_publico(), "app.css"), String)
+        regra = match(r"main\.menu\s*\{(.*?)\}"s, css)
+        @test regra !== nothing
+        @test occursin(r"align-items:\s*stretch", regra[1])
+        # E a grade continua se reacomodando sozinha, sem número de colunas na mão.
+        @test occursin(r"\.grade-boxes\s*\{[^}]*repeat\(auto-fill"s, css)
+    end
+
     @testset "o design system e o 3D abrem SEM INTERNET" begin
         # A regra que este bloco protege é a mesma que mantém `Genie.Assets` fora do
         # projeto: no computador de quem recebe o programa empacotado, um caminho remoto
@@ -349,13 +368,41 @@ end
         end
 
         @testset "quem não tem modelo conferido não ganha visor" begin
-            # Bomba e trocador têm arquivo de modelo no handoff, mas não foram
-            # conferidos contra o desenho deles. Prometer um 3D não validado é pior que
-            # não oferecê-lo — `modelo_3d` devolve "" e a figura fica só em SVG.
-            for m in (FPSOSiz.MoranPumpSizing(), FPSOSiz.SaariLMTD(), FPSOSiz.PinchKemp())
-                @test isempty(A.modelo_3d(m))
-            end
+            # A Análise Pinch não dimensiona equipamento nenhum — não há o que mostrar em
+            # três dimensões, e `modelo_3d` devolve "" para que a figura fique só em SVG.
+            @test isempty(A.modelo_3d(FPSOSiz.PinchKemp()))
             @test !isempty(A.modelo_3d(FPSOSiz.StewartArnold()))
+        end
+
+        @testset "o 3D da bomba e do trocador lê o que a elevação desenha" begin
+            # A conferência que liberou os dois modelos do handoff (lacuna 1 do passo 9):
+            # o visor NÃO recalcula — ele recebe as mesmas grandezas que a elevação SVG
+            # cota, do mesmo ponto do cursor. É a regra que já vale para o vaso, e é ela
+            # que impede o 3D e o desenho de mostrarem equipamentos diferentes.
+            for (arq, eqp, met, nome, chaves) in (
+                    ("exemplo_bomba.toml", FPSOSiz.CentrifugalPump(),
+                     FPSOSiz.MoranPumpSizing(), "bomba", ("dn",)),
+                    ("exemplo_trocador.toml", FPSOSiz.ShellTubeExchanger(),
+                     FPSOSiz.SaariLMTD(), "trocador", ("n-tubos", "l", "passes")))
+                st = A.AppState(; case_file = arq, equipamento = eqp, metodo = met)
+                A.dimensionar!(st)
+                p = only(filter(f -> f["area"] == "principal", A.figuras(st)))
+                @test haskey(p, "modelo3d")
+                @test p["modelo3d"]["modelo"] == nome
+                atrs = p["modelo3d"]["atributos"]
+                for k in chaves
+                    @test haskey(atrs, k)
+                    @test isfinite(float(atrs[k]))
+                end
+
+                # O elo: o valor do cursor que o TÍTULO da figura anuncia é o mesmo que
+                # vai para o visor. Se um dia recalcularem um dos dois, isto acusa.
+                _, x, y = A._linha_cursor(st)
+                @test atrs[first(chaves)] ≈ x        # DN na bomba, tubos/passe no trocador
+                if nome == "trocador"
+                    @test atrs["l"] ≈ y              # o comprimento cotado no corte
+                end
+            end
         end
 
         @testset "sem resultado viável, não há modelo a montar" begin
@@ -430,7 +477,9 @@ end
                 @test !occursin("{{", doc)
                 # O bloco de título se repete em todas as folhas; o quadro de revisões,
                 # só na de rosto.
-                folhas = count(_ -> true, eachmatch(r"<article class=\"folha\">", doc))
+                # Sem o `>` final: a folha leva `contenteditable` desde que o documento
+                # passou a se deixar corrigir antes de imprimir.
+                folhas = count(_ -> true, eachmatch(r"<article class=\"folha\"", doc))
                 @test folhas >= 4
                 @test count(_ -> true, eachmatch(r"class=\"bloco-titulo\"", doc)) == folhas
                 @test count(_ -> true, eachmatch(r"class=\"quadro-revisoes\"", doc)) == 1
@@ -467,6 +516,62 @@ end
                     valor = A._valor_rastro(tr, e.numero)
                     @test (e.numero in resolvidas) == (valor != "—")
                 end
+
+                # A simbologia. Toda equação tem de virar MathML, e a faixa tem de trazer
+                # UM `<math>` por equação: se o conversor lançasse, a rota devolveria 500
+                # em vez de faixa vazia — mas se alguém o fizesse tolerante a símbolo
+                # desconhecido, a faixa sairia muda e o documento seria assinado assim.
+                @test count("<div class=\"faixa-equacao\">", doc) == length(spec.equacoes)
+                @test count("<math", doc) >= length(spec.equacoes)
+                @test !occursin("<merror", doc)
+                # A notação em texto NÃO vai para a faixa: se ela reaparecer ali, é sinal
+                # de que o bloco voltou a imprimir a string de uma linha.
+                @test !occursin("]^(1/2)", doc)
+            end
+        end
+    end
+
+    @testset "o conversor de LaTeX para MathML" begin
+        # O subconjunto é fechado por decisão (ver o cabeçalho de memorial/mathml.jl):
+        # o que ele aceita, ele desenha; o que não conhece, LANÇA. As duas metades
+        # importam igualmente, e é a segunda que impede faixa muda em documento assinado.
+        @test occursin("<mfrac>", A.mathml(raw"\frac{a}{b}"))
+        @test occursin("<msqrt>", A.mathml(raw"\sqrt{x}"))
+        @test occursin("<mroot>", A.mathml(raw"\sqrt[3]{x}"))
+        @test occursin("<msub>", A.mathml(raw"V_t"))
+        @test occursin("<msup>", A.mathml(raw"d^2"))
+        @test occursin("<msubsup>", A.mathml(raw"x_a^b"))
+        # As duas ordens do script dão o MESMO elemento — `x_a^b` e `x^b_a` são a mesma
+        # coisa em LaTeX, e seria armadilha de autoria se aqui não fossem.
+        @test A.mathml(raw"x_a^b") == A.mathml(raw"x^b_a")
+        @test occursin("stretchy=\"true\"", A.mathml(raw"\left[ \frac{a}{b} \right]"))
+
+        # A vírgula decimal é UM número, não número-vírgula-número: é a divergência
+        # deliberada em relação ao LaTeX, e o documento é em português.
+        @test occursin("<mn>0,0036</mn>", A.mathml(raw"0,0036"))
+        @test occursin("<mn>2.300</mn>", A.mathml(raw"2.300"))
+        # Letras seguidas são um identificador só — `Re`, e não R·e.
+        @test occursin("<mi>Re</mi>", A.mathml(raw"Re"))
+        # Nome de função sai reto; variável sai itálica. É a convenção tipográfica, e é
+        # o que distingue `\ln` de l·n.
+        @test occursin("mathvariant=\"normal\"", A.mathml(raw"\ln x"))
+
+        @test_throws ArgumentError A.mathml(raw"\naoexiste{x}")
+        @test_throws ArgumentError A.mathml("a # b")
+        @test_throws ArgumentError A.mathml(raw"\frac{a}")
+        @test_throws ArgumentError A.mathml(raw"{a")
+        @test_throws ArgumentError A.mathml(raw"a}")
+        @test_throws ArgumentError A.mathml(raw"\left( a")
+        @test_throws ArgumentError A.mathml("")
+
+        # E a bateria que de fato protege o documento: TODA equação dos seis métodos
+        # converte. Sem ela, o subconjunto só estaria testado contra si mesmo.
+        for eqp in FPSOSiz.equipments(), met in FPSOSiz.methods_for(eqp)
+            spec = FPSOSiz.memorial_spec(met)
+            spec === nothing && continue
+            for e in spec.equacoes
+                @test !isempty(strip(e.tex))
+                @test occursin("<math", A.mathml(e.tex))
             end
         end
     end
@@ -954,6 +1059,47 @@ end
                         String)
         @test occursin("memorial de cálculo", memorial)
         @test occursin("Eq. 22", memorial)
+    end
+
+    # O documento A4 gravado em disco. A propriedade que importa não é "o arquivo
+    # existe": é que ele ABRE COM O PROGRAMA FECHADO. Um `href="/memorial.css"` ali
+    # resolve para nada, e o documento sairia sem borda, sem grade e sem paginação —
+    # falha que nenhum teste de rota pegaria, porque pela rota o CSS resolve.
+    @testset "o memorial A4 exportado é autocontido" begin
+        st = A.AppState(); A.dimensionar!(st); A.exportar!(st)
+        arquivos = readdir(TEMP_SAIDA)
+        @test any(f -> endswith(f, "_memorial.html"), arquivos)
+
+        html = read(joinpath(TEMP_SAIDA,
+                    last(sort(filter(f -> endswith(f, "_memorial.html"), arquivos)))),
+                    String)
+
+        # Nada que dependa do servidor, e nenhum token por resolver.
+        @test !occursin("href=\"/memorial.css\"", html)
+        @test !occursin("{{", html)
+        @test occursin("<style>", html)
+        @test occursin("@page", html)          # o CSS embutido veio inteiro
+        @test occursin(".faixa-equacao", html)
+        @test !occursin("<script", html)       # o documento continua sem script
+
+        # A marca do emitente é o ÚNICO recurso externo do documento, e `/senai-...webp`
+        # é caminho absoluto: aberto de `saida/`, o navegador o procuraria na raiz do
+        # disco e o bloco de título sairia sem logotipo. Uma folha, uma marca.
+        @test !occursin("src=\"/senai-cetiqt.webp\"", html)
+        @test count("data:image/webp;base64,", html) ==
+              count("<article class=\"folha\"", html)
+
+        # É o MESMO documento da rota: mesmo número, mesmas folhas, mesmas seções.
+        @test occursin("MC-SENAI-SEP-ENG-001-0", html)
+        @test count("<article class=\"folha\"", html) ==
+              count("<article class=\"folha\"", A.memorial_documento(st))
+        for secao in ("PREMISSAS DE PROJETO", "DESENVOLVIMENTO DO CÁLCULO",
+                      "RESULTADOS DO DIMENSIONAMENTO")
+            @test occursin(secao, html)
+        end
+
+        # Editável: é por aqui que cliente e executor se corrigem antes de imprimir.
+        @test occursin("contenteditable=\"true\"", html)
     end
 
     @testset "o memorial da tela é o mesmo do arquivo exportado" begin
@@ -1875,7 +2021,14 @@ end
 
         expo = JSON3.read(String(HTTP.post("$base/api/separador-3f/exportar"; body = "{}").body))
         @test expo.ok
-        @test length(expo.arquivos) == 6
+        # CSV + rastro `.txt` + documento A4 `.html` + as quatro figuras do separador.
+        # Contar por sufixo, e não só o total: o número 6 anterior passou a 7 quando o
+        # memorial documental entrou, e um total sozinho não diz QUAL arquivo mudou.
+        @test length(expo.arquivos) == 7
+        for sufixo in ("_varredura.csv", "_memorial.txt", "_memorial.html",
+                       "_vaso.svg", "_corte.svg", "_leff.svg", "_sr.svg")
+            @test count(a -> endswith(a, sufixo), expo.arquivos) == 1
+        end
 
         # --- o menu e o roteamento por box -------------------------------
         @testset "o menu de abertura" begin
@@ -1931,7 +2084,20 @@ end
             doc = String(r.body)
 
             conta(re) = count(_ -> true, eachmatch(re, doc))
-            folhas = conta(r"<article class=\"folha\">")
+            folhas = conta(r"<article class=\"folha\"")
+
+            @testset "o documento servido é editável e imprime sem a barra" begin
+                # A lacuna nº2 do passo 8: cliente, unidade e executor saem `A DEFINIR`
+                # quando a consulta não os traz, e quem imprime nem sempre é quem gera.
+                # Cada folha é uma região de edição; a barra fica FORA delas, para que
+                # ninguém apague o próprio botão de imprimir.
+                @test conta(r"contenteditable=\"true\"") == folhas
+                @test occursin("Clique em qualquer campo", doc)
+                @test occursin("class=\"barra-tela\"", doc)
+                # Continua sem script: `contenteditable` é do navegador, e é isso que
+                # mantém o documento um arquivo que se abre.
+                @test !occursin("<script", doc)
+            end
 
             @testset "os quatro tipos de folha do handoff estão lá" begin
                 for secao in ("IDENTIFICAÇÃO", "PREMISSAS DE PROJETO", "DADOS DE ENTRADA",

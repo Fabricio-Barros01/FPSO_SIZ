@@ -190,6 +190,21 @@ o que um memorial existe para mostrar.
 
 Travessão quando a equação não foi resolvida neste caso: a variante geométrica da
 Eq. 21 some quando não há água livre, e um zero ali seria um número que ninguém calculou.
+
+## Onde entra o MathML, e onde não entra
+
+A **faixa da equação** sai em MathML, convertida de `eq.tex` por [`mathml`](@ref): é ali
+que o handoff pede a equação "por extenso, em notação matemática, nunca em sintaxe de
+código", e é ali que fração empilhada e radical mudam o que se lê.
+
+A lista `ONDE:` **não**. O handoff a especifica como `símbolo = descrição (unidade)`, que
+é texto corrido, e `VariavelDoc.simbolo` é escrito na mesma convenção da `notacao`
+(`ρ_l`, `(h_o)_max`, `A_w/A`) — não em LaTeX. Passá-la pelo conversor exigiria autorar
+`tex` para as ~300 variáveis dos seis métodos, e enquanto isso não fosse feito o
+conversor leria `d_max` como *d* subscrito *m* seguido de *ax*: uma simbologia **errada**,
+que é pior que uma simbologia simples. O que se faz aqui é tipografar o símbolo com a
+mesma família da faixa (`.sim` no CSS), para que a lista e a equação se leiam como o mesmo
+documento.
 """
 function bloco_equacao(eq::FPSOSiz.EquacaoDoc, n::Integer, tr)
     vars = join(["<li><span class=\"sim\">" * escapa(v.simbolo) * "</span> = " *
@@ -204,7 +219,7 @@ function bloco_equacao(eq::FPSOSiz.EquacaoDoc, n::Integer, tr)
     # e faria o bloco da Fig. 3 anunciar "COEFICIENTE B".
     return string(
         secao(n, eq.numero * " — " * eq.grandeza),
-        "<div class=\"faixa-equacao\">", escapa(eq.notacao), "</div>",
+        "<div class=\"faixa-equacao\">", mathml(eq.tex), "</div>",
         "<div class=\"barra-onde\">ONDE:</div>",
         "<ul class=\"variaveis\">", vars, "</ul>",
         tabela_doc([("A:S", "", "esq"), ("T:AB", "", "esq")],
@@ -355,8 +370,13 @@ nenhuma equação é pior que a recusa.
 O ponto documentado é o do **cursor**, via `campos_resultado` — a mesma função que
 desenha o cartão. Quem arrasta o cursor e manda imprimir recebe o documento do vaso que
 está vendo, e não de outro.
+
+`css` e `editavel` são repassados a [`documento_html`](@ref), e é ali que estão
+documentados. A rota usa os defaults; a exportação em disco pede `css = :embutido`,
+porque o arquivo gravado tem de abrir com o programa fechado.
 """
-function memorial_documento(st::AppState; meta_extra::AbstractDict = Dict{String,String}())
+function memorial_documento(st::AppState; meta_extra::AbstractDict = Dict{String,String}(),
+                            css::Symbol = :link, editavel::Bool = true)
     spec = FPSOSiz.memorial_spec(st.metodo)
     spec === nothing && error(
         "O método '$(FPSOSiz.label(st.metodo))' ainda não declara memorial de cálculo " *
@@ -375,7 +395,8 @@ function memorial_documento(st::AppState; meta_extra::AbstractDict = Dict{String
     append!(folhas, folhas_figuras(figuras_grandes(st)))
 
     return documento_html(meta, folhas;
-                          titulo_pagina = numero_documento(meta) * " — " * spec.titulo)
+                          titulo_pagina = numero_documento(meta) * " — " * spec.titulo,
+                          css = css, editavel = editavel)
 end
 
 """

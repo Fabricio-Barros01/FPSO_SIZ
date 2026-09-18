@@ -176,6 +176,25 @@ const METODOS_COM_MEMORIAL = [m for eq in FPSOSiz.equipments()
                     @test !occursin(" * ", eq.notacao)
                     @test !occursin("sqrt(", eq.notacao)
                     @test !occursin("^0.5", eq.notacao)
+
+                    # A MESMA equação em LaTeX, que é de onde a folha 03 tira a
+                    # simbologia impressa (MathML). O construtor já a exige — `tex` é
+                    # posicional —, mas ele não impede uma string em branco, e uma
+                    # equação com `tex = " "` sairia com a faixa muda.
+                    #
+                    # Que ela CONVERTE é conferido em `app/smoke.jl`: o conversor mora
+                    # na camada de interface, e o core não o carrega.
+                    @test !isempty(strip(eq.tex))
+
+                    # NÃO se exige aqui que `tex` difira de `notacao`, nem que traga uma
+                    # barra invertida. Seria uma guarda contra copiar uma coluna na
+                    # outra, mas ela acusa a equação legítima que não precisa de
+                    # construção nenhuma: o `F = 1` do arranjo em contracorrente puro é
+                    # a mesma string nas duas colunas porque não há o que empilhar.
+                    #
+                    # A guarda que de fato protege a folha 03 está em `app/smoke.jl`: uma
+                    # `<math>` por equação, nenhum `<merror>`, e a notação de uma linha
+                    # ausente da faixa.
                 end
             end
 

@@ -374,6 +374,12 @@ main.menu {
   padding: 4px 0 0;
   flex: 1 1 auto;
   min-width: 0;
+  /* `align-items` vem do seletor `main` acima, onde `start` é o certo: lá as três
+     colunas não podem esticar até a mais alta. Aqui o contêiner é flex-COLUNA, e
+     `start` passa a significar "encolha cada filho até o conteúdo" — a grade de
+     cartões calculava `auto-fill` sobre a largura de um cartão só e saía em coluna
+     única, com a tela inteira vazia à direita. */
+  align-items: stretch;
 }
 
 .menu-titulo { margin: 0; }

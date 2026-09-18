@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "1626a63d7b5a41d0769e0e716d3cf1555dddc237"
+project_hash = "081f2a84feba89b3ed196e0aeffc74fc9324b83e"
 
 [[deps.ArgParse]]
 deps = ["Logging", "TextWrap"]
@@ -114,7 +114,7 @@ uuid = "4f13f718-4653-46cc-8e94-84be0defd37a"
 version = "0.1.0"
 
 [[deps.FPSOSizApp]]
-deps = ["Dates", "FPSOSiz", "Genie", "HTTP", "JSON3", "Logging", "Printf", "Sockets", "TOML", "Test"]
+deps = ["Base64", "Dates", "FPSOSiz", "Genie", "HTTP", "JSON3", "Logging", "Printf", "Sockets", "TOML", "Test"]
 path = "."
 uuid = "8c1b4a2e-3f77-4d55-9a10-6e2c9b8d4f31"
 version = "0.1.0"

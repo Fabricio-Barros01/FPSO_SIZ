@@ -91,6 +91,7 @@ function memorial_spec(::PinchKemp)
         equacoes = [
             EquacaoDoc("Tab. 2.2", "Carga térmica de cada corrente",
                 "Q = CP · (T_saída − T_entrada),   CP = ṁ · c_p",
+                raw"Q = CP \cdot \left( T_{saída} - T_{entrada} \right) \quad CP = \dot{m} \cdot c_p",
                 [VariavelDoc("Q", "carga térmica da corrente", "kW"),
                  VariavelDoc("CP", "capacidade calorífica de fluxo", "kW/°C"),
                  VariavelDoc("T_entrada", "temperatura de entrada da corrente", "°C"),
@@ -106,6 +107,8 @@ function memorial_spec(::PinchKemp)
             EquacaoDoc("§2.1.4", "Cargas totais disponível e requerida",
                 "ΣQ_quente = Σ Q das correntes que cedem calor    " *
                 "ΣQ_frio = Σ Q das correntes que recebem calor",
+                raw"\Sigma Q_{quente} = \Sigma Q \quad \text{das correntes que cedem calor} \qquad " *
+                raw"\Sigma Q_{frio} = \Sigma Q \quad \text{das correntes que recebem calor}",
                 [VariavelDoc("ΣQ_quente", "carga térmica total disponível na rede", "kW"),
                  VariavelDoc("ΣQ_frio", "carga térmica total requerida pela rede", "kW")];
                 referencia = "Kemp (2007), §2.1.4, p. 20",
@@ -115,6 +118,7 @@ function memorial_spec(::PinchKemp)
 
             EquacaoDoc("§3.7.3", "Diferença mínima de temperatura adotada",
                 "ΔT_min : decisão de projeto, uniforme em toda a rede",
+                raw"\Delta T_{min} : \text{decisão de projeto, uniforme em toda a rede}",
                 [VariavelDoc("ΔT_min", "diferença mínima de temperatura", "°C")];
                 referencia = "Kemp (2007), §3.7.3, p. 83; faixa recomendada em §3.7.2, p. 82",
                 validade = "NÃO é otimizado: o ótimo econômico exigiria funções de custo " *
@@ -125,6 +129,10 @@ function memorial_spec(::PinchKemp)
                 "T* = T_quente − ΔT_min/2 = T_frio + ΔT_min/2;   " *
                 "ΔH_i = (ΣCP_quentes − ΣCP_frias)_i · ΔT*_i;   " *
                 "QH_min = −min(cascata acumulada);   QC_min = resíduo no pé da cascata factível",
+                raw"T^* = T_{quente} - \frac{\Delta T_{min}}{2} = T_{frio} + \frac{\Delta T_{min}}{2} \qquad " *
+                raw"\Delta H_i = \left( \Sigma CP_{quentes} - \Sigma CP_{frias} \right)_i \cdot \Delta T^*_i \qquad " *
+                raw"QH_{min} = -\min \left( \text{cascata acumulada} \right) \qquad " *
+                raw"QC_{min} = \text{resíduo no pé da cascata factível}",
                 [VariavelDoc("T*", "temperatura deslocada do intervalo", "°C"),
                  VariavelDoc("ΔT_min", "diferença mínima de temperatura", "°C"),
                  VariavelDoc("ΔH_i", "excedente ou déficit de calor do intervalo i", "kW"),
@@ -140,6 +148,7 @@ function memorial_spec(::PinchKemp)
 
             EquacaoDoc("p. 24", "Balanço de entalpia da rede — conferência cruzada",
                 "QC_min − QH_min = ΣQ_quente − ΣQ_frio",
+                raw"QC_{min} - QH_{min} = \Sigma Q_{quente} - \Sigma Q_{frio}",
                 [VariavelDoc("QH_min", "utilidade quente mínima", "kW"),
                  VariavelDoc("QC_min", "utilidade fria mínima", "kW"),
                  VariavelDoc("ΣQ_quente", "carga térmica total disponível", "kW"),

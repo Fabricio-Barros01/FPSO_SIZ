@@ -103,6 +103,7 @@ function memorial_spec(::StewartArnold)
             # ---------------------------------------------- bloco A: capacidade de gás
             EquacaoDoc("Eq. 9–11", "Coeficiente de arrasto da gotícula de líquido no gás",
                 "C_D = 24/Re + 3/√Re + 0,34",
+                raw"C_D = \frac{24}{Re} + \frac{3}{\sqrt{Re}} + 0,34",
                 [VariavelDoc("C_D", "coeficiente de arrasto", _V_ADIM),
                  VariavelDoc("Re", "número de Reynolds da gotícula", _V_ADIM)];
                 referencia = "Stewart & Arnold (2008), Eq. 3.6; Alves & Komesu (2025), Eq. 9",
@@ -112,6 +113,7 @@ function memorial_spec(::StewartArnold)
 
             EquacaoDoc("Eq. 11", "Velocidade terminal de decantação da gotícula",
                 "V_t = 0,0036 · [ ((ρ_l − ρ_g)/ρ_g) · (d_m/C_D) ]^(1/2)",
+                raw"V_t = 0,0036 \cdot \sqrt{\frac{\rho_l - \rho_g}{\rho_g} \cdot \frac{d_m}{C_D}}",
                 [VariavelDoc("V_t", "velocidade terminal da gotícula", "m/s"),
                  VariavelDoc("ρ_l", "massa específica da fase líquida (adotada a do óleo)", _V_RHO),
                  VariavelDoc("ρ_g", "massa específica do gás", _V_RHO),
@@ -123,6 +125,7 @@ function memorial_spec(::StewartArnold)
 
             EquacaoDoc("Eq. 10", "Número de Reynolds da gotícula",
                 "Re = 0,001 · ρ_g · d_m · V_t / µ_g",
+                raw"Re = 0,001 \cdot \frac{\rho_g \cdot d_m \cdot V_t}{\mu_g}",
                 [VariavelDoc("Re", "número de Reynolds da gotícula", _V_ADIM),
                  VariavelDoc("ρ_g", "massa específica do gás", _V_RHO),
                  VariavelDoc("d_m", "diâmetro da gotícula de líquido no gás", _V_DM),
@@ -133,6 +136,7 @@ function memorial_spec(::StewartArnold)
 
             EquacaoDoc("Eq. 13", "Constante de Souders–Brown",
                 "K = [ (ρ_g/(ρ_l − ρ_g)) · (C_D/d_m) ]^(1/2)",
+                raw"K = \sqrt{\frac{\rho_g}{\rho_l - \rho_g} \cdot \frac{C_D}{d_m}}",
                 [VariavelDoc("K", "constante de Souders–Brown", _V_ADIM),
                  VariavelDoc("ρ_g", "massa específica do gás", _V_RHO),
                  VariavelDoc("ρ_l", "massa específica da fase líquida (adotada a do óleo)", _V_RHO),
@@ -143,6 +147,7 @@ function memorial_spec(::StewartArnold)
 
             EquacaoDoc("Eq. 14", "Capacidade de gás — produto d·Leff exigido",
                 "d · L_eff = 34,5 · [ (T · Z · Q_g) / P ] · K",
+                raw"d \cdot L_{eff} = 34,5 \cdot \left[ \frac{T \cdot Z \cdot Q_g}{P} \right] \cdot K",
                 [VariavelDoc("d", "diâmetro interno do vaso", _V_MM),
                  VariavelDoc("L_eff", "comprimento efetivo de separação", "m"),
                  VariavelDoc("T", "temperatura de operação", "K"),
@@ -157,6 +162,7 @@ function memorial_spec(::StewartArnold)
             # ------------------------------------------ bloco B: decantação líquida
             EquacaoDoc("Eq. 16", "Diferença de densidades relativas das fases líquidas",
                 "ΔSG = (SG)_w − (SG)_o",
+                raw"\Delta SG = \left( SG \right)_w - \left( SG \right)_o",
                 [VariavelDoc("ΔSG", "diferença de densidades relativas", _V_ADIM),
                  VariavelDoc("(SG)_w", "densidade relativa da água", _V_ADIM),
                  VariavelDoc("(SG)_o", "densidade relativa do óleo", _V_ADIM)];
@@ -166,6 +172,7 @@ function memorial_spec(::StewartArnold)
 
             EquacaoDoc("Eq. 17", "Espessura máxima da camada de óleo (água em óleo)",
                 "(h_o)_max = 0,033 · (t_r)_o · ΔSG · d_m² / µ_o",
+                raw"\left( h_o \right)_{max} = 0,033 \cdot \frac{\left( t_r \right)_o \cdot \Delta SG \cdot d_m^2}{\mu_o}",
                 [VariavelDoc("(h_o)_max", "espessura máxima da camada de óleo", _V_MM),
                  VariavelDoc("(t_r)_o", "tempo de retenção do óleo", _V_TR),
                  VariavelDoc("ΔSG", "diferença de densidades relativas", _V_ADIM),
@@ -178,6 +185,7 @@ function memorial_spec(::StewartArnold)
 
             EquacaoDoc("Eq. 20", "Espessura máxima da camada de água (óleo em água)",
                 "(h_w)_max = 0,033 · ΔSG · (t_r)_w · d_m² / µ_w",
+                raw"\left( h_w \right)_{max} = 0,033 \cdot \frac{\Delta SG \cdot \left( t_r \right)_w \cdot d_m^2}{\mu_w}",
                 [VariavelDoc("(h_w)_max", "espessura máxima da camada de água", _V_MM),
                  VariavelDoc("ΔSG", "diferença de densidades relativas", _V_ADIM),
                  VariavelDoc("(t_r)_w", "tempo de retenção da água", _V_TR),
@@ -189,6 +197,7 @@ function memorial_spec(::StewartArnold)
 
             EquacaoDoc("Eq. 18", "Fração da seção transversal ocupada pela água",
                 "A_w/A = 0,5 · [ Q_w·(t_r)_w / ( (t_r)_o·Q_o + (t_r)_w·Q_w ) ]",
+                raw"\frac{A_w}{A} = 0,5 \cdot \left[ \frac{Q_w \cdot \left( t_r \right)_w}{\left( t_r \right)_o \cdot Q_o + \left( t_r \right)_w \cdot Q_w} \right]",
                 [VariavelDoc("A_w/A", "fração de área da fase aquosa", _V_ADIM),
                  VariavelDoc("Q_o", "vazão volumétrica de óleo", _V_Q),
                  VariavelDoc("Q_w", "vazão volumétrica de água", _V_Q),
@@ -201,6 +210,9 @@ function memorial_spec(::StewartArnold)
             EquacaoDoc("Fig. 3", "Coeficiente β — altura fracionária da camada de óleo",
                 "β = h_o/d = 0,5 − h_w/d,  com  A_seg = R²·[ arccos(1 − h/R) − " *
                 "(1 − h/R)·√(2h/R − (h/R)²) ]",
+                raw"\beta = \frac{h_o}{d} = 0,5 - \frac{h_w}{d} \quad A_{seg} = R^2 " *
+                raw"\left[ \arccos \left( 1 - \frac{h}{R} \right) - \left( 1 - \frac{h}{R} \right) " *
+                raw"\sqrt{\frac{2h}{R} - \left( \frac{h}{R} \right)^2} \right]",
                 [VariavelDoc("β", "altura fracionária da camada de óleo", _V_ADIM),
                  VariavelDoc("h_o", "altura da camada de óleo", _V_MM),
                  VariavelDoc("h_w", "altura da camada de água", _V_MM),
@@ -214,6 +226,7 @@ function memorial_spec(::StewartArnold)
 
             EquacaoDoc("Eq. 19", "Teto de diâmetro pela decantação de água em óleo",
                 "(d_max)_{w/o} = (h_o)_max / β",
+                raw"\left( d_{max} \right)_{w/o} = \frac{\left( h_o \right)_{max}}{\beta}",
                 [VariavelDoc("(d_max)_{w/o}", "diâmetro máximo admissível pela fase óleo", _V_MM),
                  VariavelDoc("(h_o)_max", "espessura máxima da camada de óleo", _V_MM),
                  VariavelDoc("β", "altura fracionária da camada de óleo", _V_ADIM)];
@@ -222,6 +235,7 @@ function memorial_spec(::StewartArnold)
 
             EquacaoDoc("Eq. 21", "Teto de diâmetro pela decantação de óleo em água",
                 "(d_max)_{o/w} = (h_w)_max / β",
+                raw"\left( d_{max} \right)_{o/w} = \frac{\left( h_w \right)_{max}}{\beta}",
                 [VariavelDoc("(d_max)_{o/w}", "diâmetro máximo admissível pela fase água", _V_MM),
                  VariavelDoc("(h_w)_max", "espessura máxima da camada de água", _V_MM),
                  VariavelDoc("β", "altura fracionária da camada de óleo", _V_ADIM)];
@@ -232,6 +246,7 @@ function memorial_spec(::StewartArnold)
             EquacaoDoc("Eq. 21*", "Teto de diâmetro pela decantação de óleo em água — " *
                                   "variante geométrica NÃO ADOTADA",
                 "(d_max*)_{o/w} = (h_w)_max / (0,5 − β)",
+                raw"\left( d_{max}^* \right)_{o/w} = \frac{\left( h_w \right)_{max}}{0,5 - \beta}",
                 [VariavelDoc("(d_max*)_{o/w}", "diâmetro máximo pela cota geométrica da água", _V_MM),
                  VariavelDoc("(h_w)_max", "espessura máxima da camada de água", _V_MM),
                  VariavelDoc("β", "altura fracionária da camada de óleo", _V_ADIM),
@@ -244,6 +259,7 @@ function memorial_spec(::StewartArnold)
             # ------------------------------------------ bloco C: capacidade de líquido
             EquacaoDoc("Eq. 22", "Capacidade de líquido — produto d²·Leff exigido",
                 "d² · L_eff = C · [ (t_r)_o·Q_o + (t_r)_w·Q_w ]",
+                raw"d^2 \cdot L_{eff} = C \cdot \left[ \left( t_r \right)_o \cdot Q_o + \left( t_r \right)_w \cdot Q_w \right]",
                 [VariavelDoc("d", "diâmetro interno do vaso", _V_MM),
                  VariavelDoc("L_eff", "comprimento efetivo de separação", "m"),
                  VariavelDoc("C", "coeficiente de capacidade de líquido", "mm²·m·h/(m³·min)"),
@@ -259,6 +275,7 @@ function memorial_spec(::StewartArnold)
             # ------------------------------------------ geometria e seleção
             EquacaoDoc("Eq. 15", "Comprimento entre costuras quando o GÁS governa",
                 "L_ss = L_eff + d/1000",
+                raw"L_{ss} = L_{eff} + \frac{d}{1000}",
                 [VariavelDoc("L_ss", "comprimento entre costuras", "m"),
                  VariavelDoc("L_eff", "comprimento efetivo de separação", "m"),
                  VariavelDoc("d", "diâmetro interno do vaso", _V_MM)];
@@ -269,6 +286,7 @@ function memorial_spec(::StewartArnold)
 
             EquacaoDoc("Eq. 23", "Comprimento entre costuras quando o LÍQUIDO governa",
                 "L_ss = (4/3) · L_eff",
+                raw"L_{ss} = \frac{4}{3} \cdot L_{eff}",
                 [VariavelDoc("L_ss", "comprimento entre costuras", "m"),
                  VariavelDoc("L_eff", "comprimento efetivo de separação", "m")];
                 referencia = "Stewart & Arnold (2008), §3.8.4; Alves & Komesu (2025), Eq. 23",
@@ -277,6 +295,7 @@ function memorial_spec(::StewartArnold)
 
             EquacaoDoc("Eq. 24", "Esbeltez do vaso",
                 "SR = L_ss / (d/1000)",
+                raw"SR = \frac{L_{ss}}{d/1000}",
                 [VariavelDoc("SR", "esbeltez (slenderness ratio)", _V_ADIM),
                  VariavelDoc("L_ss", "comprimento entre costuras", "m"),
                  VariavelDoc("d", "diâmetro interno do vaso", _V_MM)];
@@ -291,6 +310,7 @@ function memorial_spec(::StewartArnold)
             # mostra — não porque Stewart & Arnold o prescrevam.
             EquacaoDoc("Geom.", "Volume do casco entre costuras",
                 "V = π · (d/1000)² / 4 · L_ss",
+                raw"V = \frac{\pi \cdot \left( d/1000 \right)^2}{4} \cdot L_{ss}",
                 [VariavelDoc("V", "volume do casco entre costuras", "m³"),
                  VariavelDoc("d", "diâmetro interno do vaso", _V_MM),
                  VariavelDoc("L_ss", "comprimento entre costuras", "m")];

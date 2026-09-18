@@ -117,6 +117,8 @@ function memorial_spec(::SaariLMTD)
             # ---------------------------------------------------------- balanço
             EquacaoDoc("Eq. 4.5", "Balanço de energia e temperatura de saída do casco",
                 "q = (ṁ·c_p)_tubo · (T_saída − T_entrada)_tubo = (ṁ·c_p)_casco · ΔT_casco",
+                raw"q = \left( \dot{m} \cdot c_p \right)_{tubo} \cdot \left( T_{saída} - T_{entrada} \right)_{tubo} " *
+                raw"= \left( \dot{m} \cdot c_p \right)_{casco} \cdot \Delta T_{casco}",
                 [VariavelDoc("q", "carga térmica trocada", "W"),
                  VariavelDoc("ṁ", "vazão mássica", "kg/s"),
                  VariavelDoc("c_p", "calor específico à pressão constante", "J/kg·K"),
@@ -128,6 +130,8 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("Eq. 4.7", "Diferenças de temperatura nas extremidades — contracorrente",
                 "ΔT₁ = T_quente,ent − T_frio,saída    ΔT₂ = T_quente,saída − T_frio,ent",
+                raw"\Delta T_1 = T_{quente,ent} - T_{frio,saída} \quad " *
+                raw"\Delta T_2 = T_{quente,saída} - T_{frio,ent}",
                 [VariavelDoc("ΔT₁", "diferença de temperatura numa extremidade", "K"),
                  VariavelDoc("ΔT₂", "diferença de temperatura na outra extremidade", "K")];
                 referencia = "Saari (LUT), Eq. (4.7), p. 36",
@@ -137,6 +141,7 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("Eq. 4.6", "Diferença de temperatura média logarítmica",
                 "ΔT_lm = (ΔT₁ − ΔT₂) / ln(ΔT₁/ΔT₂)",
+                raw"\Delta T_{lm} = \frac{\Delta T_1 - \Delta T_2}{\ln \left( \frac{\Delta T_1}{\Delta T_2} \right)}",
                 [VariavelDoc("ΔT_lm", "diferença média logarítmica de temperatura", "K"),
                  VariavelDoc("ΔT₁", "diferença de temperatura numa extremidade", "K"),
                  VariavelDoc("ΔT₂", "diferença de temperatura na outra extremidade", "K")];
@@ -148,6 +153,9 @@ function memorial_spec(::SaariLMTD)
             EquacaoDoc("Fig. 4.3", "Fator de correção do arranjo 1-2",
                 "F = √(1+R²)·ln[(1−R·P)/(1−P)] / { (1−R)·ln[ (2−P(1+R−√(1+R²))) / " *
                 "(2−P(1+R+√(1+R²))) ] }",
+                raw"F = \frac{\sqrt{1+R^2} \cdot \ln \left[ \frac{1 - R \cdot P}{1 - P} \right]}" *
+                raw"{\left( 1 - R \right) \cdot \ln \left[ \frac{2 - P \left( 1 + R - \sqrt{1+R^2} \right)}" *
+                raw"{2 - P \left( 1 + R + \sqrt{1+R^2} \right)} \right]}",
                 [VariavelDoc("F", "fator de correção do arranjo", "–"),
                  VariavelDoc("P", "efetividade de temperatura do lado do tubo", "–"),
                  VariavelDoc("R", "razão de capacidades térmicas", "–")];
@@ -161,6 +169,7 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("§4.2.1", "Fator de correção em contracorrente puro",
                 "F = 1",
+                raw"F = 1",
                 [VariavelDoc("F", "fator de correção do arranjo", "–")];
                 referencia = "Saari (LUT), §4.2.1, p. 36",
                 validade = "Vale quando há um único passe no tubo: não há cruzamento de " *
@@ -169,6 +178,7 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("Eq. 4.9", "Produto coeficiente global × área exigido",
                 "U · A = q / (F · ΔT_lm)",
+                raw"U \cdot A = \frac{q}{F \cdot \Delta T_{lm}}",
                 [VariavelDoc("U", "coeficiente global de troca", "W/m²·K"),
                  VariavelDoc("A", "área de troca referida ao diâmetro externo", "m²"),
                  VariavelDoc("q", "carga térmica trocada", "W"),
@@ -181,6 +191,7 @@ function memorial_spec(::SaariLMTD)
             # ---------------------------------------------------------- tubo
             EquacaoDoc("§6.1.1", "Número de Prandtl das correntes",
                 "Pr = c_p · µ / k",
+                raw"Pr = \frac{c_p \cdot \mu}{k}",
                 [VariavelDoc("Pr", "número de Prandtl", "–"),
                  VariavelDoc("c_p", "calor específico à pressão constante", "J/kg·K"),
                  VariavelDoc("µ", "viscosidade dinâmica", "Pa·s"),
@@ -191,6 +202,7 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("§3.2.2", "Diâmetro interno e velocidade no tubo",
                 "d_i = d_o − 2·e        v = ṁ / ( ρ · n · π·d_i²/4 )",
+                raw"d_i = d_o - 2 \cdot e \quad v = \frac{\dot{m}}{\rho \cdot n \cdot \frac{\pi \cdot d_i^2}{4}}",
                 [VariavelDoc("d_i", "diâmetro interno do tubo", "mm"),
                  VariavelDoc("d_o", "diâmetro externo do tubo", "mm"),
                  VariavelDoc("e", "espessura de parede do tubo", "mm"),
@@ -205,6 +217,7 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("§6.3", "Número de Reynolds no tubo",
                 "Re = ρ · v · d_i / µ",
+                raw"Re = \frac{\rho \cdot v \cdot d_i}{\mu}",
                 [VariavelDoc("Re", "número de Reynolds no tubo", "–"),
                  VariavelDoc("ρ", "massa específica do fluido do tubo", "kg/m³"),
                  VariavelDoc("v", "velocidade média no tubo", "m/s"),
@@ -219,6 +232,9 @@ function memorial_spec(::SaariLMTD)
                 "Nu = 0,024 · Re^0,8 · Pr^0,4  (aquecimento)    " *
                 "Nu = 0,026 · Re^0,8 · Pr^0,3  (resfriamento)    " *
                 "h_i = Nu · k / d_i",
+                raw"Nu = 0,024 \cdot Re^{0,8} \cdot Pr^{0,4} \quad \text{aquecimento} \quad " *
+                raw"Nu = 0,026 \cdot Re^{0,8} \cdot Pr^{0,3} \quad \text{resfriamento} \quad " *
+                raw"h_i = \frac{Nu \cdot k}{d_i}",
                 [VariavelDoc("Nu", "número de Nusselt", "–"),
                  VariavelDoc("Re", "número de Reynolds no tubo", "–"),
                  VariavelDoc("Pr", "número de Prandtl do fluido do tubo", "–"),
@@ -233,6 +249,7 @@ function memorial_spec(::SaariLMTD)
             # ---------------------------------------------------------- casco
             EquacaoDoc("Br. 2-20", "Número de Reynolds do lado do casco",
                 "Re_s = d_o · W_s / ( µ_s · A_s )",
+                raw"Re_s = \frac{d_o \cdot W_s}{\mu_s \cdot A_s}",
                 [VariavelDoc("Re_s", "número de Reynolds do casco", "–"),
                  VariavelDoc("d_o", "diâmetro externo do tubo", "m"),
                  VariavelDoc("W_s", "vazão mássica do lado do casco", "kg/s"),
@@ -246,6 +263,9 @@ function memorial_spec(::SaariLMTD)
             EquacaoDoc("Br. 2-19", "Coeficiente ideal de banco de tubos",
                 "h_ideal = J · c_ps · (W_s/A_s) · [ k_s/(c_ps·µ_s) ]^(2/3) · " *
                 "(µ_s/µ_s,parede)^0,14",
+                raw"h_{ideal} = J \cdot c_{ps} \cdot \frac{W_s}{A_s} \cdot " *
+                raw"\left[ \frac{k_s}{c_{ps} \cdot \mu_s} \right]^{2/3} \cdot " *
+                raw"\left( \frac{\mu_s}{\mu_{s,parede}} \right)^{0,14}",
                 [VariavelDoc("h_ideal", "coeficiente ideal do banco de tubos", "W/m²·K"),
                  VariavelDoc("J", "fator de Colburn do banco ideal", "–"),
                  VariavelDoc("c_ps", "calor específico do fluido do casco", "J/kg·K"),
@@ -264,6 +284,10 @@ function memorial_spec(::SaariLMTD)
                 "J_c = 0,55 + 0,72 · F_c,   " *
                 "F_c = (1/π)·[ π + 2φ·sen(arccos φ) − 2·arccos φ ],   " *
                 "φ = (D_s − 2·l_c)/D_otl",
+                raw"J_c = 0,55 + 0,72 \cdot F_c \quad " *
+                raw"F_c = \frac{1}{\pi} \left[ \pi + 2 \varphi \cdot \sen \left( \arccos \varphi \right) " *
+                raw"- 2 \cdot \arccos \varphi \right] \quad " *
+                raw"\varphi = \frac{D_s - 2 \cdot l_c}{D_{otl}}",
                 [VariavelDoc("J_c", "fator de corte e espaçamento de chicana", "–"),
                  VariavelDoc("F_c", "fração de tubos em escoamento cruzado", "–"),
                  VariavelDoc("D_s", "diâmetro interno do casco", "m"),
@@ -275,6 +299,8 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("Br. 2-23", "Fator de correção do vazamento nas chicanas",
                 "J_l = 0,44·(1 − r_a) + [ 1 − 0,44·(1 − r_a) ] · exp(−2,2 · r_b)",
+                raw"J_l = 0,44 \cdot \left( 1 - r_a \right) + \left[ 1 - 0,44 \cdot \left( 1 - r_a \right) \right] " *
+                raw"\cdot \exp \left( -2,2 \cdot r_b \right)",
                 [VariavelDoc("J_l", "fator de vazamento casco-chicana e tubo-chicana", "–"),
                  VariavelDoc("r_a", "razão entre a área de vazamento casco-chicana e a total de vazamento", "–"),
                  VariavelDoc("r_b", "razão entre a área total de vazamento e a de escoamento cruzado", "–")];
@@ -288,6 +314,8 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("Br. 2-27", "Fator de correção do desvio pelo vão feixe-casco",
                 "J_b = exp[ −C · r_c · (1 − (2z)^(1/3)) ]  para z < 1/2;   J_b = 1  para z ≥ 1/2",
+                raw"J_b = \exp \left[ -C \cdot r_c \cdot \left( 1 - \sqrt[3]{2z} \right) \right] \quad " *
+                raw"\text{para} \quad z < 1/2 \qquad J_b = 1 \quad \text{para} \quad z \ge 1/2",
                 [VariavelDoc("J_b", "fator de desvio pelo vão entre feixe e casco", "–"),
                  VariavelDoc("C", "coeficiente do regime (1,35 até Re 100; 1,25 acima)", "–"),
                  VariavelDoc("r_c", "razão entre a área do vão e a de escoamento cruzado", "–"),
@@ -298,6 +326,7 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("Br. 2-28", "Fator de correção das pontas de chicana alargadas",
                 "J_s = [ n_b − 1 + L_i^(1−n) + L_o^(1−n) ] / [ n_b − 1 + L_i + L_o ]",
+                raw"J_s = \frac{n_b - 1 + L_i^{1-n} + L_o^{1-n}}{n_b - 1 + L_i + L_o}",
                 [VariavelDoc("J_s", "fator das pontas de chicana", "–"),
                  VariavelDoc("n_b", "número de chicanas", "–"),
                  VariavelDoc("L_i", "razão entre o espaçamento de entrada e o central", "–"),
@@ -310,6 +339,8 @@ function memorial_spec(::SaariLMTD)
             EquacaoDoc("Br. 2-29", "Fator de correção do gradiente adverso em regime laminar",
                 "J_r = (10/n_r,cc)^0,18 até Re 20;   J_r = 1 acima de Re 100;   " *
                 "interpolação linear entre os dois",
+                raw"J_r = \left( \frac{10}{n_{r,cc}} \right)^{0,18} \quad \text{até} \quad Re = 20 \qquad " *
+                raw"J_r = 1 \quad \text{acima de} \quad Re = 100",
                 [VariavelDoc("J_r", "fator de gradiente adverso de temperatura", "–"),
                  VariavelDoc("n_r,cc", "número de fileiras de tubos em escoamento cruzado", "–"),
                  VariavelDoc("Re", "número de Reynolds do casco", "–")];
@@ -319,6 +350,7 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("Br. 2-18", "Coeficiente do lado do casco corrigido",
                 "h_o = h_ideal · J_c · J_l · J_b · J_s · J_r",
+                raw"h_o = h_{ideal} \cdot J_c \cdot J_l \cdot J_b \cdot J_s \cdot J_r",
                 [VariavelDoc("h_o", "coeficiente de convecção do lado do casco", "W/m²·K"),
                  VariavelDoc("h_ideal", "coeficiente ideal do banco de tubos", "W/m²·K"),
                  VariavelDoc("J_c", "fator de corte e espaçamento de chicana", "–"),
@@ -334,6 +366,7 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("Tab. 4.1", "Coeficiente do lado do casco informado",
                 "h_o = valor de projeto informado",
+                raw"h_o = \text{valor de projeto informado}",
                 [VariavelDoc("h_o", "coeficiente de convecção do lado do casco", "W/m²·K")];
                 referencia = "Saari (LUT), Tabela 4.1, p. 32 — faixas típicas por serviço",
                 validade = "ALTERNATIVA ao método de Bell-Delaware, usada quando ele está " *
@@ -343,6 +376,8 @@ function memorial_spec(::SaariLMTD)
             # ---------------------------------------------------- global e geometria
             EquacaoDoc("Eq. 5.7a", "Coeficiente global por resistências em série",
                 "U = [ 1/h_o + R\"_f,o + A_o·R_w + (A_o/A_i)·R\"_f,i + (A_o/A_i)/h_i ]^(−1)",
+                raw"U = \left[ \frac{1}{h_o} + R^{\prime\prime}_{f,o} + A_o \cdot R_w + " *
+                raw"\frac{A_o}{A_i} \cdot R^{\prime\prime}_{f,i} + \frac{A_o/A_i}{h_i} \right]^{-1}",
                 [VariavelDoc("U", "coeficiente global referido à área externa", "W/m²·K"),
                  VariavelDoc("h_o", "coeficiente de convecção do lado do casco", "W/m²·K"),
                  VariavelDoc("h_i", "coeficiente de convecção interno", "W/m²·K"),
@@ -358,6 +393,7 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("Eq. 4.4", "Área de troca exigida",
                 "A = q / ( U · F · ΔT_lm )",
+                raw"A = \frac{q}{U \cdot F \cdot \Delta T_{lm}}",
                 [VariavelDoc("A", "área de troca referida ao diâmetro externo", "m²"),
                  VariavelDoc("q", "carga térmica trocada", "W"),
                  VariavelDoc("U", "coeficiente global de troca", "W/m²·K"),
@@ -369,6 +405,7 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("Br. 2-13", "Diâmetro do feixe de tubos",
                 "d_feixe = √( 4 · N · A_célula / π )",
+                raw"d_{feixe} = \sqrt{\frac{4 \cdot N \cdot A_{célula}}{\pi}}",
                 [VariavelDoc("d_feixe", "diâmetro do feixe de tubos", "mm"),
                  VariavelDoc("N", "número total de tubos", "–"),
                  VariavelDoc("A_célula", "área ocupada por um tubo no arranjo", "m²")];
@@ -379,6 +416,7 @@ function memorial_spec(::SaariLMTD)
 
             EquacaoDoc("Br. 2-17", "Diâmetro interno do casco",
                 "D_s = d_feixe + 2·d_o",
+                raw"D_s = d_{feixe} + 2 \cdot d_o",
                 [VariavelDoc("D_s", "diâmetro interno do casco", "mm"),
                  VariavelDoc("d_feixe", "diâmetro do feixe de tubos", "mm"),
                  VariavelDoc("d_o", "diâmetro externo do tubo", "mm")];
