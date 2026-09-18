@@ -242,7 +242,7 @@ no exemplo do app) atravessa engine → tela → documento com os mesmos valores
 
 | # | lacuna | consequência | encaminhamento |
 |---|---|---|---|
-| 1 | **Só o separador tem `memorial_spec`.** Os outros cinco métodos devolvem `nothing` | o botão Memorial não aparece neles — não há documento vazio | um `memorial_spec` por método, reusando toda a infra |
+| 1 | **Três dos seis métodos têm `memorial_spec`** — os três vasos. Bomba, trocador e pinch devolvem `nothing` | o botão Memorial não aparece neles — não há documento vazio | ver §12 |
 | 2 | Cliente, unidade e executor saem como `A DEFINIR` por padrão | preenchem-se pela consulta (abaixo) ou à mão no PDF | um formulário de metadados do estudo |
 | 3 | O quadro de revisões só registra a emissão inicial | revisões seguintes não são rastreadas pelo programa | exigiria persistir histórico de revisão por estudo |
 | ~~4~~ | ~~`meta_da_consulta` lê os parâmetros de forma defensiva e a chave do Genie não foi confirmada~~ | **fechada** — verificada e fixada por teste, ver abaixo | — |
@@ -370,3 +370,51 @@ Com o servidor no ar e Firefox headless, sobre `exemplo_alves_komesu.toml`:
 * **folha de resultados** — a coluna `EQUAÇÃO` amarrando cada valor ao bloco da folha 03,
   e as verificações com o veredito **real**: `ATENDE` na esbeltez, `—` no teto de
   decantação (ver §10.1).
+
+---
+
+## 12. Cobertura por método, e por que ela para onde para
+
+| método | sigla | equações | folhas | estado |
+|---|---|---|---|---|
+| `stewart_arnold` (separador trifásico) | SEP | 18 | 12 | **completo** |
+| `stewart_arnold_2f` (knockout bifásico) | VKO | 9 | 9 | **completo** |
+| `arnold_electrostatic` (tratador) | TRE | 11 | 10 | **completo** |
+| `moran` (bomba centrífuga) | BMB | — | — | não feito |
+| `saari_lmtd` (trocador) | TRC | — | — | não feito |
+| `pinch_kemp` (Análise Pinch) | PCH | — | — | não feito |
+
+Os três vasos são a família de Stewart & Arnold, e foi por ela que a generalização
+começou: compartilham `constraints.jl`, o contrato de `VesselConstraints` e a estrutura
+de blocos A/B/C. O que muda entre eles é conteúdo, que é exatamente o que o
+`MemorialSpec` existe para carregar.
+
+Os três restantes **não** foram documentados, e o motivo é a regra dura do projeto —
+*nenhuma equação, referência ou número pode ser inventado*:
+
+**Bomba (`moran`).** Onze das quinze linhas do rastro saem com `"—"` no lugar da
+equação, porque a fonte é um artigo de revista (Moran, *CEP*, 2016) cuja exposição é em
+prosa, sem equações numeradas. As quatro que têm citação real (`Antoine`, `§ regime`,
+`Colebrook`, `Darcy`) são as correlações clássicas, que o artigo usa mas não inventa.
+Documentar as outras onze exigiria ou numerá-las com uma numeração que a fonte não tem —
+e o número numa folha de memorial é uma **promessa de onde conferir** —, ou ler o artigo
+para descobrir a estrutura dele. As fórmulas já estão no campo `formula` de cada
+`TraceEntry`; o que falta é a proveniência, não a matemática.
+
+**Trocador (`saari_lmtd`).** São **trinta** equações citadas, repartidas entre Saari
+(LUT, caps. 3–6) e o método de Bell-Delaware na forma de Branan (`Br. 2-13` a
+`Br. 2-29`). Transcrever trinta notações e suas variáveis com fidelidade é um trabalho do
+mesmo tamanho do que este passo inteiro fez pelo separador, e feito às pressas é
+exatamente onde nasceria uma citação errada — o tipo de defeito que a bijeção pega no
+código mas que ninguém pega no *texto* da notação.
+
+**Análise Pinch (`pinch_kemp`).** Não dimensiona equipamento: devolve alvos de energia de
+uma **rede**. As folhas de "Resultados do dimensionamento" e "Verificações" não são a
+forma certa para ele, e a folha 02 teria de tabelar N correntes em vez de um conjunto
+fixo de entradas. Precisa de uma variante de estrutura documental, não de um
+`memorial_spec` a mais. O mesmo vale para o separador dinâmico, que monitora no tempo.
+
+Para os três, a infra está pronta e o caminho é o mesmo: escrever
+`src/memorial_specs/<metodo>.jl`. `test/memorial.jl` é dirigido por tabela sobre o
+registro, então qualquer um deles entra na bateria inteira ao ser declarado — sem editar
+o teste.
